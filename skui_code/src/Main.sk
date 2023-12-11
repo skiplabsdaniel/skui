@@ -1,0 +1,111 @@
+module SkuiCode;
+
+const linesDir: SKStore.DirName = SKStore.DirName::create("/skui_code/lines/");
+const linesHdl: SKStore.IHandle<
+  SKStore.IID,
+  SKStore.StringFile,
+> = SKStore.IHandle(SKStore.IID::keyType, SKStore.StringFile::type, linesDir);
+const countIDD: SKStore.IID = SKStore.IID(-1);
+
+fun humanSize(bytes: Int): String {
+  thresh = 1024;
+  if (Math.abs(bytes) < thresh) {
+    return `${bytes} B`;
+  };
+
+  units = Array["kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
+  u = -1;
+  loop {
+    !bytes = bytes / thresh;
+    !u = u + 1;
+    if (!(bytes >= thresh && u < units.size() - 1)) break void;
+  };
+  `${bytes} ${units[u]}`
+}
+
+fun main(): void {
+  mainPos = SKStore.newObstack();
+  if (SKStore.gHasContext() == 0) {
+    SKStore.gContextInit(SKStore.Context{});
+    SKStore.Context::withoutGc(initContext);
+  };
+  print_debug(`Info: ${humanSize(60000 * 80)}`);
+  print_debug(`Persistent size before: ${humanSize(SKStore.persistentSize())}`);
+  fromContext = SKStore.gUnsafeContextGet();
+  fromTick = fromContext.tick;
+  context = SKStore.Context::fromSaved(fromContext);
+  optPos: ?SKStore.Obstack = None();
+  try {
+    count = linesHdl
+      .maybeGetValue(context, countIDD, true)
+      .map(v -> v.value.toInt())
+      .default(0);
+    !optPos = context.loopWithGC(
+      ctx -> {
+        readLine() match {
+        | Some(line) ->
+          linesHdl.write(
+            ctx,
+            SKStore.IID(count),
+            SKStore.StringFile(`[${count + 1}] ${line}`),
+          )
+        | _ -> return true
+        };
+        !count = count + 1;
+        return false;
+      },
+      () -> count % 1000 == 0,
+    );
+    linesHdl.write(context, countIDD, SKStore.StringFile(count.toString()));
+    print_debug(`Count: ${count}`);
+    sContext = SKStore.gContextSync(
+      fromTick,
+      fromContext,
+      context.clone(),
+      None(),
+      UInt32::truncate(0),
+      None(),
+    );
+    SKStore.gUnsafeFree(sContext);
+    SKStore.destroyObstack(optPos.fromSome());
+  } catch {
+  | ex ->
+    print_debug(ex.getMessage());
+    SKStore.gUnsafeFree(fromContext);
+    optPos match {
+    | Some(pos) ->
+      cexn = SKStore.destroyObstackWithValue(pos, List[ex]).getHead();
+      throw cexn
+    | _ -> throw ex
+    };
+    throw ex
+  };
+  print_debug(`Persistent size after: ${humanSize(SKStore.persistentSize())}`);
+  SKStore.destroyObstack(mainPos);
+}
+
+fun readLine(): ?String {
+  buffer = mutable Vector[];
+  try {
+    loop {
+      c = getChar();
+      if (c == '\n') break Some(String::fromChars(buffer.toArray()));
+      buffer.push(c);
+    }
+  } catch {
+  | EndOfFile() ->
+    if (buffer.isEmpty()) None() else Some(String::fromChars(buffer.toArray()))
+  | ex -> throw ex
+  }
+}
+
+fun initContext(context: mutable SKStore.Context): void {
+  _ = context.makeDir(
+    SKStore.IID::keyType,
+    SKStore.StringFile::type,
+    linesDir,
+    Array[],
+  );
+}
+
+module end;

@@ -1,0 +1,5 @@
+{
+  "name": "skuicode",
+  "version": "0.0.1",
+  "binaries": ["skuicode-test"]
+}

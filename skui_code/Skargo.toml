@@ -1,0 +1,10 @@
+[package]
+name = "skui_code"
+version = "0.1.0"
+
+[dependencies]
+skui_base = { "path" = "../skui_base" }
+
+[[bin]]
+name = "skuicode"
+main = "SkuiCode.main"
