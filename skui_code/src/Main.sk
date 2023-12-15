@@ -6,21 +6,24 @@ const linesHdl: SKStore.IHandle<
   SKStore.StringFile,
 > = SKStore.IHandle(SKStore.IID::keyType, SKStore.StringFile::type, linesDir);
 const countIDD: SKStore.IID = SKStore.IID(-1);
+const uniquesDir: SKStore.DirName = SKStore.DirName::create(
+  "/skui_code/uniques/",
+);
+
+const units : Array<String> = Array["B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
+
 
 fun humanSize(bytes: Int): String {
-  thresh = 1024;
-  if (Math.abs(bytes) < thresh) {
-    return `${bytes} B`;
-  };
-
-  units = Array["kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
-  u = -1;
-  loop {
-    !bytes = bytes / thresh;
-    !u = u + 1;
-    if (!(bytes >= thresh && u < units.size() - 1)) break void;
-  };
-  `${bytes} ${units[u]}`
+  dBytes = bytes.toFloat();
+  thresh = 1024.0;
+  for (u in units) {
+    if (Math.abs(dBytes) < thresh) {
+      break `${Math.round(dBytes * 10.0) / 10.0} ${u}`;
+    };
+    !dBytes = dBytes / thresh;
+  } else {
+    `${Math.round(dBytes * 10.0) / 10.0} ${units.last()}`;
+  }
 }
 
 fun main(): void {
@@ -30,7 +33,12 @@ fun main(): void {
     SKStore.Context::withoutGc(initContext);
   };
   print_debug(`Info: ${humanSize(60000 * 80)}`);
-  print_debug(`Persistent size before: ${humanSize(SKStore.persistentSize())}`);
+  print_debug(
+    `Persistent size before: ${humanSize(SKStore.persistentSize())}`,
+  );
+  print_debug(
+    `Obstack size before: ${humanSize(SKStore.obstackSize())}`,
+  );
   fromContext = SKStore.gUnsafeContextGet();
   fromTick = fromContext.tick;
   context = SKStore.Context::fromSaved(fromContext);
@@ -80,7 +88,22 @@ fun main(): void {
     };
     throw ex
   };
-  print_debug(`Persistent size after: ${humanSize(SKStore.persistentSize())}`);
+  print_debug(
+    `Persistent size before update: ${humanSize(
+      SKStore.persistentSize(),
+    )}`,
+  );
+  print_debug(
+    `Obstack size before update: ${humanSize(SKStore.obstackSize())}`,
+  );
+  SKStore.Context::withoutGc(ctx ~> ctx.update());
+  print_debug(
+    `Persistent size after: ${humanSize(SKStore.persistentSize())}`,
+  );
+  print_debug(
+    `Obstack size after: ${humanSize(SKStore.obstackSize())}`,
+  );
+
   SKStore.destroyObstack(mainPos);
 }
 
@@ -95,17 +118,24 @@ fun readLine(): ?String {
   } catch {
   | EndOfFile() ->
     if (buffer.isEmpty()) None() else Some(String::fromChars(buffer.toArray()))
-  | ex -> throw ex
+  | ex ->
+    debug(ex);
+    throw ex
   }
 }
 
 fun initContext(context: mutable SKStore.Context): void {
-  _ = context.makeDir(
-    SKStore.IID::keyType,
-    SKStore.StringFile::type,
-    linesDir,
-    Array[],
-  );
+  _ = context
+    .makeDir(SKStore.IID::keyType, SKStore.StringFile::type, linesDir, Array[])
+    .map(
+      SKStore.StrID::keyType,
+      SKStore.IntFile::type,
+      context,
+      uniquesDir,
+      (_ctx, writer, key, it) ~> {
+        writer.set(SKStore.StrID(it.first.value), SKStore.IntFile(key.value));
+      },
+    )
 }
 
 module end;

@@ -25,4 +25,5 @@ function getText(lines: number, columns: number) {
   return txtLines.join("\n");
 }
 
+
 launch(getText(60000, 80));
