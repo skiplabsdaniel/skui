@@ -1,17 +1,38 @@
 module SkuiCode;
 
 const linesDir: SKStore.DirName = SKStore.DirName::create("/skui_code/lines/");
-const linesHdl: SKStore.IHandle<
-  SKStore.IID,
-  SKStore.StringFile,
-> = SKStore.IHandle(SKStore.IID::keyType, SKStore.StringFile::type, linesDir);
+const linesHdl: SKStore.IHandle<SKStore.IID, TextLineFile> = SKStore.IHandle(
+  SKStore.IID::keyType,
+  TextLineFile::btype,
+  linesDir,
+);
+const linesHdl2: SKStore.IHandle<SKStore.IID, TextLineFile2> = SKStore.IHandle(
+  SKStore.IID::keyType,
+  TextLineFile2::btype,
+  linesDir,
+);
 const countIDD: SKStore.IID = SKStore.IID(-1);
 const uniquesDir: SKStore.DirName = SKStore.DirName::create(
   "/skui_code/uniques/",
 );
+const linesUtilsDir: SKStore.DirName = SKStore.DirName::create(
+  "/skui_code/lines_utils/",
+);
+const tokensDir: SKStore.DirName = SKStore.DirName::create(
+  "/skui_code/tokens/",
+);
 
-const units : Array<String> = Array["B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
-
+const units: Array<String> = Array[
+  "B",
+  "kB",
+  "MB",
+  "GB",
+  "TB",
+  "PB",
+  "EB",
+  "ZB",
+  "YB",
+];
 
 fun humanSize(bytes: Int): String {
   dBytes = bytes.toFloat();
@@ -33,12 +54,8 @@ fun main(): void {
     SKStore.Context::withoutGc(initContext);
   };
   print_debug(`Info: ${humanSize(60000 * 80)}`);
-  print_debug(
-    `Persistent size before: ${humanSize(SKStore.persistentSize())}`,
-  );
-  print_debug(
-    `Obstack size before: ${humanSize(SKStore.obstackSize())}`,
-  );
+  print_debug(`Persistent size before: ${humanSize(SKStore.persistentSize())}`);
+  print_debug(`Obstack size before: ${humanSize(SKStore.obstackSize())}`);
   fromContext = SKStore.gUnsafeContextGet();
   fromTick = fromContext.tick;
   context = SKStore.Context::fromSaved(fromContext);
@@ -46,7 +63,8 @@ fun main(): void {
   try {
     count = linesHdl
       .maybeGetValue(context, countIDD, true)
-      .map(v -> v.value.toInt())
+      .map(CountFile::type)
+      .map(v -> v.value)
       .default(0);
     !optPos = context.loopWithGC(
       ctx -> {
@@ -55,7 +73,7 @@ fun main(): void {
           linesHdl.write(
             ctx,
             SKStore.IID(count),
-            SKStore.StringFile(`[${count + 1}] ${line}`),
+            CharsFile(toInternalLine(line, 4)),
           )
         | _ -> return true
         };
@@ -64,7 +82,7 @@ fun main(): void {
       },
       () -> count % 1000 == 0,
     );
-    linesHdl.write(context, countIDD, SKStore.StringFile(count.toString()));
+    linesHdl.write(context, countIDD, CountFile(count));
     print_debug(`Count: ${count}`);
     sContext = SKStore.gContextSync(
       fromTick,
@@ -89,35 +107,96 @@ fun main(): void {
     throw ex
   };
   print_debug(
-    `Persistent size before update: ${humanSize(
-      SKStore.persistentSize(),
-    )}`,
+    `Persistent size before update: ${humanSize(SKStore.persistentSize())}`,
   );
   print_debug(
     `Obstack size before update: ${humanSize(SKStore.obstackSize())}`,
   );
   SKStore.Context::withoutGc(ctx ~> ctx.update());
-  print_debug(
-    `Persistent size after: ${humanSize(SKStore.persistentSize())}`,
-  );
-  print_debug(
-    `Obstack size after: ${humanSize(SKStore.obstackSize())}`,
-  );
+  print_debug(`Persistent size after: ${humanSize(SKStore.persistentSize())}`);
+  print_debug(`Obstack size after: ${humanSize(SKStore.obstackSize())}`);
 
   SKStore.destroyObstack(mainPos);
 }
 
-fun readLine(): ?String {
+fun main2(): void {
+  mainPos = SKStore.newObstack();
+  if (SKStore.gHasContext() == 0) {
+    SKStore.gContextInit(SKStore.Context{});
+    SKStore.Context::withoutGc(initContext2);
+  };
+  print_debug(`Info: ${humanSize(60000 * 80)}`);
+  print_debug(`Persistent size before: ${humanSize(SKStore.persistentSize())}`);
+  print_debug(`Obstack size before: ${humanSize(SKStore.obstackSize())}`);
+  fromContext = SKStore.gUnsafeContextGet();
+  fromTick = fromContext.tick;
+  context = SKStore.Context::fromSaved(fromContext);
+  optPos: ?SKStore.Obstack = None();
+  try {
+    count = linesHdl2
+      .maybeGetValue(context, countIDD, true)
+      .map(CountFile2::type)
+      .map(v -> v.value)
+      .default(0);
+    !optPos = context.loopWithGC(
+      ctx -> {
+        readLine() match {
+        | Some(line) ->
+          linesHdl2.write(ctx, SKStore.IID(count), CharsFile2(line))
+        | _ -> return true
+        };
+        !count = count + 1;
+        return false;
+      },
+      () -> count % 1000 == 0,
+    );
+    linesHdl2.write(context, countIDD, CountFile2(count));
+    print_debug(`Count: ${count}`);
+    sContext = SKStore.gContextSync(
+      fromTick,
+      fromContext,
+      context.clone(),
+      None(),
+      UInt32::truncate(0),
+      None(),
+    );
+    SKStore.gUnsafeFree(sContext);
+    SKStore.destroyObstack(optPos.fromSome());
+  } catch {
+  | ex ->
+    print_debug(ex.getMessage());
+    SKStore.gUnsafeFree(fromContext);
+    optPos match {
+    | Some(pos) ->
+      cexn = SKStore.destroyObstackWithValue(pos, List[ex]).getHead();
+      throw cexn
+    | _ -> throw ex
+    };
+    throw ex
+  };
+  print_debug(
+    `Persistent size before update: ${humanSize(SKStore.persistentSize())}`,
+  );
+  print_debug(
+    `Obstack size before update: ${humanSize(SKStore.obstackSize())}`,
+  );
+  SKStore.Context::withoutGc(ctx ~> ctx.update());
+  print_debug(`Persistent size after: ${humanSize(SKStore.persistentSize())}`);
+  print_debug(`Obstack size after: ${humanSize(SKStore.obstackSize())}`);
+
+  SKStore.destroyObstack(mainPos);
+}
+
+fun readLine(): ?Array<Char> {
   buffer = mutable Vector[];
   try {
     loop {
       c = getChar();
-      if (c == '\n') break Some(String::fromChars(buffer.toArray()));
+      if (c == '\n') break Some(buffer.toArray());
       buffer.push(c);
     }
   } catch {
-  | EndOfFile() ->
-    if (buffer.isEmpty()) None() else Some(String::fromChars(buffer.toArray()))
+  | EndOfFile() -> if (buffer.isEmpty()) None() else Some(buffer.toArray())
   | ex ->
     debug(ex);
     throw ex
@@ -126,16 +205,99 @@ fun readLine(): ?String {
 
 fun initContext(context: mutable SKStore.Context): void {
   _ = context
-    .makeDir(SKStore.IID::keyType, SKStore.StringFile::type, linesDir, Array[])
+    .makeDir(SKStore.IID::keyType, TextLineFile::btype, linesDir, Array[])
     .map(
-      SKStore.StrID::keyType,
+      CharsID::keyType,
       SKStore.IntFile::type,
       context,
       uniquesDir,
       (_ctx, writer, key, it) ~> {
-        writer.set(SKStore.StrID(it.first.value), SKStore.IntFile(key.value));
+        it.first match {
+        | CharsFile(chars) ->
+          writer.set(CharsID(chars), SKStore.IntFile(key.value))
+        | _ -> void
+        }
+      },
+    )
+    .map(
+      LineID::keyType,
+      SKStore.IntFile::type,
+      context,
+      linesUtilsDir,
+      (_ctx, writer, key, it) ~> {
+        writer.set(
+          LineID(toLine(key.value, SkuiCodeSkip.bracketsBuilder)),
+          it.first,
+        )
+      },
+    )
+    .map(
+      LineID::keyType,
+      Tokens::type,
+      context,
+      tokensDir,
+      (_ctx, writer, key, it) ~> {
+        if (inRange(it, 0, 100)) {
+          line = key.value;
+          words = toWords(line.text);
+          map = SortedMap<Int, Array<Char>>[];
+          line.brackets.each(b -> !map = map.add(b.index, b.value));
+          writer.set(key, words.lex(map))
+        }
       },
     )
 }
+
+fun inRange(it: mutable Iterator<SKStore.IntFile>, min: Int, max: Int): Bool {
+  loop {
+    it.next() match {
+    | Some(v) if (v.value >= min && v.value < max) -> break true
+    | None() -> break false
+    | _ -> void
+    }
+  }
+}
+
+fun initContext2(context: mutable SKStore.Context): void {
+  _ = context
+    .makeDir(SKStore.IID::keyType, TextLineFile2::btype, linesDir, Array[])
+    .map(
+      CharsID2::keyType,
+      SKStore.IntFile::type,
+      context,
+      uniquesDir,
+      (_ctx, writer, key, it) ~> {
+        it.first match {
+        | CharsFile2(chars) ->
+          writer.set(CharsID2(chars), SKStore.IntFile(key.value))
+        | _ -> void
+        }
+      },
+    )
+}
+/*
+visibleTokensHdl = visibleLinesHdl.map(
+      SKStore.IID::keyType,
+      Text.Tokens::type,
+      context,
+      visibleTokensPath,
+      (ctx, writer, key, it) ~> {
+        key match {
+        | idd @ SKStore.IID _ ->
+          line = UiMonospace.Line::type(it.first);
+          indentation = params.controller.getIndentation(ctx).get(ctx);
+          words = Text.Words::fromString(String::fromChars(line.text));
+          spaced = words.toShownSpaceWords(indentation.size);
+          map = SortedMap<Int, Array<Char>>[];
+          line.brackets.each(b -> !map = map.add(b.index, b.value));
+          lexed = spaced.lex(map);
+          writer.set(idd, lexed)
+        | _ -> void
+        }
+      },
+    );
+
+*/
+
 
 module end;

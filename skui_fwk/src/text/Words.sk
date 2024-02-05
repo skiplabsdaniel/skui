@@ -280,11 +280,6 @@ class Words(value: Vector<Word>, size: Int) extends SKStore.File {
   }
 }
 
-base class TokenManager {
-  fun getTokenPaint(token: String): ?Color;
-  fun getKindPaint(kind: Kind): ?Color;
-}
-
 @debug
 fun toWords(text: String): Words {
   index = 0;

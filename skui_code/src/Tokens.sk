@@ -1,0 +1,208 @@
+module SkuiCode;
+
+const whiteSpace: Char = '·';
+const tabPrefix: Char = '―';
+const tabSuffix: Char = '→';
+
+value class CChar(char: Char, whiteSpace: ?Char = None()) uses Orderable {
+  fun isWhitespace(): Bool {
+    this.whiteSpace.isSome()
+  }
+}
+
+base class Kind uses Equality, Show {
+  children =
+  | KToken()
+  | KSymbol()
+  | KBracket()
+  | KWhiteSpace()
+  | KNumber()
+  | KSplitted(kind: Kind)
+
+  static fun fromChar(c: Char): Kind {
+    if (Char.isAlphaNumeric(c)) {
+      KToken()
+    } else if (Char.isWhitespace(c)) {
+      KWhiteSpace()
+    } else {
+      KSymbol()
+    }
+  }
+
+  fun toString(): String
+  | KToken() -> "KToken"
+  | KSymbol() -> "KSymbol"
+  | KBracket() -> "KBracket"
+  | KWhiteSpace() -> "KWhiteSpace"
+  | KNumber() -> "KNumber"
+  | KSplitted(k) -> `KSplitted(${k})`
+
+  fun realKind(): Kind
+  | KToken()
+  | KSymbol()
+  | KBracket()
+  | KWhiteSpace()
+  | KNumber() ->
+    this
+  | KSplitted(k) -> k.realKind()
+}
+
+value class Slice(source: Array<CChar>, start: UInt32, end: UInt32) uses Show {
+  //
+  static fun make(source: Array<CChar>, start: Int, end: Int): this {
+    start_ = Math.min(Math.max(start, 0), source.size());
+    end_ = Math.max(Math.min(end, source.size()), Math.max(start, 0));
+    Slice(source, UInt32::truncate(start_), UInt32::truncate(end_))
+  }
+
+  static fun full(source: Array<CChar>): this {
+    static::make(source, 0, source.size())
+  }
+
+  fun slice(start: Int, end: Int): this {
+    size = this.size();
+    start_ = Math.min(Math.max(start, 0), size);
+    end_ = Math.max(Math.min(end, size), Math.max(start, 0));
+    static::make(this.source, this.start + start_, this.start + end_);
+  }
+
+  fun get(idx: Int): Char {
+    this.source[this.start + idx].char
+  }
+
+  fun maybeGet(idx: Int): ?Char {
+    this.source.maybeGet(this.start + idx).map(c -> c.char)
+  }
+
+  fun size(): Int {
+    this.end - this.start
+  }
+
+  fun toString(): String {
+    String::fromChars(
+      this.source.slice(this.start.toInt(), this.end.toInt()).map(c -> c.char),
+    )
+  }
+
+  fun each(f: Char -> void): void {
+    for (idx in Range(0, this.size())) {
+      f(this.get(idx))
+    }
+  }
+
+  fun toInt(): Int {
+    this.toString().toInt()
+  }
+
+  fun toFloatOption(): ?Float {
+    this.toString().toFloatOption()
+  }
+}
+
+value class KindGroup(index: Int, kind: Kind) {
+  fun getKind(): Kind {
+    this.kind.realKind()
+  }
+
+  fun splitted(): this {
+    static(this.index, KSplitted(this.kind))
+  }
+}
+
+value class TokenInfo(text: Slice, kind: Kind) {
+  //
+  fun toInt(): Int {
+    this.text.toInt()
+  }
+
+  fun toFloat(): Float {
+    this.text.toFloatOption() match {
+    | Some(v) -> v
+    | _ -> this.text.toInt().toFloat()
+    }
+  }
+
+  fun size(): Int {
+    this.text.size()
+  }
+}
+
+class Tokens(
+  value: Vector<TokenInfo>,
+  size: Int,
+  start: Int = 0,
+  shift: Int = 0,
+) extends SKStore.File {
+  //
+  static fun empty(): this {
+    Tokens(Vector[], 0, 0, 0)
+  }
+
+  static fun type(obj: SKStore.File): this {
+    obj match {
+    | x @ Tokens _ -> x
+    | _ -> invariant_violation("Must be Text.Tokens")
+    }
+  }
+
+  fun filter(start: Int, count: Int): this {
+    newValues = mutable Vector<TokenInfo>[];
+    end = start + count;
+    toAdd = false;
+    index = 0;
+    startIndex = 0;
+    for (token in this.value) {
+      if (!toAdd) {
+        !toAdd = (index + token.size()) > start;
+        if (toAdd) {
+          !startIndex = start - index;
+        }
+      } else if (index >= end) {
+        break void;
+      };
+      if (toAdd) newValues.push(token);
+      !index = index + token.size();
+    };
+    Tokens(unsafe_chill_trust_me(newValues), this.size, startIndex)
+  }
+}
+
+value class Word(space: Slice, value: Slice)
+
+class Words(value: Vector<Word>, size: Int) extends SKStore.File {
+  //
+  fun lex(brackets: SortedMap<Int, Array<Char>>): Tokens {
+    tokens = mutable Vector<TokenInfo>[];
+    this.value.each(word -> {
+      size = word.space.size();
+      if (size > 0) {
+        tokens.push(TokenInfo(word.space, KWhiteSpace()));
+      };
+      lexer = mutable Lexer{text => word.value, brackets, tokens};
+      lexer.lex();
+    });
+    Tokens(unsafe_chill_trust_me(tokens), this.size);
+  }
+}
+
+@debug
+fun toWords(chars: Array<CChar>): Words {
+  index = 0;
+  words = mutable Vector<Word>[];
+  while (index < chars.size()) {
+    start = index;
+    while (index < chars.size() && chars[index].isWhitespace()) {
+      !index = index + 1;
+    };
+    space = Slice::make(chars, start, index);
+    !start = index;
+    while (index < chars.size() && !chars[index].isWhitespace()) {
+      !index = index + 1;
+    };
+    word = Slice::make(chars, start, index);
+    words.push(Word(space, word));
+  };
+  Words(unsafe_chill_trust_me(words), chars.size());
+}
+
+module end;

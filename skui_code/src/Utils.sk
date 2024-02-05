@@ -1,0 +1,90 @@
+module SkuiCode;
+
+fun toInternalLine(chars: Array<Char>, tabSize: Int): Array<CChar> {
+  tmp = mutable Vector<CChar>[];
+  count = 0;
+  chars.each(char -> {
+    if (char == '\t' && tabSize > 1) {
+      size = tabSize - (count % tabSize);
+      for (index in .Range(0, size)) {
+        if (index == size - 1) {
+          tmp.push(CChar(tabSuffix, Some(char)));
+        } else {
+          tmp.push(CChar(tabPrefix, Some(char)));
+        };
+      };
+      !count = count + size;
+    } else if (char == '\t') {
+      tmp.push(CChar(tabSuffix, Some(char)));
+      !count = count + 1;
+    } else if (Char.isWhitespace(char)) {
+      tmp.push(CChar(whiteSpace, Some(char)));
+      !count = count + 1;
+    } else {
+      tmp.push(CChar(char));
+      !count = count + 1;
+    }
+  });
+  tmp.toArray()
+}
+
+fun toLine(chars: Array<CChar>, bracketsBuilder: BracketsBuilder): Line {
+  column = 0;
+  brackets = mutable Vector<Bracket>[];
+  map = SortedMap<Int, Array<Char>>[];
+  while (column < chars.size()) {
+    bracketsBuilder(i ~> chars.maybeGet(i).map(c -> c.char), column) match {
+    | Some(bracket) ->
+      brackets.push(bracket);
+      !map = map.add(bracket.index, bracket.value);
+      !column = column + bracket.value.size()
+    | None() -> !column = column + 1
+    }
+  };
+  Line(chars, brackets.toArray())
+}
+
+fun withRegionFold<K, T>(
+  contextOpt: ?mutable SKStore.Context,
+  next: () -> ?K,
+  value: T,
+  fn: (?mutable SKStore.Context, K, T) ~> T,
+): T {
+  optSaved: ?SKStore.Obstack = None();
+  valueInRegion = value;
+  try {
+    !optSaved = Some(SKStore.newObstack());
+    loop {
+      saved = optSaved.fromSome();
+      next() match {
+      | Some(k) ->
+        !valueInRegion = fn(contextOpt, k, valueInRegion);
+        if (SKStore.shouldGC(saved) != 0) {
+          !valueInRegion = SKStore.copyToParentObstack(
+            contextOpt,
+            valueInRegion,
+            saved,
+          );
+          !optSaved = Some(SKStore.newObstack());
+        }
+      | _ -> break void
+      }
+    };
+    optSaved match {
+    | Some(saved) ->
+      SKStore.copyToParentObstack(contextOpt, valueInRegion, saved)
+    | _ -> value
+    }
+  } catch {
+  | exn ->
+    optSaved match {
+    | Some(saved) ->
+      cexn = SKStore.destroyObstackWithValue(saved, List[exn]).getHead();
+      saveExn(cexn);
+      throw cexn
+    | _ -> throw exn
+    }
+  }
+}
+
+module end;

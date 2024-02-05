@@ -3,8 +3,9 @@ name = "skui_code"
 version = "0.1.0"
 
 [dependencies]
-skui_base = { "path" = "../skui_base" }
+skui_common = { "path" = "../skui_common" }
 
 [[bin]]
 name = "skuicode"
 main = "SkuiCode.main"
+

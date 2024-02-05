@@ -1,0 +1,138 @@
+module SkuiCode;
+
+class LineID(value: Line) extends SKStore.Key {
+  fun toString(): String {
+    this.value.toString()
+  }
+}
+
+class CharsID(value: Array<CChar>) extends SKStore.Key {
+  fun toString(): String {
+    String::fromChars(this.value.map(c -> c.char))
+  }
+}
+
+class CharsID2(value: Array<Char>) extends SKStore.Key {
+  fun toString(): String {
+    String::fromChars(this.value)
+  }
+}
+
+base class TextLineFile extends SKStore.File {
+  children =
+  | CharsFile(value: Array<CChar>)
+  | CountFile(value: Int)
+
+  static fun btype(obj: SKStore.File): TextLineFile {
+    obj match {
+    | x @ TextLineFile _ -> x
+    | _ -> SKStore.cast_violation("SkuiCode.TextLineFile", obj)
+    }
+  }
+}
+
+base class TextLineFile2 extends SKStore.File {
+  children =
+  | CharsFile2(value: Array<Char>)
+  | CountFile2(value: Int)
+
+  static fun btype(obj: SKStore.File): TextLineFile2 {
+    obj match {
+    | x @ TextLineFile2 _ -> x
+    | _ -> SKStore.cast_violation("SkuiCode.TextLineFile2", obj)
+    }
+  }
+}
+
+value class Bracket(
+  index: Int,
+  value: Array<Char>,
+  count: Int = 0,
+) uses Orderable
+
+type BracketsBuilder = (Int ~> ?Char, Int) ~> ?Bracket;
+type BracketsChecker = (
+  ?Bracket,
+  ?Bracket,
+  mutable Vector<Bracket>,
+) ~> ?Bracket;
+type ColorSupplier = String ~> ?Color;
+
+base class Accessor {
+  fun get(index: Int): Char;
+  fun maybeGet(index: Int): ?Char;
+  fun isEmpty(): Bool;
+  fun size(): Int;
+}
+
+class ArrayAccessor(value: Array<Char>) extends Accessor {
+  fun get(index: Int): Char {
+    this.value.get(index)
+  }
+
+  fun maybeGet(index: Int): ?Char {
+    this.value.maybeGet(index)
+  }
+
+  fun isEmpty(): Bool {
+    this.value.isEmpty()
+  }
+
+  fun size(): Int {
+    this.value.size()
+  }
+}
+
+class VectorAccessor(value: Vector<Char>) extends Accessor {
+  fun get(index: Int): Char {
+    this.value.get(index)
+  }
+
+  fun maybeGet(index: Int): ?Char {
+    this.value.maybeGet(index)
+  }
+
+  fun isEmpty(): Bool {
+    this.value.isEmpty()
+  }
+
+  fun size(): Int {
+    this.value.size()
+  }
+}
+
+class Line(
+  text: Array<CChar>,
+  brackets: Array<Bracket>,
+  optOther: ?Int = None(),
+) extends SKStore.File uses Orderable, Show {
+  //
+  static fun empty(): Line {
+    Line(Array[], Array[]);
+  }
+
+  fun compare(other: Line): Order {
+    this.text.compare(other.text)
+  }
+
+  fun isEmpty(): Bool {
+    this.text.isEmpty()
+  }
+
+  fun toString(): String {
+    String::fromChars(this.text.map(c -> c.char))
+  }
+}
+
+class Lines(value: Vector<Line>) extends SKStore.File {
+  //
+  static fun empty(): Lines {
+    Lines(Vector[Line::empty()])
+  }
+
+  fun isEmpty(): Bool {
+    this.value.isEmpty() || this.value[0].isEmpty()
+  }
+}
+
+module end;

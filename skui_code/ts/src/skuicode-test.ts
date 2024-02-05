@@ -26,4 +26,4 @@ function getText(lines: number, columns: number) {
 }
 
 
-launch(getText(60000, 80));
+launch(getText(10000, 80));
