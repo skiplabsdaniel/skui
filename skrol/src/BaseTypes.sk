@@ -1,0 +1,93 @@
+module SKROL;
+
+value class Tick(value: Int)
+
+class Path(id: Int, optParent: ?Path) uses Orderable
+base class Ref(scope: Array<Int>, value: Int) {
+  children =
+  | Eager
+  | Lazy
+}
+
+base class Value
+base class Reader {
+  fun getPath(): Path;
+}
+
+value class TimedValue(value: Value, tick: Tick)
+
+class Nil() extends Value
+
+base class ValueSupplier {
+  children =
+  | Statefull((mutable Scope) ~> Value)
+  | Stateless(value: Value)
+}
+
+base class Dependency {
+  children =
+  | Single(Ref)
+  | Multiple(Array<Ref>, valid: Int)
+}
+
+trait ValueToTyped {
+  macro static fun type(obj: Value): this {
+    obj match {
+    | x @ #ThisClass _ -> x
+    }
+  }
+}
+
+base mutable class Dependencies {
+  readonly fun getTick(): Tick;
+  mutable fun set(path: Path, property: Property): void;
+  mutable fun add(path: Path, readers: Array<Reader>): void;
+}
+
+base mutable class Scope {
+  mutable fun input(supplier: ValueSupplier): Property;
+  mutable fun lazy(function: Function): Property;
+  mutable fun combine(function: Function): Property;
+}
+
+base mutable class Properties {
+  mutable fun get(property: Ref, untrackted: Bool = false): Value;
+  // lazy ??
+}
+
+base class State(
+  update: (mutable Properties, Array<Ref>, Array<Ref>) ~> void,
+  init: ?(mutable Scope, Array<Ref>) ~> Array<Ref> = None(),
+)
+
+base class Readable {
+  fun get(
+    dependencies: mutable Dependencies,
+    optReader: ?Reader = None(),
+  ): Value;
+  fun getTime(): Tick;
+}
+
+base class Mappable {
+  fun map(dependencies: mutable Dependencies, fn: Value ~> Value): Eager;
+}
+
+base class Writable {
+  fun set(dependencies: mutable Dependencies, value: Value): void;
+}
+
+base class Property extends Readable, Reader
+
+class Transition(
+  fn: Array<Value> ~> Array<Value>,
+  inputs: Array<Readable>,
+  outputs: Array<Writable>,
+)
+
+class IntValue(value: Int) extends Value uses ValueToTyped
+class FloatValue(value: Float) extends Value uses ValueToTyped
+class BoolValue(value: Bool) extends Value uses ValueToTyped
+class StringValue(value: String) extends Value uses ValueToTyped
+class RangeValue(value: Range) extends Value uses ValueToTyped
+
+module end;

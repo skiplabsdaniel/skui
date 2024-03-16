@@ -1,0 +1,70 @@
+module SKROL;
+
+base class Supplier(path: Path) extends Property {
+  //
+  protected fun computeValue(dependencies: mutable Dependencies): Value;
+
+  fun get(
+    dependencies: mutable Dependencies,
+    optReader: ?Reader = None(),
+  ): Value {
+    value = this.computeValue(dependencies);
+    optReader.each(reader -> dependencies.add(this.path, Array[reader]));
+    value
+  }
+
+  fun getPath(): Path {
+    this.path
+  }
+}
+
+base class EagerPropertyBase(value: Value, tick: Tick) extends Supplier {
+  //
+  protected fun computeValue(_: mutable Dependencies): Value {
+    this.value
+  }
+
+  fun getTime(): Tick {
+    this.tick
+  }
+}
+
+class EagerProperty extends EagerPropertyBase
+
+class InputProperty extends EagerPropertyBase, Writable {
+  fun set(dependencies: mutable Dependencies, value: Value): void {
+    if (native_eq(this.value, value) == 0) {
+      !this.value = value;
+      !this.tick = dependencies.getTick();
+      dependencies.set(this.path, this);
+    }
+  }
+}
+
+class LazyProperty(
+  function: Function,
+  optTimedValue: ?TimedValue,
+) extends Supplier {
+  //
+  protected fun computeValue(dependencies: mutable Dependencies): Value {
+    (value, prop) = this.optTimedValue match {
+    | Some(timedValue) -> (timedValue.value, this)
+    | _ ->
+      value = this.function.call(dependencies, Some(this));
+      (
+        value,
+        this with {
+          optTimedValue => Some(TimedValue(value, dependencies.getTick())),
+        },
+      )
+    };
+    dependencies.set(this.path, prop);
+    value
+  }
+
+  fun getTime(): Tick {
+    this.optTimedValue.map(v -> v.tick).default(Tick(0))
+  }
+}
+
+module end;

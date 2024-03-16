@@ -1,0 +1,114 @@
+module SKROL;
+
+class Function(inputs: Array<Property>, fn: (Int -> Value) ~> Value) {
+  fun call(dependencies: mutable Dependencies, optReader: ?Reader): Value {
+    this.fn(idx -> this.inputs[idx].get(dependencies, optReader))
+  }
+}
+
+class Readers(
+  set: SortedSet<Path> = SortedSet[],
+  readers: List<Reader> = List.Nil(),
+) {
+  fun add(reader: Reader): this {
+    path = reader.getPath();
+    if (this.set.contains(path)) {
+      return this;
+    };
+    !this.set = this.set.add(path);
+    !this.readers = List.Cons(reader, this.readers);
+    this
+  }
+}
+
+mutable class ScopeImpl(
+  optParent: ?mutable ScopeImpl,
+  path: Path,
+  tick: () ~> Tick,
+  properties: mutable Vector<Property> = mutable Vector[],
+  mutable scopes: SortedMap<Int, mutable ScopeImpl> = SortedMap[],
+  mutable readers: SortedMap<Int, Readers> = SortedMap[],
+  mutable combines: SortedMap<Int, Function> = SortedMap[],
+) extends Dependencies, Scope {
+  //
+  mutable fun input(supplier: ValueSupplier): Property {
+    id = this.properties.size();
+    prop = InputProperty(
+      supplier match {
+      | Statefull(fn) ->
+        // ?? Reuse
+        scope = mutable ScopeImpl(
+          Some(this),
+          Path(id, Some(this.path)),
+          this.tick,
+        );
+        this.!scopes = this.scopes.set(id, scope);
+        fn(scope)
+      | Stateless(value) -> value
+      },
+      this.tick(),
+      Path(this.properties.size(), Some(this.path)),
+    );
+    this.properties.push(prop);
+    prop
+  }
+
+  mutable fun lazy(function: Function): Property {
+    prop = LazyProperty(
+      function,
+      None(),
+      Path(this.properties.size(), Some(this.path)),
+    );
+    this.properties.push(prop);
+    prop
+  }
+
+  mutable fun combine(function: Function): Property {
+    property = EagerProperty(
+      Nil(),
+      this.tick(),
+      Path(this.properties.size(), Some(this.path)),
+    );
+    value = function.call(this, Some(property));
+    this.!combines = this.combines.set(property.getPath().id, function);
+    prop = property with {value};
+    this.properties.push(prop);
+    prop
+  }
+
+  readonly fun getTick(): Tick {
+    this.tick()
+  }
+
+  mutable fun set(path: Path, readable: Property): void {
+    path.optParent match {
+    | Some(parent) if (parent == this.path) ->
+      this.properties.set(path.id, readable)
+    | Some _ -> this.optParent.fromSome().set(path, readable)
+    | _ -> invariant_violation("Property have to get scope parent")
+    }
+  }
+
+  mutable fun add(path: Path, readers: Array<Reader>): void {
+    path.optParent match {
+    | Some(parent) if (parent == this.path) ->
+      rds = this.readers.maybeGet(path.id) match {
+      | Some(rds) -> rds
+      | _ -> Readers()
+      };
+      readers.each(rd -> !rds = rds.add(rd));
+      this.!readers = this.readers.set(path.id, rds)
+    | Some _ -> this.optParent.fromSome().add(path, readers)
+    | _ -> invariant_violation("Property have to get scope parent")
+    }
+  }
+
+  mutable fun update(_invalid: SortedMap<Path, Set<Int>>): void {
+    /*for (property in Properties) {
+
+    }*/
+    void
+  }
+}
+
+module end;
