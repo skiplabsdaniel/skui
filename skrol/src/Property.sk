@@ -8,7 +8,13 @@ base class EagerPropertyBase final (path: Path) {
     optReader: ?Reader = None(),
   ): Value {
     value = dependencies.getValue(this.path);
-    optReader.each(reader -> dependencies.add(this.path, Array[reader]));
+    optReader.each(reader -> {
+      reader match {
+      | LazyReader(key, p) -> dependencies.addLazyRead(p, key, this.path)
+      | EagerReader _ -> void
+      };
+      dependencies.addReader(this.path, reader)
+    });
     value
   }
 
@@ -41,7 +47,7 @@ class LazyProperty(function: LazyFunction, path: Path) extends ILazyProperty {
   ): Value {
     // Register read to update reader
     value = this.getValue(dependencies, param);
-    optReader.each(reader -> dependencies.add(this.path, Array[reader]));
+    optReader.each(reader -> dependencies.addReader(this.path, reader));
     value
   }
 
@@ -52,8 +58,11 @@ class LazyProperty(function: LazyFunction, path: Path) extends ILazyProperty {
     // TODO ASSERT All values are validated at this moment
     key = param.toKey();
     dependencies.getLazyValue(this.path, key) match {
-    | Some(v) -> v
+    | Some(v) ->
+      dependencies.updateLazyReaders(this.path, key);
+      v
     | _ ->
+      dependencies.clearLazyReads(this.path, key);
       value = this.function.call(
         dependencies,
         param,

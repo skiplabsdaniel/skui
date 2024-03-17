@@ -61,7 +61,10 @@ base mutable class Dependencies {
     value: Value,
     param: IParameter,
   ): void;
-  mutable fun add(path: Path, readers: Array<Reader>): void;
+  mutable fun addReader(path: Path, reader: Reader): void;
+  mutable fun clearLazyReads(path: Path, key: Key): void;
+  mutable fun addLazyRead(path: Path, key: Key, read: Path): void;
+  mutable fun updateLazyReaders(path: Path, key: Key): void;
   readonly fun getValue(path: Path): Value;
   readonly fun getLazyValue(path: Path, key: Key): ?Value;
   readonly fun getValueTime(path: Path): Tick;
