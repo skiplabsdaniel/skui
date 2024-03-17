@@ -6,11 +6,11 @@ base class EagerPropertyBase final (path: Path) {
   fun get(
     dependencies: mutable Dependencies,
     optReader: ?Reader = None(),
-  ): Value {
-    value = dependencies.getValue(this.path);
+  ): Object {
+    value = dependencies.getObject(this.path);
     optReader.each(reader -> {
       reader match {
-      | LazyReader(key, p) -> dependencies.addLazyRead(p, key, this.path)
+      | LazyReader(param, p) -> dependencies.addLazyRead(p, param, this.path)
       | EagerReader _ -> void
       };
       dependencies.addReader(this.path, reader)
@@ -23,15 +23,15 @@ base class EagerPropertyBase final (path: Path) {
   }
 
   fun getTime(dependencies: mutable Dependencies): Tick {
-    dependencies.getValueTime(this.path)
+    dependencies.getObjectTime(this.path)
   }
 }
 
 class EagerProperty extends EagerPropertyBase, IEagerProperty
 
 class InputProperty extends EagerPropertyBase, IInputProperty {
-  fun set(dependencies: mutable Dependencies, value: Value): void {
-    current = dependencies.getValue(this.path);
+  fun set(dependencies: mutable Dependencies, value: Object): void {
+    current = dependencies.getObject(this.path);
     if (native_eq(current, value) != 0) {
       dependencies.set(this.path, this, value);
     }
@@ -44,29 +44,28 @@ class LazyProperty(function: LazyFunction, path: Path) extends ILazyProperty {
     dependencies: mutable Dependencies,
     param: IParameter,
     optReader: ?Reader = None(),
-  ): Value {
+  ): Object {
     // Register read to update reader
-    value = this.getValue(dependencies, param);
+    value = this.getObject(dependencies, param);
     optReader.each(reader -> dependencies.addReader(this.path, reader));
     value
   }
 
-  protected fun getValue(
+  protected fun getObject(
     dependencies: mutable Dependencies,
     param: IParameter,
-  ): Value {
+  ): Object {
     // TODO ASSERT All values are validated at this moment
-    key = param.toKey();
-    dependencies.getLazyValue(this.path, key) match {
+    dependencies.getLazyObject(this.path, param) match {
     | Some(v) ->
-      dependencies.updateLazyReaders(this.path, key);
+      dependencies.updateLazyReaders(this.path, param);
       v
     | _ ->
-      dependencies.clearLazyReads(this.path, key);
+      dependencies.clearLazyReads(this.path, param);
       value = this.function.call(
         dependencies,
         param,
-        Some(LazyReader(key, this.path)),
+        Some(LazyReader(param, this.path)),
       );
       dependencies.setLazy(this.path, this, value, param);
       value
@@ -76,7 +75,7 @@ class LazyProperty(function: LazyFunction, path: Path) extends ILazyProperty {
   fun untrackedCompute(
     dependencies: mutable Dependencies,
     param: IParameter,
-  ): Value {
+  ): Object {
     this.function.call(dependencies, param, None());
   }
 
@@ -85,7 +84,7 @@ class LazyProperty(function: LazyFunction, path: Path) extends ILazyProperty {
   }
 
   fun getTime(dependencies: mutable Dependencies): Tick {
-    dependencies.getValueTime(this.path)
+    dependencies.getObjectTime(this.path)
   }
 }
 

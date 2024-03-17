@@ -44,15 +44,15 @@ mutable class ScopeImpl(
   mutable scopes: SortedMap<Int, mutable ScopeImpl> = SortedMap[],
   mutable readers: SortedMap<Int, Readers> = SortedMap[],
   mutable combines: SortedMap<Int, Function> = SortedMap[],
-  mutable values: SortedMap<Int, TimedValue> = SortedMap[],
-  mutable lazyValues: SortedMap<(Int, Key), TimedValue> = SortedMap[],
-  mutable lazyReads: SortedMap<(Int, Key), Reads> = SortedMap[],
+  mutable values: SortedMap<Int, TimedObject> = SortedMap[],
+  mutable lazyObjects: SortedMap<(Int, IParameter), TimedObject> = SortedMap[],
+  mutable lazyReads: SortedMap<(Int, IParameter), Reads> = SortedMap[],
   // Respect insert order
   invalidateds: mutable Set<Int> = mutable Set[],
-  mutable lazys: SortedSet<(Int, Key)> = SortedSet[],
+  mutable lazys: SortedSet<(Int, IParameter)> = SortedSet[],
 ) extends Dependencies, Scope {
   //
-  mutable fun input(supplier: ValueSupplier): IInputProperty {
+  mutable fun input(supplier: ObjectSupplier): IInputProperty {
     id = this.properties.size();
     value = supplier match {
     | Statefull(fn) ->
@@ -67,7 +67,7 @@ mutable class ScopeImpl(
     | Stateless(value) -> value
     };
     prop = InputProperty(Path(this.properties.size(), Some(this.path)));
-    this.!values = this.values.set(id, TimedValue(value, this.tick()));
+    this.!values = this.values.set(id, TimedObject(value, this.tick()));
     this.properties.push(prop);
     prop
   }
@@ -85,7 +85,7 @@ mutable class ScopeImpl(
     id = this.properties.size();
     property = EagerProperty(Path(id, Some(this.path)));
     value = function.call(this, Some(EagerReader(property.path)));
-    this.!values = this.values.set(id, TimedValue(value, this.tick()));
+    this.!values = this.values.set(id, TimedObject(value, this.tick()));
     this.!combines = this.combines.set(id, function);
     this.properties.push(property);
     property
@@ -95,37 +95,46 @@ mutable class ScopeImpl(
     this.tick()
   }
 
-  readonly fun hasValue(path: Path): Bool {
+  readonly fun hasObject(path: Path): Bool {
     path.optParent match {
     | Some(parent) if (parent == this.path) -> this.values.containsKey(path.id)
-    | Some _ -> this.optParent.fromSome().hasValue(path)
+    | Some _ -> this.optParent.fromSome().hasObject(path)
     | _ -> invariant_violation("Property have to get scope parent")
     }
   }
 
-  readonly fun getValue(path: Path): Value {
+  readonly fun getObject(path: Path): Object {
     path.optParent match {
     | Some(parent) if (parent == this.path) -> this.values.get(path.id).value
-    | Some _ -> this.optParent.fromSome().getValue(path)
+    | Some _ -> this.optParent.fromSome().getObject(path)
     | _ -> invariant_violation("Property have to get scope parent")
     }
   }
 
-  readonly fun getLazyValue(path: Path, key: Key): ?Value {
+  readonly fun getLazyObject(path: Path, param: IParameter): ?Object {
     path.optParent match {
     | Some(parent) if (parent == this.path) ->
-      if (this.lazys.contains((path.id, key))) return None();
+      if (this.lazys.contains((path.id, param))) return None();
       // Reads need to be registered
-      this.lazyValues.maybeGet((path.id, key)).map(v -> v.value)
-    | Some _ -> this.optParent.fromSome().getLazyValue(path, key)
+      this.lazyObjects.maybeGet((path.id, param)).map(v -> v.value)
+    | Some _ -> this.optParent.fromSome().getLazyObject(path, param)
     | _ -> invariant_violation("Property have to get scope parent")
     }
   }
 
-  readonly fun getValueTime(path: Path): Tick {
+  readonly fun getObjectTime(path: Path): Tick {
     path.optParent match {
     | Some(parent) if (parent == this.path) -> this.values.get(path.id).tick
-    | Some _ -> this.optParent.fromSome().getValueTime(path)
+    | Some _ -> this.optParent.fromSome().getObjectTime(path)
+    | _ -> invariant_violation("Property have to get scope parent")
+    }
+  }
+
+  readonly fun getLazyObjectTime(path: Path, param: IParameter): ?Tick {
+    path.optParent match {
+    | Some(parent) if (parent == this.path) ->
+      this.lazyObjects.maybeGet((path.id, param)).map(v -> v.tick)
+    | Some _ -> this.optParent.fromSome().getLazyObjectTime(path, param)
     | _ -> invariant_violation("Property have to get scope parent")
     }
   }
@@ -135,29 +144,28 @@ mutable class ScopeImpl(
     this.!readers = this.readers.remove(id);
   }
 
-  private mutable fun setIn(id: Int, readable: IProperty, value: Value): void {
+  private mutable fun setIn(id: Int, readable: IProperty, value: Object): void {
     this.properties.set(id, readable);
-    this.!values = this.values.set(id, TimedValue(value, this.tick()));
+    this.!values = this.values.set(id, TimedObject(value, this.tick()));
     this.invalidateReaders(id)
   }
 
   private mutable fun setLazyIn(
     id: Int,
     property: ILazyProperty,
-    value: Value,
+    value: Object,
     param: IParameter,
   ): void {
-    key = param.toKey();
     this.properties.set(id, property);
-    this.!lazyValues = this.lazyValues.set(
-      (id, key),
-      TimedValue(value, this.tick()),
+    this.!lazyObjects = this.lazyObjects.set(
+      (id, param),
+      TimedObject(value, this.tick()),
     );
-    this.!lazys = this.lazys.remove((id, key));
+    this.!lazys = this.lazys.remove((id, param));
     this.invalidateReaders(id)
   }
 
-  mutable fun set(path: Path, property: IProperty, value: Value): void {
+  mutable fun set(path: Path, property: IProperty, value: Object): void {
     path.optParent match {
     | Some(parent) if (parent == this.path) ->
       this.setIn(path.id, property, value)
@@ -169,7 +177,7 @@ mutable class ScopeImpl(
   mutable fun setLazy(
     path: Path,
     property: ILazyProperty,
-    value: Value,
+    value: Object,
     param: IParameter,
   ): void {
     path.optParent match {
@@ -194,36 +202,36 @@ mutable class ScopeImpl(
     }
   }
 
-  mutable fun clearLazyReads(path: Path, key: Key): void {
+  mutable fun clearLazyReads(path: Path, param: IParameter): void {
     path.optParent match {
     | Some(parent) if (parent == this.path) ->
-      this.!lazyReads = this.lazyReads.remove((path.id, key))
-    | Some _ -> this.optParent.fromSome().clearLazyReads(path, key)
+      this.!lazyReads = this.lazyReads.remove((path.id, param))
+    | Some _ -> this.optParent.fromSome().clearLazyReads(path, param)
     | _ -> invariant_violation("Property have to get scope parent")
     }
   }
 
-  mutable fun updateLazyReaders(path: Path, key: Key): void {
+  mutable fun updateLazyReaders(path: Path, param: IParameter): void {
     path.optParent match {
     | Some(parent) if (parent == this.path) ->
-      this.lazyReads.maybeGet((path.id, key)).each(reads ->
-        reads.each(p -> this.addReader(p, LazyReader(key, path)))
+      this.lazyReads.maybeGet((path.id, param)).each(reads ->
+        reads.each(p -> this.addReader(p, LazyReader(param, path)))
       )
-    | Some _ -> this.optParent.fromSome().updateLazyReaders(path, key)
+    | Some _ -> this.optParent.fromSome().updateLazyReaders(path, param)
     | _ -> invariant_violation("Property have to get scope parent")
     }
   }
 
-  mutable fun addLazyRead(path: Path, key: Key, read: Path): void {
+  mutable fun addLazyRead(path: Path, param: IParameter, read: Path): void {
     path.optParent match {
     | Some(parent) if (parent == this.path) ->
-      rds = this.lazyReads.maybeGet((path.id, key)) match {
+      rds = this.lazyReads.maybeGet((path.id, param)) match {
       | Some(rds) -> rds
       | _ -> Reads()
       };
       !rds = rds.add(read);
-      this.!lazyReads = this.lazyReads.set((path.id, key), rds)
-    | Some _ -> this.optParent.fromSome().addLazyRead(path, key, read)
+      this.!lazyReads = this.lazyReads.set((path.id, param), rds)
+    | Some _ -> this.optParent.fromSome().addLazyRead(path, param, read)
     | _ -> invariant_violation("Property have to get scope parent")
     }
   }
@@ -233,7 +241,7 @@ mutable class ScopeImpl(
     | Some(parent) if (parent == this.path) ->
       reader match {
       | EagerReader(p) -> this.invalidateds.insert(p.id)
-      | LazyReader(key, p) -> this.!lazys = this.lazys.set((p.id, key))
+      | LazyReader(param, p) -> this.!lazys = this.lazys.set((p.id, param))
       }
     | Some _ -> this.optParent.fromSome().invalidate(reader)
     | _ -> invariant_violation("Property have to get scope parent")
@@ -246,6 +254,16 @@ mutable class ScopeImpl(
     | Some _ -> this.optParent.fromSome().get(path)
     | _ -> invariant_violation("Property have to get scope parent")
     }
+  }
+
+  mutable fun invalidateExternalReaders(): void {
+    this.readers.each((_, v) ->
+      v.each(r ->
+        if (r.path.isChildOf(this.path)) {
+          this.invalidate(r);
+        }
+      )
+    );
   }
 
   mutable fun update(): void {
@@ -271,7 +289,7 @@ mutable class ScopeImpl(
       }
     };
     // Clear all uncomputed lazy values
-    this.lazys.each(lv -> this.!lazyValues = this.lazyValues.remove(lv));
+    this.lazys.each(lv -> this.!lazyObjects = this.lazyObjects.remove(lv));
     this.invalidateds.clear();
     this.!lazys = SortedSet[];
   }

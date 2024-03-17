@@ -25,7 +25,7 @@ mutable class Context private (
     this.scope.update();
   }
 
-  mutable fun input(supplier: ValueSupplier): IInputProperty {
+  mutable fun input(supplier: ObjectSupplier): IInputProperty {
     this.scope.input(supplier);
   }
 
@@ -37,19 +37,27 @@ mutable class Context private (
     this.scope.combine(function);
   }
 
-  mutable fun get<T>(property: IEagerProperty, conv: Value ~> T): T {
-    conv(property.get(this.scope, None()));
+  readonly fun get<T>(property: IEagerProperty, conv: Object ~> T): T {
+    conv(this.scope.getObject(property.getPath()))
   }
 
-  mutable fun getLazy<T: frozen>(
+  readonly fun getLazy<T>(
     property: ILazyProperty,
-    conv: Value ~> T,
     param: IParameter,
-  ): T {
-    conv(property.get(this.scope, param, None()));
+    conv: Object ~> T,
+  ): ?T {
+    this.scope.getLazyObject(property.getPath(), param).map(conv)
   }
 
-  mutable fun set<T>(property: IInputProperty, value: Value): void {
+  readonly fun getTime(property: IEagerProperty): Tick {
+    this.scope.getObjectTime(property.getPath())
+  }
+
+  readonly fun getLazyTime(property: ILazyProperty, param: IParameter): ?Tick {
+    this.scope.getLazyObjectTime(property.getPath(), param)
+  }
+
+  mutable fun set<T>(property: IInputProperty, value: Object): void {
     property.set(this.scope, value);
   }
 }

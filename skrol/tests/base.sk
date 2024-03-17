@@ -8,10 +8,12 @@ fun first(): void {
   i1 = context.input(SKROL.int(0).sl());
   i2 = context.input(SKROL.int(0).sl());
   i3 = context.combine(
-    SKROL.Function(Array[i1, i2], gs ~>
-      SKROL.IntValue::type(gs(0)) + SKROL.IntValue::type(gs(1))
+    SKROL.Function(Array[i1, i2], Array[], (gs, _lgs) ~>
+      SKROL.IntObject::type(gs(0)) + SKROL.IntObject::type(gs(1))
     ),
   );
+  // mark the end of initialization
+  context.horloge.next();
   get = prop -> context.get(prop, SKROL.toint);
   got = Array[i1, i2, i3].map(get);
   expect = Array[0, 0, 0];
@@ -22,13 +24,58 @@ fun first(): void {
   !got = Array[i1, i2, i3].map(get);
   !expect = Array[1, 0, 1];
   debug((got, expect));
-  T.expectEq(Array[i1, i2, i3].map(get), Array[1, 0, 1]);
+  T.expectEq(got, expect);
   context.set(i2, SKROL.int(2));
   context.update();
   !got = Array[i1, i2, i3].map(get);
   !expect = Array[1, 2, 3];
   debug((got, expect));
-  T.expectEq(Array[i1, i2, i3].map(get), Array[1, 2, 3]);
+  T.expectEq(got, expect);
+}
+
+fun lazyFunction(
+  _gs: Int -> SKROL.Object,
+  _lgs: (Int, SKROL.IParameter) -> SKROL.Object,
+  param: SKROL.IParameter,
+): SKROL.Object {
+  SKROL.IntObject(SKROL.IntParam::ptype(param).value)
+}
+
+@test
+fun firstLazy(): void {
+  context = SKROL.Context::create();
+  i1 = context.input(SKROL.int(0).sl());
+  i2 = context.lazy(SKROL.LazyFunction(Array[], Array[], lazyFunction));
+  param = SKROL.IntParam(2);
+  i3 = context.combine(
+    SKROL.Function(Array[i1], Array[i2], (gs, lgs) ~>
+      SKROL.IntObject::type(gs(0)) + SKROL.IntObject::type(lgs(0, param))
+    ),
+  );
+  // mark the end of initialization
+  context.horloge.next();
+  get = (prop: SKROL.IEagerProperty) -> context.get(prop, SKROL.toint);
+  lget = prop -> context.getLazy(prop, param, SKROL.toint);
+  got = Array[Some(get(i1)), lget(i2), Some(get(i3))];
+  expect = Array[Some(0), Some(2), Some(2)];
+  debug((got, expect));
+  T.expectEq(got, expect);
+  context.set(i1, SKROL.int(1));
+  context.update();
+  !got = Array[Some(get(i1)), lget(i2), Some(get(i3))];
+  !expect = Array[Some(1), Some(2), Some(3)];
+  debug((got, expect));
+  T.expectEq(got, expect);
+  getTime = (prop: SKROL.IEagerProperty) -> context.getTime(prop);
+  lgetTime = prop -> context.getLazyTime(prop, param);
+  !got = Array[
+    Some(getTime(i1).value),
+    lgetTime(i2).map(v -> v.value),
+    Some(getTime(i3).value),
+  ];
+  !expect = Array[Some(1), Some(0), Some(2)];
+  debug((got, expect));
+  T.expectEq(got, expect);
 }
 
 module end;

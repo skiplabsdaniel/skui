@@ -13,6 +13,10 @@ class Path(id: Int, optParent: ?Path = None()) uses Orderable, Hashable {
     | v -> v
     }
   }
+
+  fun isChildOf(path: Path): Bool {
+    path.optParent.map(p -> p == this || this.isChildOf(p)).default(false)
+  }
 }
 
 base class Ref(scope: Array<Int>, value: Int) {
@@ -21,21 +25,18 @@ base class Ref(scope: Array<Int>, value: Int) {
   | Lazy
 }
 
-base class Value
-base class Key uses Orderable
+base class Object
 
-base class IParameter {
-  fun toKey(): Key;
-}
+base class IParameter uses Orderable
 
-value class TimedValue(value: Value, tick: Tick)
+value class TimedObject(value: Object, tick: Tick)
 
-class Nil() extends Value
+class Nil() extends Object
 
-base class ValueSupplier {
+base class ObjectSupplier {
   children =
-  | Statefull((mutable Scope) ~> Value)
-  | Stateless(value: Value)
+  | Statefull((mutable Scope) ~> Object)
+  | Stateless(value: Object)
 }
 
 base class Dependency {
@@ -44,9 +45,17 @@ base class Dependency {
   | Multiple(Array<Ref>, valid: Int)
 }
 
-trait ValueToTyped {
-  macro static fun type(obj: Value): this {
+trait ObjectToTyped {
+  macro static fun type(obj: Object): this {
     obj match {
+    | x @ #ThisClass _ -> x
+    }
+  }
+}
+
+trait ParamToTyped {
+  macro static fun ptype(param: IParameter): this {
+    param match {
     | x @ #ThisClass _ -> x
     }
   }
@@ -54,30 +63,31 @@ trait ValueToTyped {
 
 base mutable class Dependencies {
   mutable fun getTick(): Tick;
-  mutable fun set(path: Path, property: IProperty, value: Value): void;
+  mutable fun set(path: Path, property: IProperty, value: Object): void;
   mutable fun setLazy(
     path: Path,
     property: ILazyProperty,
-    value: Value,
+    value: Object,
     param: IParameter,
   ): void;
   mutable fun addReader(path: Path, reader: Reader): void;
-  mutable fun clearLazyReads(path: Path, key: Key): void;
-  mutable fun addLazyRead(path: Path, key: Key, read: Path): void;
-  mutable fun updateLazyReaders(path: Path, key: Key): void;
-  readonly fun getValue(path: Path): Value;
-  readonly fun getLazyValue(path: Path, key: Key): ?Value;
-  readonly fun getValueTime(path: Path): Tick;
+  mutable fun clearLazyReads(path: Path, param: IParameter): void;
+  mutable fun addLazyRead(path: Path, param: IParameter, read: Path): void;
+  mutable fun updateLazyReaders(path: Path, param: IParameter): void;
+  readonly fun getObject(path: Path): Object;
+  readonly fun getLazyObject(path: Path, param: IParameter): ?Object;
+  readonly fun getObjectTime(path: Path): Tick;
 }
 
 base mutable class Scope {
-  mutable fun input(supplier: ValueSupplier): IInputProperty;
+  mutable fun input(supplier: ObjectSupplier): IInputProperty;
   mutable fun lazy(function: LazyFunction): ILazyProperty;
   mutable fun combine(function: Function): IEagerProperty;
+  mutable fun invalidateExternalReaders(): void;
 }
 
 base mutable class Properties {
-  mutable fun get(property: Ref, untrackted: Bool = false): Value;
+  mutable fun get(property: Ref, untrackted: Bool = false): Object;
   // lazy ??
 }
 
@@ -90,7 +100,7 @@ base class IReadable {
   fun get(
     dependencies: mutable Dependencies,
     optReader: ?Reader = None(),
-  ): Value;
+  ): Object;
   fun getTime(dependencies: mutable Dependencies): Tick;
 }
 
@@ -99,22 +109,22 @@ base class ILazyReadable {
     dependencies: mutable Dependencies,
     param: IParameter,
     optReader: ?Reader = None(),
-  ): Value;
+  ): Object;
   fun getTime(dependencies: mutable Dependencies): Tick;
 }
 
 base class Mappable {
-  fun map(dependencies: mutable Dependencies, fn: Value ~> Value): Eager;
+  fun map(dependencies: mutable Dependencies, fn: Object ~> Object): Eager;
 }
 
 base class IWritable {
-  fun set(dependencies: mutable Dependencies, value: Value): void;
+  fun set(dependencies: mutable Dependencies, value: Object): void;
 }
 
 base class Reader(path: Path) uses Orderable {
   children =
   | EagerReader()
-  | LazyReader(key: Key)
+  | LazyReader(param: IParameter)
 }
 
 base class IProperty {
@@ -125,27 +135,39 @@ base class IEagerProperty extends IProperty, IReadable
 base class ILazyProperty extends IProperty, ILazyReadable
 base class IInputProperty extends IEagerProperty, IWritable
 
-class Function(inputs: Array<IEagerProperty>, fn: (Int -> Value) ~> Value) {
-  fun call(dependencies: mutable Dependencies, optReader: ?Reader): Value {
-    this.fn(idx -> this.inputs[idx].get(dependencies, optReader))
+class Function(
+  inputs: Array<IEagerProperty>,
+  lazys: Array<ILazyProperty>,
+  fn: (Int -> Object, (Int, IParameter) -> Object) ~> Object,
+) {
+  fun call(dependencies: mutable Dependencies, optReader: ?Reader): Object {
+    this.fn(
+      idx -> this.inputs[idx].get(dependencies, optReader),
+      (idx, param) -> this.lazys[idx].get(dependencies, param, optReader),
+    )
   }
 }
 
 class LazyFunction(
   inputs: Array<IEagerProperty>,
-  fn: (Int -> Value, IParameter) ~> Value,
+  lazys: Array<ILazyProperty>,
+  fn: (Int -> Object, (Int, IParameter) -> Object, IParameter) ~> Object,
 ) {
   fun call(
     dependencies: mutable Dependencies,
     param: IParameter,
     optReader: ?Reader,
-  ): Value {
-    this.fn(idx -> this.inputs[idx].get(dependencies, optReader), param)
+  ): Object {
+    this.fn(
+      idx -> this.inputs[idx].get(dependencies, optReader),
+      (idx, param) -> this.lazys[idx].get(dependencies, param, optReader),
+      param,
+    )
   }
 }
 
-trait StatelessValue {
-  macro fun sl(): ValueSupplier {
+trait StatelessObject {
+  macro fun sl(): ObjectSupplier {
     Stateless(this)
   }
 }
@@ -191,18 +213,18 @@ trait NumberContainer<T: Number> extends Number {
   }
 }
 
-class IntValue(
+class IntObject(
   value: Int,
 )
-  extends Value
-  uses ValueToTyped, NumberContainer<Int>, StatelessValue, Orderable {
+  extends Object
+  uses ObjectToTyped, NumberContainer<Int>, StatelessObject, Orderable {
   //
   protected fun getValue(): Int {
     this.value
   }
 
-  protected fun create(value: Int): IntValue {
-    IntValue(value)
+  protected fun create(value: Int): IntObject {
+    IntObject(value)
   }
 
   fun toString(): String {
@@ -210,11 +232,11 @@ class IntValue(
   }
 }
 
-class FloatValue(
+class FloatObject(
   value: Float,
 )
-  extends Value
-  uses ValueToTyped, NumberContainer<Float>, StatelessValue, Orderable {
+  extends Object
+  uses ObjectToTyped, NumberContainer<Float>, StatelessObject, Orderable {
   //
   protected fun getValue(): Float {
     this.value
@@ -229,32 +251,35 @@ class FloatValue(
   }
 }
 
-class BoolValue(value: Bool) extends Value uses ValueToTyped
-class StringValue(value: String) extends Value uses ValueToTyped
-class RangeValue(value: Range) extends Value uses ValueToTyped
+class BoolObject(value: Bool) extends Object uses ObjectToTyped
+class StringObject(value: String) extends Object uses ObjectToTyped
+class RangeObject(value: Range) extends Object uses ObjectToTyped
 
-fun int(v: Int): IntValue {
-  IntValue(v)
+fun int(v: Int): IntObject {
+  IntObject(v)
 }
 
-fun toint(v: Value): Int {
-  IntValue::type(v).value
+fun toint(v: Object): Int {
+  IntObject::type(v).value
 }
 
-fun float(v: Float): FloatValue {
-  FloatValue(v)
+fun float(v: Float): FloatObject {
+  FloatObject(v)
 }
 
-fun tofloat(v: Value): Float {
-  FloatValue::type(v).value
+fun tofloat(v: Object): Float {
+  FloatObject::type(v).value
 }
 
-fun bool(v: Bool): BoolValue {
-  BoolValue(v)
+fun bool(v: Bool): BoolObject {
+  BoolObject(v)
 }
 
-fun tobool(v: Value): Bool {
-  BoolValue::type(v).value
+fun tobool(v: Object): Bool {
+  BoolObject::type(v).value
 }
+
+class IntParam(value: Int) extends IParameter uses ParamToTyped
+class FloatParam(value: Float) extends IParameter uses ParamToTyped
 
 module end;
