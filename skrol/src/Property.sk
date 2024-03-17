@@ -1,14 +1,13 @@
 module SKROL;
 
-base class Supplier(path: Path) extends Property {
+base class EagerPropertyBase final (path: Path) {
   //
-  protected fun computeValue(dependencies: mutable Dependencies): Value;
 
   fun get(
     dependencies: mutable Dependencies,
     optReader: ?Reader = None(),
   ): Value {
-    value = this.computeValue(dependencies);
+    value = dependencies.getValue(this.path);
     optReader.each(reader -> dependencies.add(this.path, Array[reader]));
     value
   }
@@ -16,54 +15,68 @@ base class Supplier(path: Path) extends Property {
   fun getPath(): Path {
     this.path
   }
-}
 
-base class EagerPropertyBase(value: Value, tick: Tick) extends Supplier {
-  //
-  protected fun computeValue(_: mutable Dependencies): Value {
-    this.value
-  }
-
-  fun getTime(): Tick {
-    this.tick
+  fun getTime(dependencies: mutable Dependencies): Tick {
+    dependencies.getValueTime(this.path)
   }
 }
 
-class EagerProperty extends EagerPropertyBase
+class EagerProperty extends EagerPropertyBase, IEagerProperty
 
-class InputProperty extends EagerPropertyBase, Writable {
+class InputProperty extends EagerPropertyBase, IInputProperty {
   fun set(dependencies: mutable Dependencies, value: Value): void {
-    if (native_eq(this.value, value) == 0) {
-      !this.value = value;
-      !this.tick = dependencies.getTick();
-      dependencies.set(this.path, this);
+    current = dependencies.getValue(this.path);
+    if (native_eq(current, value) != 0) {
+      dependencies.set(this.path, this, value);
     }
   }
 }
 
-class LazyProperty(
-  function: Function,
-  optTimedValue: ?TimedValue,
-) extends Supplier {
+class LazyProperty(function: LazyFunction, path: Path) extends ILazyProperty {
   //
-  protected fun computeValue(dependencies: mutable Dependencies): Value {
-    (value, prop) = this.optTimedValue match {
-    | Some(timedValue) -> (timedValue.value, this)
-    | _ ->
-      value = this.function.call(dependencies, Some(this));
-      (
-        value,
-        this with {
-          optTimedValue => Some(TimedValue(value, dependencies.getTick())),
-        },
-      )
-    };
-    dependencies.set(this.path, prop);
+  fun get(
+    dependencies: mutable Dependencies,
+    param: IParameter,
+    optReader: ?Reader = None(),
+  ): Value {
+    // Register read to update reader
+    value = this.getValue(dependencies, param);
+    optReader.each(reader -> dependencies.add(this.path, Array[reader]));
     value
   }
 
-  fun getTime(): Tick {
-    this.optTimedValue.map(v -> v.tick).default(Tick(0))
+  protected fun getValue(
+    dependencies: mutable Dependencies,
+    param: IParameter,
+  ): Value {
+    // TODO ASSERT All values are validated at this moment
+    key = param.toKey();
+    dependencies.getLazyValue(this.path, key) match {
+    | Some(v) -> v
+    | _ ->
+      value = this.function.call(
+        dependencies,
+        param,
+        Some(LazyReader(key, this.path)),
+      );
+      dependencies.setLazy(this.path, this, value, param);
+      value
+    }
+  }
+
+  fun untrackedCompute(
+    dependencies: mutable Dependencies,
+    param: IParameter,
+  ): Value {
+    this.function.call(dependencies, param, None());
+  }
+
+  fun getPath(): Path {
+    this.path
+  }
+
+  fun getTime(dependencies: mutable Dependencies): Tick {
+    dependencies.getValueTime(this.path)
   }
 }
 

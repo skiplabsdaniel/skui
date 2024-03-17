@@ -1,0 +1,257 @@
+module SKROL;
+
+value class Tick(value: Int) {
+  fun next(): this {
+    static(this.value + 1)
+  }
+}
+
+class Path(id: Int, optParent: ?Path = None()) uses Orderable, Hashable {
+  fun compare(other: Path): Order {
+    this.optParent.compare(other.optParent) match {
+    | EQ() -> this.id.compare(other.id)
+    | v -> v
+    }
+  }
+}
+
+base class Ref(scope: Array<Int>, value: Int) {
+  children =
+  | Eager
+  | Lazy
+}
+
+base class Value
+base class Key uses Orderable
+
+base class IParameter {
+  fun toKey(): Key;
+}
+
+value class TimedValue(value: Value, tick: Tick)
+
+class Nil() extends Value
+
+base class ValueSupplier {
+  children =
+  | Statefull((mutable Scope) ~> Value)
+  | Stateless(value: Value)
+}
+
+base class Dependency {
+  children =
+  | Single(Ref)
+  | Multiple(Array<Ref>, valid: Int)
+}
+
+trait ValueToTyped {
+  macro static fun type(obj: Value): this {
+    obj match {
+    | x @ #ThisClass _ -> x
+    }
+  }
+}
+
+base mutable class Dependencies {
+  mutable fun getTick(): Tick;
+  mutable fun set(path: Path, property: IProperty, value: Value): void;
+  mutable fun setLazy(
+    path: Path,
+    property: ILazyProperty,
+    value: Value,
+    param: IParameter,
+  ): void;
+  mutable fun add(path: Path, readers: Array<Reader>): void;
+  readonly fun getValue(path: Path): Value;
+  readonly fun getLazyValue(path: Path, key: Key): ?Value;
+  readonly fun getValueTime(path: Path): Tick;
+}
+
+base mutable class Scope {
+  mutable fun input(supplier: ValueSupplier): IInputProperty;
+  mutable fun lazy(function: LazyFunction): ILazyProperty;
+  mutable fun combine(function: Function): IEagerProperty;
+}
+
+base mutable class Properties {
+  mutable fun get(property: Ref, untrackted: Bool = false): Value;
+  // lazy ??
+}
+
+base class State(
+  update: (mutable Properties, Array<Ref>, Array<Ref>) ~> void,
+  init: ?(mutable Scope, Array<Ref>) ~> Array<Ref> = None(),
+)
+
+base class IReadable {
+  fun get(
+    dependencies: mutable Dependencies,
+    optReader: ?Reader = None(),
+  ): Value;
+  fun getTime(dependencies: mutable Dependencies): Tick;
+}
+
+base class ILazyReadable {
+  fun get(
+    dependencies: mutable Dependencies,
+    param: IParameter,
+    optReader: ?Reader = None(),
+  ): Value;
+  fun getTime(dependencies: mutable Dependencies): Tick;
+}
+
+base class Mappable {
+  fun map(dependencies: mutable Dependencies, fn: Value ~> Value): Eager;
+}
+
+base class IWritable {
+  fun set(dependencies: mutable Dependencies, value: Value): void;
+}
+
+base class Reader(path: Path) uses Orderable {
+  children =
+  | EagerReader()
+  | LazyReader(key: Key)
+}
+
+base class IProperty {
+  fun getPath(): Path;
+}
+
+base class IEagerProperty extends IProperty, IReadable
+base class ILazyProperty extends IProperty, ILazyReadable
+base class IInputProperty extends IEagerProperty, IWritable
+
+class Function(inputs: Array<IEagerProperty>, fn: (Int -> Value) ~> Value) {
+  fun call(dependencies: mutable Dependencies, optReader: ?Reader): Value {
+    this.fn(idx -> this.inputs[idx].get(dependencies, optReader))
+  }
+}
+
+class LazyFunction(
+  inputs: Array<IEagerProperty>,
+  fn: (Int -> Value, IParameter) ~> Value,
+) {
+  fun call(
+    dependencies: mutable Dependencies,
+    param: IParameter,
+    optReader: ?Reader,
+  ): Value {
+    this.fn(idx -> this.inputs[idx].get(dependencies, optReader), param)
+  }
+}
+
+trait StatelessValue {
+  macro fun sl(): ValueSupplier {
+    Stateless(this)
+  }
+}
+
+trait NumberContainer<T: Number> extends Number {
+  protected fun getValue(): T;
+  protected fun create(T): inst;
+
+  fun +(other: inst): inst {
+    this.create(this.getValue() + other.getValue())
+  }
+
+  fun -(other: inst): inst {
+    this.create(this.getValue() - other.getValue())
+  }
+
+  fun *(other: inst): inst {
+    this.create(this.getValue() * other.getValue())
+  }
+
+  fun /(other: inst): inst {
+    this.create(this.getValue() / other.getValue())
+  }
+
+  fun negate(): inst {
+    this.create(this.getValue().negate())
+  }
+
+  fun toFloat(): Float {
+    this.getValue().toFloat()
+  }
+
+  fun toInt(): Int {
+    this.getValue().toInt()
+  }
+
+  fun fromInt(x: Int): inst {
+    this.create(this.getValue().fromInt(x))
+  }
+
+  fun fromFloat(x: Float): inst {
+    this.create(this.getValue().fromFloat(x))
+  }
+}
+
+class IntValue(
+  value: Int,
+)
+  extends Value
+  uses ValueToTyped, NumberContainer<Int>, StatelessValue, Orderable {
+  //
+  protected fun getValue(): Int {
+    this.value
+  }
+
+  protected fun create(value: Int): IntValue {
+    IntValue(value)
+  }
+
+  fun toString(): String {
+    this.value.toString()
+  }
+}
+
+class FloatValue(
+  value: Float,
+)
+  extends Value
+  uses ValueToTyped, NumberContainer<Float>, StatelessValue, Orderable {
+  //
+  protected fun getValue(): Float {
+    this.value
+  }
+
+  protected fun create(value: Float): this {
+    static(value)
+  }
+
+  fun toString(): String {
+    this.value.toString()
+  }
+}
+
+class BoolValue(value: Bool) extends Value uses ValueToTyped
+class StringValue(value: String) extends Value uses ValueToTyped
+class RangeValue(value: Range) extends Value uses ValueToTyped
+
+fun int(v: Int): IntValue {
+  IntValue(v)
+}
+
+fun toint(v: Value): Int {
+  IntValue::type(v).value
+}
+
+fun float(v: Float): FloatValue {
+  FloatValue(v)
+}
+
+fun tofloat(v: Value): Float {
+  FloatValue::type(v).value
+}
+
+fun bool(v: Bool): BoolValue {
+  BoolValue(v)
+}
+
+fun tobool(v: Value): Bool {
+  BoolValue::type(v).value
+}
+
+module end;

@@ -1,0 +1,57 @@
+module SKROL;
+
+mutable class Horloge(mutable tick: Tick = Tick(0)) {
+  readonly fun get(): Tick {
+    this.tick;
+  }
+
+  mutable fun next(): void {
+    this.!tick = this.tick.next()
+  }
+}
+
+mutable class Context private (
+  scope: mutable ScopeImpl,
+  horloge: mutable Horloge,
+) {
+  static fun create(): mutable this {
+    horloge = mutable Horloge();
+    scope = mutable ScopeImpl(Path(0), horloge.get);
+    mutable Context(scope, horloge);
+  }
+
+  mutable fun update(): void {
+    this.horloge.next();
+    this.scope.update();
+  }
+
+  mutable fun input(supplier: ValueSupplier): IInputProperty {
+    this.scope.input(supplier);
+  }
+
+  mutable fun lazy(function: LazyFunction): ILazyProperty {
+    this.scope.lazy(function);
+  }
+
+  mutable fun combine(function: Function): IEagerProperty {
+    this.scope.combine(function);
+  }
+
+  mutable fun get<T>(property: IEagerProperty, conv: Value ~> T): T {
+    conv(property.get(this.scope, None()));
+  }
+
+  mutable fun getLazy<T: frozen>(
+    property: ILazyProperty,
+    conv: Value ~> T,
+    param: IParameter,
+  ): T {
+    conv(property.get(this.scope, param, None()));
+  }
+
+  mutable fun set<T>(property: IInputProperty, value: Value): void {
+    property.set(this.scope, value);
+  }
+}
+
+module end;

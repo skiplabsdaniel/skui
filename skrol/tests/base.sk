@@ -1,0 +1,34 @@
+module alias T = SKTest;
+
+module SKROLTest;
+
+@test
+fun first(): void {
+  context = SKROL.Context::create();
+  i1 = context.input(SKROL.int(0).sl());
+  i2 = context.input(SKROL.int(0).sl());
+  i3 = context.combine(
+    SKROL.Function(Array[i1, i2], gs ~>
+      SKROL.IntValue::type(gs(0)) + SKROL.IntValue::type(gs(1))
+    ),
+  );
+  get = prop -> context.get(prop, SKROL.toint);
+  got = Array[i1, i2, i3].map(get);
+  expect = Array[0, 0, 0];
+  debug((got, expect));
+  T.expectEq(got, expect);
+  context.set(i1, SKROL.int(1));
+  context.update();
+  !got = Array[i1, i2, i3].map(get);
+  !expect = Array[1, 0, 1];
+  debug((got, expect));
+  T.expectEq(Array[i1, i2, i3].map(get), Array[1, 0, 1]);
+  context.set(i2, SKROL.int(2));
+  context.update();
+  !got = Array[i1, i2, i3].map(get);
+  !expect = Array[1, 2, 3];
+  debug((got, expect));
+  T.expectEq(Array[i1, i2, i3].map(get), Array[1, 2, 3]);
+}
+
+module end;
