@@ -52,10 +52,10 @@ mutable class ScopeImpl(
   mutable lazys: SortedSet<(Int, IParameter)> = SortedSet[],
 ) extends Dependencies, Scope {
   //
-  mutable fun input(supplier: ObjectSupplier): IInputProperty {
+  mutable fun input(object: Object): IInputProperty {
     id = this.properties.size();
-    value = supplier match {
-    | Statefull(fn) ->
+    object match {
+    | sf @ StatefullObject _ ->
       // ?? Reuse
       scope = mutable ScopeImpl(
         Path(id, Some(this.path)),
@@ -63,11 +63,11 @@ mutable class ScopeImpl(
         Some(this),
       );
       this.!scopes = this.scopes.set(id, scope);
-      fn(scope)
-    | Stateless(value) -> value
+      !object = sf.init(scope)
+    | _ -> void
     };
     prop = InputProperty(Path(this.properties.size(), Some(this.path)));
-    this.!values = this.values.set(id, TimedObject(value, this.tick()));
+    this.!values = this.values.set(id, TimedObject(object, this.tick()));
     this.properties.push(prop);
     prop
   }
@@ -256,10 +256,14 @@ mutable class ScopeImpl(
     }
   }
 
-  mutable fun invalidateExternalReaders(): void {
+  mutable fun invalidateExternalReaders(optPath: ?Path = None()): void {
+    path = optPath.default(this.path);
+    this.scopes.each((_, sscope) ->
+      sscope.invalidateExternalReaders(Some(path))
+    );
     this.readers.each((_, v) ->
       v.each(r ->
-        if (r.path.isChildOf(this.path)) {
+        if (!r.path.isChildOf(path)) {
           this.invalidate(r);
         }
       )

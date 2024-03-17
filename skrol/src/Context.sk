@@ -25,7 +25,7 @@ mutable class Context private (
     this.scope.update();
   }
 
-  mutable fun input(supplier: ObjectSupplier): IInputProperty {
+  mutable fun input(supplier: Object): IInputProperty {
     this.scope.input(supplier);
   }
 

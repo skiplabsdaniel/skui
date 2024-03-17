@@ -33,18 +33,6 @@ value class TimedObject(value: Object, tick: Tick)
 
 class Nil() extends Object
 
-base class ObjectSupplier {
-  children =
-  | Statefull((mutable Scope) ~> Object)
-  | Stateless(value: Object)
-}
-
-base class Dependency {
-  children =
-  | Single(Ref)
-  | Multiple(Array<Ref>, valid: Int)
-}
-
 trait ObjectToTyped {
   macro static fun type(obj: Object): this {
     obj match {
@@ -80,21 +68,15 @@ base mutable class Dependencies {
 }
 
 base mutable class Scope {
-  mutable fun input(supplier: ObjectSupplier): IInputProperty;
+  // The object must manage the state to be able the update it
+  mutable fun input(value: Object): IInputProperty;
   mutable fun lazy(function: LazyFunction): ILazyProperty;
   mutable fun combine(function: Function): IEagerProperty;
-  mutable fun invalidateExternalReaders(): void;
 }
 
-base mutable class Properties {
-  mutable fun get(property: Ref, untrackted: Bool = false): Object;
-  // lazy ??
+base class StatefullObject extends Object {
+  fun init(scope: mutable Scope): this;
 }
-
-base class State(
-  update: (mutable Properties, Array<Ref>, Array<Ref>) ~> void,
-  init: ?(mutable Scope, Array<Ref>) ~> Array<Ref> = None(),
-)
 
 base class IReadable {
   fun get(
@@ -166,12 +148,6 @@ class LazyFunction(
   }
 }
 
-trait StatelessObject {
-  macro fun sl(): ObjectSupplier {
-    Stateless(this)
-  }
-}
-
 trait NumberContainer<T: Number> extends Number {
   protected fun getValue(): T;
   protected fun create(T): inst;
@@ -215,9 +191,7 @@ trait NumberContainer<T: Number> extends Number {
 
 class IntObject(
   value: Int,
-)
-  extends Object
-  uses ObjectToTyped, NumberContainer<Int>, StatelessObject, Orderable {
+) extends Object uses ObjectToTyped, NumberContainer<Int>, Orderable {
   //
   protected fun getValue(): Int {
     this.value
@@ -234,9 +208,7 @@ class IntObject(
 
 class FloatObject(
   value: Float,
-)
-  extends Object
-  uses ObjectToTyped, NumberContainer<Float>, StatelessObject, Orderable {
+) extends Object uses ObjectToTyped, NumberContainer<Float>, Orderable {
   //
   protected fun getValue(): Float {
     this.value
@@ -281,5 +253,11 @@ fun tobool(v: Object): Bool {
 
 class IntParam(value: Int) extends IParameter uses ParamToTyped
 class FloatParam(value: Float) extends IParameter uses ParamToTyped
+
+class DummySFO() extends StatefullObject {
+  fun init(_scope: mutable Scope): this {
+    this
+  }
+}
 
 module end;
