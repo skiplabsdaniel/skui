@@ -12,8 +12,6 @@ fun first(): void {
       SKROL.IntObject::type(gs(0)) + SKROL.IntObject::type(gs(1))
     ),
   );
-  // mark the end of initialization
-  context.horloge.next();
   get = prop -> context.get(prop, SKROL.toint);
   got = Array[i1, i2, i3].map(get);
   expect = Array[0, 0, 0];
@@ -30,7 +28,7 @@ fun first(): void {
   T.expectEq(got, expect);
   getTime = (prop: SKROL.IEagerProperty) -> context.getTime(prop).value;
   !got = Array[i1, i2, i3].map(getTime);
-  !expect = Array[1, 2, 3];
+  !expect = Array[0, 1, 2];
   T.expectEq(got, expect);
 }
 
@@ -53,8 +51,6 @@ fun firstLazy(): void {
       SKROL.IntObject::type(gs(0)) + SKROL.IntObject::type(lgs(0, param))
     ),
   );
-  // mark the end of initialization
-  context.horloge.next();
   get = (prop: SKROL.IEagerProperty) -> context.get(prop, SKROL.toint);
   lget = prop -> context.getLazy(prop, param, SKROL.toint);
   got = Array[Some(get(i1)), lget(i2), Some(get(i3))];
@@ -67,12 +63,8 @@ fun firstLazy(): void {
   T.expectEq(got, expect);
   getTime = (prop: SKROL.IEagerProperty) -> context.getTime(prop).value;
   lgetTime = prop -> context.getLazyTime(prop, param).map(v -> v.value);
-  !got = Array[
-    Some(getTime(i1)),
-    lgetTime(i2),
-    Some(getTime(i3)),
-  ];
-  !expect = Array[Some(1), Some(0), Some(2)];
+  !got = Array[Some(getTime(i1)), lgetTime(i2), Some(getTime(i3))];
+  !expect = Array[Some(0), Some(0), Some(1)];
   T.expectEq(got, expect);
 }
 

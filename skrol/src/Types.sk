@@ -17,6 +17,19 @@ class Path(id: Int, optParent: ?Path = None()) uses Orderable, Hashable {
   fun isChildOf(path: Path): Bool {
     path.optParent.map(p -> p == this || this.isChildOf(p)).default(false)
   }
+
+  fun toArray(): Array<Int> {
+    v = mutable Vector<Int>[];
+    this.fillVector(v);
+    v.toArray()
+  }
+
+  fun fillVector(buffer: mutable Vector<Int>): void {
+    this.optParent match {
+    | Some(parent) -> parent.fillVector(buffer)
+    | _ -> buffer.push(this.id)
+    }
+  }
 }
 
 base class Ref(scope: Array<Int>, value: Int) {
@@ -67,7 +80,7 @@ base mutable class Dependencies {
   readonly fun getObjectTime(path: Path): Tick;
 }
 
-base mutable class Scope {
+base mutable class IScope {
   // The object must manage the state to be able the update it
   mutable fun input(value: Object): IInputProperty;
   mutable fun lazy(function: LazyFunction): ILazyProperty;
@@ -75,7 +88,7 @@ base mutable class Scope {
 }
 
 base class StatefullObject extends Object {
-  fun init(scope: mutable Scope): this;
+  fun init(scope: mutable IScope): this;
 }
 
 base class IReadable {
@@ -255,7 +268,7 @@ class IntParam(value: Int) extends IParameter uses ParamToTyped
 class FloatParam(value: Float) extends IParameter uses ParamToTyped
 
 class DummySFO() extends StatefullObject {
-  fun init(_scope: mutable Scope): this {
+  fun init(_scope: mutable IScope): this {
     this
   }
 }

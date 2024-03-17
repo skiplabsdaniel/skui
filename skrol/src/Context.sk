@@ -1,6 +1,7 @@
 module SKROL;
 
 mutable class Horloge(mutable tick: Tick = Tick(0)) {
+  //
   readonly fun get(): Tick {
     this.tick;
   }
@@ -8,21 +9,26 @@ mutable class Horloge(mutable tick: Tick = Tick(0)) {
   mutable fun next(): void {
     this.!tick = this.tick.next()
   }
+
+  readonly fun chill(): Horloge {
+    Horloge(this.tick)
+  }
+
+  readonly fun clone(): mutable Horloge {
+    mutable Horloge(this.tick)
+  }
 }
 
-mutable class Context private (
-  scope: mutable ScopeImpl,
-  horloge: mutable Horloge,
-) {
+mutable class Context private (scope: mutable Scope, horloge: mutable Horloge) {
+  //
   static fun create(): mutable this {
-    horloge = mutable Horloge();
-    scope = mutable ScopeImpl(Path(0), horloge.get);
-    mutable Context(scope, horloge);
+    scope = mutable Scope(Path(0));
+    mutable Context(scope, mutable Horloge());
   }
 
   mutable fun update(): void {
     this.horloge.next();
-    this.scope.update();
+    this.scope.update(this.horloge.get());
   }
 
   mutable fun input(supplier: Object): IInputProperty {
@@ -37,28 +43,58 @@ mutable class Context private (
     this.scope.combine(function);
   }
 
-  readonly fun get<T>(property: IEagerProperty, conv: Object ~> T): T {
-    conv(this.scope.getObject(property.getPath()))
+  mutable fun getScope(path: Path): mutable Scope {
+    aPath = path.toArray();
+    current = this.scope;
+    invariant(aPath.first() == this.scope.path.id);
+    for (i in Range(1, aPath.size())) {
+      !current = current.scopes[i]
+    };
+    current
   }
 
-  readonly fun getLazy<T>(
+  mutable fun get<T>(property: IEagerProperty, conv: Object ~> T): T {
+    pPath = property.getPath();
+    path = pPath.optParent.fromSome();
+    scope = this.getScope(path);
+    conv(scope.getObject(pPath))
+  }
+
+  mutable fun getLazy<T>(
     property: ILazyProperty,
     param: IParameter,
     conv: Object ~> T,
   ): ?T {
-    this.scope.getLazyObject(property.getPath(), param).map(conv)
+    pPath = property.getPath();
+    path = pPath.optParent.fromSome();
+    scope = this.getScope(path);
+    scope.getLazyObject(pPath, param).map(conv)
   }
 
-  readonly fun getTime(property: IEagerProperty): Tick {
-    this.scope.getObjectTime(property.getPath())
+  mutable fun getTime(property: IEagerProperty): Tick {
+    pPath = property.getPath();
+    path = pPath.optParent.fromSome();
+    scope = this.getScope(path);
+    scope.getObjectTime(pPath)
   }
 
-  readonly fun getLazyTime(property: ILazyProperty, param: IParameter): ?Tick {
-    this.scope.getLazyObjectTime(property.getPath(), param)
+  mutable fun getLazyTime(property: ILazyProperty, param: IParameter): ?Tick {
+    pPath = property.getPath();
+    path = pPath.optParent.fromSome();
+    scope = this.getScope(path);
+    scope.getLazyObjectTime(pPath, param)
   }
 
   mutable fun set<T>(property: IInputProperty, value: Object): void {
     property.set(this.scope, value);
+  }
+
+  readonly fun chill(): Context {
+    Context(this.scope.chill(), this.horloge.chill())
+  }
+
+  readonly fun clone(): mutable Context {
+    mutable Context(this.scope.clone(), this.horloge.clone())
   }
 }
 
