@@ -1,10 +1,10 @@
 module SKROL;
 
 class Readers(
-  set: SortedSet<Reader> = SortedSet[],
-  readers: List<Reader> = List.Nil(),
+  set: SortedSet<RelativeReader> = SortedSet[],
+  readers: List<RelativeReader> = List.Nil(),
 ) {
-  fun add(reader: Reader): this {
+  fun add(reader: RelativeReader): this {
     if (this.set.contains(reader)) {
       return this;
     };
@@ -13,7 +13,7 @@ class Readers(
     this
   }
 
-  fun each(fn: Reader -> void): void {
+  fun each(fn: RelativeReader -> void): void {
     this.readers.reversed().each(fn)
   }
 }
@@ -148,7 +148,6 @@ mutable class Scope(
     readable: IProperty,
     object: Object,
   ): void {
-    // ?? Reuse
     this.scopes.maybeGet(id).each(scope -> {
       scope.invalidateExternalReaders();
       this.!scopes = this.scopes.remove(id);
@@ -156,7 +155,7 @@ mutable class Scope(
     !object = checkObject(id, this, object);
     this.properties.set(id, readable);
     this.!values = this.values.set(id, TimedObject(object, this.tick));
-    this.invalidateReaders(id)
+    this.invalidateReaders(id);
   }
 
   private mutable fun setLazyIn(
@@ -204,7 +203,7 @@ mutable class Scope(
       | Some(rds) -> rds
       | _ -> Readers()
       };
-      !rds = rds.add(reader);
+      !rds = rds.add(reader.relativeTo(this.path));
       this.!readers = this.readers.set(path.id, rds)
     | Some _ -> this.optParent.fromSome().addReader(path, reader)
     | _ -> invariant_violation("Property have to get scope parent")
@@ -245,23 +244,51 @@ mutable class Scope(
     }
   }
 
-  mutable fun invalidate(reader: Reader): void {
-    reader.path.optParent match {
-    | Some(parent) if (parent == this.path) ->
-      reader match {
-      | EagerReader(p) ->
-        this.invalidateds.insert(p.id);
+  // TODO: manage to parent vs to child directly int reader
+  mutable fun invalidate(reader: RelativeReader): void {
+    reader match {
+    | cr @ ChildReader _ ->
+      scope = this;
+      for (i in Range(0, cr.path.size() - 1)) {
+        !scope = scope.scopes[cr.path[i]]
+      };
+      id = cr.path.last();
+      cr match {
+      | EagerChildReader _ ->
+        // if statfull object already invalidated can stop the propagation
+        if (!scope.invalidateds.contains(id)) {
+          scope.invalidateds.insert(id);
+          // Propagate the invalidation to the statfull object corresponding to the scope
+          // to trigger the update
+          scope.optParent.each(s -> s.invalidate(EagerParentReader(scope.path)))
+        }
+      | LazyChildReader(param, _) ->
+        scope.!lazys = scope.lazys.set((id, param));
         // Invalidate the statfull object corresponding to the scope
         // to trigger the update
-        this.optParent.each(s -> s.invalidate(EagerReader(parent)))
-      | LazyReader(param, p) ->
-        this.!lazys = this.lazys.set((p.id, param));
-        // Invalidate the statfull object corresponding to the scope
-        // to trigger the update
-        this.optParent.each(s -> s.invalidate(EagerReader(parent)))
+        scope.optParent.each(s -> s.invalidate(EagerParentReader(scope.path)))
       }
-    | Some _ -> this.optParent.fromSome().invalidate(reader)
-    | _ -> invariant_violation("Property have to get scope parent")
+    | pr @ ParentReader _ ->
+      pr.path.optParent match {
+      | Some(parent) if (parent == this.path) ->
+        pr match {
+        | EagerParentReader(p) ->
+          // if statfull object already invalidated can stop the propagation
+          if (!this.invalidateds.contains(p.id)) {
+            this.invalidateds.insert(p.id);
+            // Propagate the invalidation to the statfull object corresponding to the scope
+            // to trigger the update
+            this.optParent.each(s -> s.invalidate(EagerParentReader(this.path)))
+          }
+        | LazyParentReader(param, p) ->
+          this.!lazys = this.lazys.set((p.id, param));
+          // Invalidate the statfull object corresponding to the scope
+          // to trigger the update
+          this.optParent.each(s -> s.invalidate(EagerParentReader(this.path)))
+        }
+      | Some _ -> this.optParent.fromSome().invalidate(reader)
+      | _ -> invariant_violation("Property have to get scope parent")
+      }
     }
   }
 
@@ -280,8 +307,12 @@ mutable class Scope(
     );
     this.readers.each((_, v) ->
       v.each(r ->
-        if (!r.path.isChildOf(path)) {
-          this.invalidate(r);
+        r match {
+        | pr @ ParentReader(p) ->
+          if (!p.isChildOf(path)) {
+            this.invalidate(pr)
+          }
+        | ChildReader _ -> void
         }
       )
     );
@@ -301,7 +332,7 @@ mutable class Scope(
           function = this.combines[invalidated];
           current = this.values[invalidated].value;
           value = function.call(this, Some(EagerReader(eager.getPath())));
-          if (native_eq(current, value) != 0) {
+          if (native_eq(current.getReference(), value.getReference()) != 0) {
             this.setIn(invalidated, eager, value);
           }
         | ILazyProperty _ ->

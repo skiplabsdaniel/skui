@@ -25,26 +25,34 @@ class Path(id: Int, optParent: ?Path = None()) uses Orderable, Hashable {
   }
 
   fun fillVector(buffer: mutable Vector<Int>): void {
-    this.optParent match {
-    | Some(parent) -> parent.fillVector(buffer)
-    | _ -> buffer.push(this.id)
-    }
+    this.optParent.each(parent -> parent.fillVector(buffer));
+    buffer.push(this.id)
+  }
+
+  fun relativeTo(path: Path): ?Array<Int> {
+    thisArray = this.toArray();
+    pathArray = path.toArray();
+    if (pathArray.size() > thisArray.size()) {
+      return None()
+    };
+    for (i in Range(0, pathArray.size())) {
+      if (thisArray[i] != pathArray[i]) {
+        return None()
+      }
+    };
+    Some(thisArray.drop(pathArray.size()));
   }
 }
 
-base class Ref(scope: Array<Int>, value: Int) {
-  children =
-  | Eager
-  | Lazy
+base class Object {
+  fun getReference(): Object;
 }
-
-base class Object
 
 base class IParameter uses Orderable
 
 value class TimedObject(value: Object, tick: Tick)
 
-class Nil() extends Object
+class Nil() extends StatelessObject
 
 trait ObjectToTyped {
   macro static fun type(obj: Object): this {
@@ -87,8 +95,14 @@ base mutable class IScope {
   mutable fun combine(function: Function): IEagerProperty;
 }
 
-base class StatefullObject extends Object {
+base class StatefullObject extends Object uses HasClassName {
   fun init(scope: mutable IScope): this;
+}
+
+base class StatelessObject extends Object {
+  fun getReference(): Object {
+    this
+  }
 }
 
 base class IReadable {
@@ -108,10 +122,6 @@ base class ILazyReadable {
   fun getTime(dependencies: mutable Dependencies): Tick;
 }
 
-base class Mappable {
-  fun map(dependencies: mutable Dependencies, fn: Object ~> Object): Eager;
-}
-
 base class IWritable {
   fun set(dependencies: mutable Dependencies, value: Object): void;
 }
@@ -120,14 +130,35 @@ base class Reader(path: Path) uses Orderable {
   children =
   | EagerReader()
   | LazyReader(param: IParameter)
+
+  fun relativeTo(ref: Path): RelativeReader
+  | EagerReader(path) ->
+    path.relativeTo(ref) match {
+    | Some(rel) -> EagerChildReader(rel)
+    | _ -> EagerParentReader(path)
+    }
+  | LazyReader(param, path) ->
+    path.relativeTo(ref) match {
+    | Some(rel) -> LazyChildReader(param, rel)
+    | _ -> LazyParentReader(param, path)
+    }
 }
+
+base class RelativeReader uses Orderable
+base class ParentReader(path: Path) extends RelativeReader
+base class ChildReader(path: Array<Int>) extends RelativeReader
+
+class EagerParentReader() extends ParentReader
+class EagerChildReader() extends ChildReader
+class LazyParentReader(param: IParameter) extends ParentReader
+class LazyChildReader(param: IParameter) extends ChildReader
 
 base class IProperty {
   fun getPath(): Path;
 }
 
-base class IEagerProperty extends IProperty, IReadable
-base class ILazyProperty extends IProperty, ILazyReadable
+base class IEagerProperty extends IProperty, IReadable uses Equality
+base class ILazyProperty extends IProperty, ILazyReadable uses Equality
 base class IInputProperty extends IEagerProperty, IWritable
 
 class Function(
@@ -147,7 +178,7 @@ class LazyFunction(
   inputs: Array<IEagerProperty>,
   lazys: Array<ILazyProperty>,
   fn: (Int -> Object, (Int, IParameter) -> Object, IParameter) ~> Object,
-) {
+) uses Equality {
   fun call(
     dependencies: mutable Dependencies,
     param: IParameter,
@@ -158,6 +189,10 @@ class LazyFunction(
       (idx, param) -> this.lazys[idx].get(dependencies, param, optReader),
       param,
     )
+  }
+
+  fun ==(other: LazyFunction): Bool {
+    native_eq(this, other) == 0;
   }
 }
 
@@ -204,7 +239,7 @@ trait NumberContainer<T: Number> extends Number {
 
 class IntObject(
   value: Int,
-) extends Object uses ObjectToTyped, NumberContainer<Int>, Orderable {
+) extends StatelessObject uses ObjectToTyped, NumberContainer<Int>, Orderable {
   //
   protected fun getValue(): Int {
     this.value
@@ -221,7 +256,9 @@ class IntObject(
 
 class FloatObject(
   value: Float,
-) extends Object uses ObjectToTyped, NumberContainer<Float>, Orderable {
+)
+  extends StatelessObject
+  uses ObjectToTyped, NumberContainer<Float>, Orderable {
   //
   protected fun getValue(): Float {
     this.value
@@ -236,9 +273,9 @@ class FloatObject(
   }
 }
 
-class BoolObject(value: Bool) extends Object uses ObjectToTyped
-class StringObject(value: String) extends Object uses ObjectToTyped
-class RangeObject(value: Range) extends Object uses ObjectToTyped
+class BoolObject(value: Bool) extends StatelessObject uses ObjectToTyped
+class StringObject(value: String) extends StatelessObject uses ObjectToTyped
+class RangeObject(value: Range) extends StatelessObject uses ObjectToTyped
 
 fun int(v: Int): IntObject {
   IntObject(v)
@@ -269,6 +306,10 @@ class FloatParam(value: Float) extends IParameter uses ParamToTyped
 
 class DummySFO() extends StatefullObject {
   fun init(_scope: mutable IScope): this {
+    this
+  }
+
+  fun getReference(): Object {
     this
   }
 }

@@ -1,71 +1,133 @@
 module alias T = SKTest;
+module alias O = SKROL;
 
 module SKROLTest;
 
 @test
-fun first(): void {
-  context = SKROL.Context::create();
-  i1 = context.input(SKROL.int(0));
-  i2 = context.input(SKROL.int(0));
+fun eager(): void {
+  context = O.Context::create();
+  i1 = context.input(O.int(0));
+  i2 = context.input(O.int(0));
   i3 = context.combine(
-    SKROL.Function(Array[i1, i2], Array[], (gs, _lgs) ~>
-      SKROL.IntObject::type(gs(0)) + SKROL.IntObject::type(gs(1))
+    O.Function(Array[i1, i2], Array[], (gs, _lgs) ~>
+      O.IntObject::type(gs(0)) + O.IntObject::type(gs(1))
     ),
   );
-  get = prop -> context.get(prop, SKROL.toint);
+  get = prop -> context.get(prop, O.toint);
   got = Array[i1, i2, i3].map(get);
   expect = Array[0, 0, 0];
   T.expectEq(got, expect);
-  context.set(i1, SKROL.int(1));
+  context.set(i1, O.int(1));
   context.update();
   !got = Array[i1, i2, i3].map(get);
   !expect = Array[1, 0, 1];
   T.expectEq(got, expect);
-  context.set(i2, SKROL.int(2));
+  context.set(i2, O.int(2));
   context.update();
   !got = Array[i1, i2, i3].map(get);
   !expect = Array[1, 2, 3];
   T.expectEq(got, expect);
-  getTime = (prop: SKROL.IEagerProperty) -> context.getTime(prop).value;
+  getTime = (prop: O.IEagerProperty) -> context.getTime(prop).value;
   !got = Array[i1, i2, i3].map(getTime);
   !expect = Array[0, 1, 2];
   T.expectEq(got, expect);
 }
 
 fun lazyFunction(
-  _gs: Int -> SKROL.Object,
-  _lgs: (Int, SKROL.IParameter) -> SKROL.Object,
-  param: SKROL.IParameter,
-): SKROL.Object {
-  SKROL.IntObject(SKROL.IntParam::ptype(param).value)
+  _gs: Int -> O.Object,
+  _lgs: (Int, O.IParameter) -> O.Object,
+  param: O.IParameter,
+): O.Object {
+  O.IntObject(O.IntParam::ptype(param).value)
 }
 
 @test
-fun firstLazy(): void {
-  context = SKROL.Context::create();
-  i1 = context.input(SKROL.int(0));
-  i2 = context.lazy(SKROL.LazyFunction(Array[], Array[], lazyFunction));
-  param = SKROL.IntParam(2);
+fun lazy(): void {
+  context = O.Context::create();
+  i1 = context.input(O.int(0));
+  i2 = context.lazy(O.LazyFunction(Array[], Array[], lazyFunction));
+  param = O.IntParam(2);
   i3 = context.combine(
-    SKROL.Function(Array[i1], Array[i2], (gs, lgs) ~>
-      SKROL.IntObject::type(gs(0)) + SKROL.IntObject::type(lgs(0, param))
+    O.Function(Array[i1], Array[i2], (gs, lgs) ~>
+      O.IntObject::type(gs(0)) + O.IntObject::type(lgs(0, param))
     ),
   );
-  get = (prop: SKROL.IEagerProperty) -> context.get(prop, SKROL.toint);
-  lget = prop -> context.getLazy(prop, param, SKROL.toint);
+  get = (prop: O.IEagerProperty) -> context.get(prop, O.toint);
+  lget = prop -> context.getLazy(prop, param, O.toint);
   got = Array[Some(get(i1)), lget(i2), Some(get(i3))];
   expect = Array[Some(0), Some(2), Some(2)];
   T.expectEq(got, expect);
-  context.set(i1, SKROL.int(1));
+  context.set(i1, O.int(1));
   context.update();
   !got = Array[Some(get(i1)), lget(i2), Some(get(i3))];
   !expect = Array[Some(1), Some(2), Some(3)];
   T.expectEq(got, expect);
-  getTime = (prop: SKROL.IEagerProperty) -> context.getTime(prop).value;
+  getTime = (prop: O.IEagerProperty) -> context.getTime(prop).value;
   lgetTime = prop -> context.getLazyTime(prop, param).map(v -> v.value);
   !got = Array[Some(getTime(i1)), lgetTime(i2), Some(getTime(i3))];
   !expect = Array[Some(0), Some(0), Some(1)];
   T.expectEq(got, expect);
+}
+
+class State(add: O.TEagerProprety<Int>)
+
+class StafullAdd(
+  i1: O.IEagerProperty,
+  i2: O.IEagerProperty,
+  state: ?State = None(),
+) extends O.StatefullObject {
+  //
+  fun getReference(): O.Object {
+    StafullAdd(this.i1, this.i2)
+  }
+
+  fun init(scope: mutable O.IScope): this {
+    add = scope.combine(
+      O.Function(Array[this.i1, this.i2], Array[], (gs, _lgs) ~> {
+        v1 = O.IntObject::type(gs(0));
+        v2 = O.IntObject::type(gs(1));
+        v1 + v2 + O.IntObject(1)
+      }),
+    );
+    !this.state = Some(State(O.TEagerProprety(add, O.ObjectToInt())));
+    this
+  }
+}
+
+@test
+fun statefull(): void {
+  context = O.Context::create();
+  i1 = context.input(O.int(0));
+  i2 = context.input(O.int(0));
+  obj3 = StafullAdd(i1, i2);
+  i3 = context.input(obj3);
+  watched = O.EagerProperty(O.Path(0, Some(i3.getPath())));
+  get = prop -> context.get(prop, O.toint);
+  got = Array[i1, i2, watched].map(get);
+  expect = Array[0, 0, 1];
+  T.expectEq(got, expect);
+  context.set(i1, O.int(1));
+  context.update();
+  !got = Array[i1, i2, watched].map(get);
+  !expect = Array[1, 0, 2];
+  T.expectEq(got, expect);
+  context.set(i2, O.int(2));
+  context.update();
+  !got = Array[i1, i2, watched].map(get);
+  !expect = Array[1, 2, 4];
+  T.expectEq(got, expect);
+  getTime = (prop: O.IEagerProperty) -> context.getTime(prop).value;
+  !got = Array[i1, i2, watched].map(getTime);
+  !expect = Array[0, 1, 2];
+  T.expectEq(got, expect);
+  for (i in Range(0, 1000)) {
+    context.set(i1, O.int(i));
+    context.update();
+    !got = Array[i1, i2, watched].map(get);
+    !expect = Array[i, 2, i + 3];
+    T.expectEq(got, expect);
+  };
+  //T.expectTrue(false);
 }
 
 module end;

@@ -1,0 +1,31 @@
+module SKROL;
+
+base class Converter<F: frozen, T: frozen> uses Equality {
+  fun convert(from_: F): T;
+}
+
+class ObjectToInt() extends Converter<Object, Int> {
+  fun convert(from_: Object): Int {
+    IntObject::type(from_).value
+  }
+}
+
+class IntToObject() extends Converter<Int, Object> {
+  fun convert(from_: Int): Object {
+    IntObject(from_)
+  }
+}
+
+class ObjectToFloat() extends Converter<Object, Float> {
+  fun convert(from_: Object): Float {
+    FloatObject::type(from_).value
+  }
+}
+
+class FloatToObject() extends Converter<Float, Object> {
+  fun convert(from_: Float): Object {
+    FloatObject(from_)
+  }
+}
+
+module end;

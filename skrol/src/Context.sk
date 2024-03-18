@@ -48,7 +48,7 @@ mutable class Context private (scope: mutable Scope, horloge: mutable Horloge) {
     current = this.scope;
     invariant(aPath.first() == this.scope.path.id);
     for (i in Range(1, aPath.size())) {
-      !current = current.scopes[i]
+      !current = current.scopes[aPath[i]]
     };
     current
   }
@@ -86,7 +86,10 @@ mutable class Context private (scope: mutable Scope, horloge: mutable Horloge) {
   }
 
   mutable fun set<T>(property: IInputProperty, value: Object): void {
-    property.set(this.scope, value);
+    pPath = property.getPath();
+    path = pPath.optParent.fromSome();
+    scope = this.getScope(path);
+    property.set(scope, value);
   }
 
   readonly fun chill(): Context {
