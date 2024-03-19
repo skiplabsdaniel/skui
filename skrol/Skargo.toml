@@ -3,4 +3,4 @@ name = "skrol"
 version = "0.1.0"
 
 [dependencies]
-skfs = "*"
+skui_font = { "path" = "../skui_font" }

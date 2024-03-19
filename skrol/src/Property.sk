@@ -88,7 +88,7 @@ class LazyProperty(function: LazyFunction, path: Path) extends ILazyProperty {
   }
 }
 
-class TEagerProprety<T: frozen>(
+class TEagerProperty<T: frozen>(
   property: IEagerProperty,
   fromObject: Converter<Object, T>,
 ) uses Equality {
@@ -97,7 +97,7 @@ class TEagerProprety<T: frozen>(
   }
 }
 
-class TLazyProprety<T: frozen, P: frozen>(
+class TLazyProperty<T: frozen, P: frozen>(
   property: ILazyProperty,
   fromObject: Converter<Object, T>,
   toParameter: Converter<P, IParameter>,

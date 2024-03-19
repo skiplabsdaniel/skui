@@ -1,0 +1,167 @@
+module SKUIFont;
+
+class Weight private (index: Int) uses Hashable, Orderable, Show {
+  const w100: Weight = Weight(0);
+  const w200: Weight = Weight(1);
+  const w300: Weight = Weight(2);
+  const w400: Weight = Weight(3);
+  const w500: Weight = Weight(4);
+  const w600: Weight = Weight(5);
+  const w700: Weight = Weight(6);
+  const w800: Weight = Weight(7);
+  const w900: Weight = Weight(8);
+
+  const thin: Weight = Weight::w100;
+  const extralight: Weight = Weight::w200;
+  const light: Weight = Weight::w300;
+  const normal: Weight = Weight::w400;
+  const medium: Weight = Weight::w500;
+  const semibold: Weight = Weight::w600;
+  const bold: Weight = Weight::w700;
+  const extrabold: Weight = Weight::w800;
+  const black: Weight = Weight::w900;
+
+  fun compare(other: Weight): Order {
+    this.index.compare(other.index)
+  }
+
+  fun isBold(): Bool {
+    this.index > 3
+  }
+
+  static fun fromIndex(index: Int): Weight {
+    index match {
+    | 0 -> Weight::w100
+    | 1 -> Weight::w200
+    | 2 -> Weight::w300
+    | 3 -> Weight::w400
+    | 4 -> Weight::w500
+    | 5 -> Weight::w600
+    | 6 -> Weight::w700
+    | 7 -> Weight::w800
+    | 8 -> Weight::w900
+    | _ ->
+      if (index < 0) {
+        Weight::w100
+      } else {
+        Weight::w900
+      }
+    }
+  }
+
+  static fun fromWeight(weight: Int): Weight {
+    static::fromIndex(Math.clamp(weight / 100, 1, 9) - 1)
+  }
+
+  fun toWeight(): Int {
+    (this.index + 1) * 100
+  }
+
+  fun incr(): Int {
+    this.index - 3;
+  }
+
+  fun previous(): ?Weight {
+    if (this.index > 0) {
+      Some(Weight(this.index - 1))
+    } else {
+      None()
+    }
+  }
+
+  fun toString(): String {
+    this.index match {
+    | 0 -> "thin"
+    | 1 -> "extralight"
+    | 2 -> "light"
+    | 3 -> "normal"
+    | 4 -> "medium"
+    | 5 -> "semibold"
+    | 6 -> "bold"
+    | 7 -> "extrabold"
+    | 8 -> "black"
+    | _ ->
+      if (this.index < 0) {
+        "thin"
+      } else {
+        "black"
+      }
+    }
+  }
+}
+
+/**
+ * Whether to slant the glyphs in the font
+ */
+base class Slant() uses Hashable, Orderable, Show {
+  children =
+  /**
+   * Use glyphs designed for slanting
+   */
+  | Italic()
+  /**
+   * Use glyphs designed for slanting
+   */
+  | Oblique()
+  /**
+   * Use the upright glyphs
+   */
+  | Normal()
+
+  static fun fromName(name: String): Slant {
+    name match {
+    | "oblique" -> Oblique()
+    | "italic" -> Italic()
+    | _ -> Normal()
+    }
+  }
+
+  fun compare(other: Slant): Order {
+    this.code().compare(other.code())
+  }
+
+  fun code(): Int {
+    this match {
+    | Normal() -> 0
+    | Italic() -> 1
+    | Oblique() -> 2
+    }
+  }
+
+  fun previous(): ?Slant {
+    this match {
+    | Normal() -> None()
+    | Italic() -> Some(Normal())
+    | Oblique() -> Some(Italic())
+    }
+  }
+
+  fun toString(): String {
+    this match {
+    | Oblique() -> "oblique"
+    | Italic() -> "italic"
+    | Normal() -> "normal"
+    }
+  }
+
+  static fun fromCode(code: Int): Slant {
+    code match {
+    | 1 -> Italic()
+    | 2 -> Oblique()
+    | 0
+    | _ ->
+      Normal()
+    }
+  }
+}
+
+class Typeface(family: String, weight: Weight, slant: Slant)
+
+class Font(
+  typeface: Typeface,
+  size: Float,
+  dpi: Float = 96.0,
+  hinting: Font.Hinting = Font.HintingNone(),
+)
+
+module end;

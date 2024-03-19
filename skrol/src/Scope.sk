@@ -1,5 +1,19 @@
 module SKROL;
 
+// TODO i18n
+
+fun assert(assertion: Bool, msg: () -> String): void {
+  if (SkargoVersion.kProfile != "release") {
+    if (!assertion) {
+      .invariant_violation(msg())
+    }
+  }
+}
+
+fun invalidationError(invalidated: Int, updating: Int, scope: Path): String {
+  `Invalidated id '${invalidated}' must be greated than updating one '${updating}' in scope '${scope}'`
+}
+
 class Readers(
   set: SortedSet<RelativeReader> = SortedSet[],
   readers: List<RelativeReader> = List.Nil(),
@@ -36,35 +50,30 @@ class Reads(
   }
 }
 
-fun checkObject(id: Int, scope: mutable Scope, object: Object): Object {
-  object match {
-  | sf @ StatefullObject _ ->
-    subscope = mutable Scope(Path(id, Some(scope.path)), Some(scope));
-    scope.!scopes = scope.scopes.set(id, subscope);
-    sf.init(subscope)
-  | _ -> object
-  };
-}
-
 mutable class Scope(
   path: Path,
-  mutable optParent: ?mutable Scope = None(),
-  properties: mutable Vector<IProperty> = mutable Vector[],
-  mutable scopes: SortedMap<Int, mutable Scope> = SortedMap[],
-  mutable readers: SortedMap<Int, Readers> = SortedMap[],
-  mutable combines: SortedMap<Int, Function> = SortedMap[],
-  mutable values: SortedMap<Int, TimedObject> = SortedMap[],
-  mutable lazyObjects: SortedMap<(Int, IParameter), TimedObject> = SortedMap[],
-  mutable lazyReads: SortedMap<(Int, IParameter), Reads> = SortedMap[],
-  // Respect insert order
-  invalidateds: mutable Set<Int> = mutable Set[],
-  mutable lazys: SortedSet<(Int, IParameter)> = SortedSet[],
-  mutable tick: Tick = Tick(0),
+  private mutable optParent: ?mutable Scope = None(),
+  private properties: mutable Vector<IProperty> = mutable Vector[],
+  private mutable scopes: SortedMap<Int, mutable Scope> = SortedMap[],
+  private mutable readers: SortedMap<Int, Readers> = SortedMap[],
+  private mutable combines: SortedMap<Int, Function> = SortedMap[],
+  private mutable values: SortedMap<Int, TimedObject> = SortedMap[],
+  private mutable lazyObjects: SortedMap<
+    (Int, IParameter),
+    TimedObject,
+  > = SortedMap[],
+  private mutable lazyReads: SortedMap<(Int, IParameter), Reads> = SortedMap[],
+  private mutable lazys: SortedSet<(Int, IParameter)> = SortedSet[],
+  private mutable tick: Tick = Tick(0),
+  private mutable watches: SortedSet<Int> = SortedSet[],
+  private mutable updating: Int = -1,
+  private mutable invalidateds: SortedSet<Int> = SortedSet[],
+  private mutable updated: SortedMap<Int, TimedObject> = SortedMap[],
 ) extends Dependencies, IScope {
   //
   mutable fun input(object: Object): IInputProperty {
     id = this.properties.size();
-    !object = checkObject(id, this, object);
+    !object = this.checkObject(id, object);
     prop = InputProperty(Path(this.properties.size(), Some(this.path)));
     this.!values = this.values.set(id, TimedObject(object, this.tick));
     this.properties.push(prop);
@@ -80,6 +89,10 @@ mutable class Scope(
     prop
   }
 
+  mutable fun watch(id: Int): void {
+    this.!watches = this.watches.set(id)
+  }
+
   mutable fun combine(function: Function): IEagerProperty {
     id = this.properties.size();
     property = EagerProperty(Path(id, Some(this.path)));
@@ -92,6 +105,16 @@ mutable class Scope(
 
   mutable fun getTick(): Tick {
     this.tick
+  }
+
+  mutable fun getScope(path: Path): mutable Scope {
+    aPath = path.toArray();
+    current = this;
+    assert(aPath.first() == this.path.id, () ~> "Invalid scope path");
+    for (i in Range(1, aPath.size())) {
+      !current = current.scopes[aPath[i]]
+    };
+    current
   }
 
   readonly fun hasObject(path: Path): Bool {
@@ -138,6 +161,16 @@ mutable class Scope(
     }
   }
 
+  private mutable fun checkObject(id: Int, object: Object): Object {
+    object match {
+    | sf @ StatefullObject _ ->
+      subscope = mutable Scope(Path(id, Some(this.path)), Some(this));
+      this.!scopes = this.scopes.set(id, subscope);
+      sf.init(subscope)
+    | _ -> object
+    };
+  }
+
   private mutable fun invalidateReaders(id: Int): void {
     this.readers.maybeGet(id).each(rs -> rs.each(r -> this.invalidate(r)));
     this.!readers = this.readers.remove(id);
@@ -152,8 +185,12 @@ mutable class Scope(
       scope.invalidateExternalReaders();
       this.!scopes = this.scopes.remove(id);
     });
-    !object = checkObject(id, this, object);
+
+    !object = this.checkObject(id, object);
     this.properties.set(id, readable);
+    this.values.maybeGet(id).each(old ->
+      this.!updated = this.updated.set(id, old)
+    );
     this.!values = this.values.set(id, TimedObject(object, this.tick));
     this.invalidateReaders(id);
   }
@@ -244,7 +281,7 @@ mutable class Scope(
     }
   }
 
-  // TODO: manage to parent vs to child directly int reader
+  // TODO: verify reader are invalidated in decalaration order
   mutable fun invalidate(reader: RelativeReader): void {
     reader match {
     | cr @ ChildReader _ ->
@@ -257,7 +294,11 @@ mutable class Scope(
       | EagerChildReader _ ->
         // if statfull object already invalidated can stop the propagation
         if (!scope.invalidateds.contains(id)) {
-          scope.invalidateds.insert(id);
+          // TODO debug MODE
+          assert(id > this.updating, () ->
+            invalidationError(id, this.updating, this.path)
+          );
+          scope.!invalidateds = scope.invalidateds.set(id);
           // Propagate the invalidation to the statfull object corresponding to the scope
           // to trigger the update
           scope.optParent.each(s -> s.invalidate(EagerParentReader(scope.path)))
@@ -275,7 +316,11 @@ mutable class Scope(
         | EagerParentReader(p) ->
           // if statfull object already invalidated can stop the propagation
           if (!this.invalidateds.contains(p.id)) {
-            this.invalidateds.insert(p.id);
+            // TODO debug MODE
+            assert(p.id > this.updating, () ->
+              invalidationError(p.id, this.updating, this.path)
+            );
+            this.!invalidateds = this.invalidateds.set(p.id);
             // Propagate the invalidation to the statfull object corresponding to the scope
             // to trigger the update
             this.optParent.each(s -> s.invalidate(EagerParentReader(this.path)))
@@ -318,16 +363,19 @@ mutable class Scope(
     );
   }
 
-  mutable fun update(tick: Tick): void {
+  mutable fun update(tick: Tick): SortedMap<Path, TimedObject> {
     this.!tick = tick;
-    it = this.invalidateds.values();
+    watched = SortedMap[];
     loop {
-      it.next() match {
+      this.invalidateds.min() match {
       | Some(invalidated) ->
+        this.!updating = invalidated;
         this.properties[invalidated] match {
         | IInputProperty _ ->
-          // TODO: Mark input as not valid
-          this.scopes.maybeGet(invalidated).each(scope -> scope.update(tick))
+          this.scopes.maybeGet(invalidated).each(scope -> {
+            ws = scope.update(tick);
+            !watched = watched.merge(ws);
+          })
         | eager @ IEagerProperty _ ->
           function = this.combines[invalidated];
           current = this.values[invalidated].value;
@@ -338,14 +386,24 @@ mutable class Scope(
         | ILazyProperty _ ->
           // Lazy value is computed only on need.
           void
-        }
+        };
+        this.!invalidateds = this.invalidateds.remove(invalidated)
       | _ -> break void
       }
     };
+    // Return watched updates
+    this.watches.each(id ->
+      this.updated.maybeGet(id).each(timed ->
+        !watched = watched.set(Path(id, Some(this.path)), timed)
+      )
+    );
+
     // Clear all uncomputed lazy values
     this.lazys.each(lv -> this.!lazyObjects = this.lazyObjects.remove(lv));
-    this.invalidateds.clear();
     this.!lazys = SortedSet[];
+    this.!updated = SortedMap[];
+    this.!updating = -1;
+    watched
   }
 
   readonly fun chill(): Scope {
@@ -359,9 +417,9 @@ mutable class Scope(
       this.values,
       this.lazyObjects,
       this.lazyReads,
-      Set[],
       this.lazys,
       this.tick,
+      this.watches,
     )
   }
 
@@ -376,9 +434,9 @@ mutable class Scope(
       this.values,
       this.lazyObjects,
       this.lazyReads,
-      mutable Set[],
       this.lazys,
       this.tick,
+      this.watches,
     );
     mscope.scopes.each((_, v) -> v.!optParent = Some(mscope));
     mscope

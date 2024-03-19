@@ -5,7 +5,7 @@ module SKROLTest;
 
 @test
 fun eager(): void {
-  context = O.Context::create();
+  context = mutable O.Context();
   i1 = context.input(O.int(0));
   i2 = context.input(O.int(0));
   i3 = context.combine(
@@ -43,7 +43,7 @@ fun lazyFunction(
 
 @test
 fun lazy(): void {
-  context = O.Context::create();
+  context = mutable O.Context();
   i1 = context.input(O.int(0));
   i2 = context.lazy(O.LazyFunction(Array[], Array[], lazyFunction));
   param = O.IntParam(2);
@@ -69,7 +69,7 @@ fun lazy(): void {
   T.expectEq(got, expect);
 }
 
-class State(add: O.TEagerProprety<Int>)
+class State(add: O.TEagerProperty<Int>)
 
 class StafullAdd(
   i1: O.IEagerProperty,
@@ -81,6 +81,10 @@ class StafullAdd(
     StafullAdd(this.i1, this.i2)
   }
 
+  fun changes(_old: O.TimedObject): O.IChanges {
+    todo()
+  }
+
   fun init(scope: mutable O.IScope): this {
     add = scope.combine(
       O.Function(Array[this.i1, this.i2], Array[], (gs, _lgs) ~> {
@@ -89,14 +93,14 @@ class StafullAdd(
         v1 + v2 + O.IntObject(1)
       }),
     );
-    !this.state = Some(State(O.TEagerProprety(add, O.ObjectToInt())));
+    !this.state = Some(State(O.TEagerProperty(add, O.ObjectToInt())));
     this
   }
 }
 
 @test
 fun statefull(): void {
-  context = O.Context::create();
+  context = mutable O.Context();
   i1 = context.input(O.int(0));
   i2 = context.input(O.int(0));
   obj3 = StafullAdd(i1, i2);

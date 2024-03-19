@@ -1,0 +1,9 @@
+module SKUI;
+
+base class IConfiguration
+base class INode
+base class IIcon
+
+base class IConstraints extends SKROL.IParameter
+
+module end;

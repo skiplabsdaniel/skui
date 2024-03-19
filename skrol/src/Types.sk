@@ -6,7 +6,7 @@ value class Tick(value: Int) {
   }
 }
 
-class Path(id: Int, optParent: ?Path = None()) uses Orderable, Hashable {
+class Path(id: Int, optParent: ?Path = None()) uses Orderable, Hashable, Show {
   fun compare(other: Path): Order {
     this.optParent.compare(other.optParent) match {
     | EQ() -> this.id.compare(other.id)
@@ -42,6 +42,10 @@ class Path(id: Int, optParent: ?Path = None()) uses Orderable, Hashable {
     };
     Some(thisArray.drop(pathArray.size()));
   }
+
+  fun toString(): String {
+    this.toArray().join("/");
+  }
 }
 
 base class Object {
@@ -49,6 +53,18 @@ base class Object {
 }
 
 base class IParameter uses Orderable
+base class IWatch
+base class IChanges
+
+base class Watch extends IWatch {
+  fun apply(object: Object): void;
+}
+
+base class WatchChanges extends IWatch {
+  fun apply(changes: IChanges): void;
+}
+
+class Change(object: Object) extends IChanges
 
 value class TimedObject(value: Object, tick: Tick)
 
@@ -97,6 +113,7 @@ base mutable class IScope {
 
 base class StatefullObject extends Object uses HasClassName {
   fun init(scope: mutable IScope): this;
+  fun changes(old: TimedObject): IChanges;
 }
 
 base class StatelessObject extends Object {
@@ -306,11 +323,27 @@ class FloatParam(value: Float) extends IParameter uses ParamToTyped
 
 class DummySFO() extends StatefullObject {
   fun init(_scope: mutable IScope): this {
-    this
+    dummy()
+  }
+
+  fun changes(_old: TimedObject): IChanges {
+    dummy()
   }
 
   fun getReference(): Object {
-    this
+    dummy()
+  }
+}
+
+class DummyWatch() extends Watch {
+  fun apply(_object: Object): void {
+    dummy()
+  }
+}
+
+class DummyWatchChanges() extends WatchChanges {
+  fun apply(_changes: IChanges): void {
+    dummy()
   }
 }
 

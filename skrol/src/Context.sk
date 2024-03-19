@@ -1,34 +1,27 @@
 module SKROL;
 
-mutable class Horloge(mutable tick: Tick = Tick(0)) {
+mutable class Context(
+  scope: mutable Scope = mutable Scope(Path(0)),
+  mutable tick: Tick = Tick(0),
+  mutable watches: SortedMap<Path, IWatch> = SortedMap[],
+  mutable watchTicks: SortedMap<Path, Int> = SortedMap[],
+) {
   //
-  readonly fun get(): Tick {
-    this.tick;
-  }
-
-  mutable fun next(): void {
-    this.!tick = this.tick.next()
-  }
-
-  readonly fun chill(): Horloge {
-    Horloge(this.tick)
-  }
-
-  readonly fun clone(): mutable Horloge {
-    mutable Horloge(this.tick)
-  }
-}
-
-mutable class Context private (scope: mutable Scope, horloge: mutable Horloge) {
-  //
-  static fun create(): mutable this {
-    scope = mutable Scope(Path(0));
-    mutable Context(scope, mutable Horloge());
-  }
-
   mutable fun update(): void {
-    this.horloge.next();
-    this.scope.update(this.horloge.get());
+    this.!tick = this.tick.next();
+    watched = this.scope.update(this.tick);
+    watched.each((path, timed) ->
+      this.watches.maybeGet(path).each(watch ->
+        watch match {
+        | w @ Watch _ -> w.apply(this.getObject(path))
+        | wc @ WatchChanges _ ->
+          this.getObject(path) match {
+          | sf @ StatefullObject _ -> wc.apply(sf.changes(timed))
+          | sl @ StatelessObject _ -> wc.apply(Change(sl))
+          }
+        }
+      )
+    )
   }
 
   mutable fun input(supplier: Object): IInputProperty {
@@ -44,20 +37,17 @@ mutable class Context private (scope: mutable Scope, horloge: mutable Horloge) {
   }
 
   mutable fun getScope(path: Path): mutable Scope {
-    aPath = path.toArray();
-    current = this.scope;
-    invariant(aPath.first() == this.scope.path.id);
-    for (i in Range(1, aPath.size())) {
-      !current = current.scopes[aPath[i]]
-    };
-    current
+    this.scope.getScope(path);
+  }
+
+  mutable fun getObject(pPath: Path): Object {
+    path = pPath.optParent.fromSome();
+    scope = this.getScope(path);
+    scope.getObject(pPath)
   }
 
   mutable fun get<T>(property: IEagerProperty, conv: Object ~> T): T {
-    pPath = property.getPath();
-    path = pPath.optParent.fromSome();
-    scope = this.getScope(path);
-    conv(scope.getObject(pPath))
+    conv(this.getObject(property.getPath()))
   }
 
   mutable fun getLazy<T>(
@@ -93,11 +83,11 @@ mutable class Context private (scope: mutable Scope, horloge: mutable Horloge) {
   }
 
   readonly fun chill(): Context {
-    Context(this.scope.chill(), this.horloge.chill())
+    Context(this.scope.chill(), this.tick)
   }
 
   readonly fun clone(): mutable Context {
-    mutable Context(this.scope.clone(), this.horloge.clone())
+    mutable Context(this.scope.clone(), this.tick)
   }
 }
 

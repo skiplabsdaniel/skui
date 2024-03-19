@@ -1,0 +1,127 @@
+module SKUITheme;
+
+const family: String = "Roboto";
+const monospace: String = "NotoMono";
+
+const defaultFace: SKUIFont.Font = SKUIFont.Font(
+  SKUIFont.Typeface(family, SKUIFont.Weight::normal, SKUIFont.Normal()),
+  11.0,
+);
+
+const largeFace: SKUIFont.Font = SKUIFont.Font(
+  SKUIFont.Typeface(family, SKUIFont.Weight::normal, SKUIFont.Normal()),
+  12.0,
+);
+
+const boldFace: SKUIFont.Font = SKUIFont.Font(
+  SKUIFont.Typeface(family, SKUIFont.Weight::bold, SKUIFont.Normal()),
+  11.0,
+);
+
+const bigFace: SKUIFont.Font = SKUIFont.Font(
+  SKUIFont.Typeface(family, SKUIFont.Weight::bold, SKUIFont.Normal()),
+  14.0,
+);
+
+const smallFace: SKUIFont.Font = SKUIFont.Font(
+  SKUIFont.Typeface(family, SKUIFont.Weight::normal, SKUIFont.Normal()),
+  9.0,
+);
+
+const smallBoldFace: SKUIFont.Font = SKUIFont.Font(
+  SKUIFont.Typeface(family, SKUIFont.Weight::bold, SKUIFont.Normal()),
+  9.0,
+);
+
+const smallItalicFace: SKUIFont.Font = SKUIFont.Font(
+  SKUIFont.Typeface(family, SKUIFont.Weight::normal, SKUIFont.Italic()),
+  9.0,
+);
+
+const mediumFace: SKUIFont.Font = SKUIFont.Font(
+  SKUIFont.Typeface(family, SKUIFont.Weight::normal, SKUIFont.Normal()),
+  10.0,
+);
+
+const mediumBoldFace: SKUIFont.Font = SKUIFont.Font(
+  SKUIFont.Typeface(family, SKUIFont.Weight::bold, SKUIFont.Normal()),
+  10.0,
+);
+
+const monospaceFace: SKUIFont.Font = SKUIFont.Font(
+  SKUIFont.Typeface(monospace, SKUIFont.Weight::normal, SKUIFont.Normal()),
+  11.0,
+);
+
+base class TFont {
+  children =
+  | TFBasic()
+  | TFAction()
+  | TFLabel()
+  | TFHelper()
+  | TFBadge()
+  | TFPlaceHolder()
+  | TFTree()
+  | TFMonospace()
+  | TFTable()
+  | TFHeader()
+}
+
+class Fonts{
+  basic: SKUIFont.Font = defaultFace,
+  action: SKUIFont.Font = boldFace,
+  helper: SKUIFont.Font = smallItalicFace,
+  tooltip: SKUIFont.Font = smallBoldFace,
+  title: SKUIFont.Font = bigFace,
+  discriminant: SKUIFont.Font = smallFace,
+  shortcut: SKUIFont.Font = smallFace,
+  label: SKUIFont.Font = smallFace,
+  badge: SKUIFont.Font = smallBoldFace,
+  placeholder: SKUIFont.Font = bigFace,
+  tree: SKUIFont.Font = mediumFace,
+  table: SKUIFont.Font = defaultFace,
+  header: SKUIFont.Font = boldFace,
+  monospace: SKUIFont.Font = monospaceFace,
+}
+
+class Colors{
+  base: Color = Colors.white(),
+  regular: Color = Colors.black().withAlpha(0.9),
+  primary: Color = Color::fromARGBHex(0xff5f5fb8),
+  accent: Color = Color::fromARGBHex(0xffd8894a),
+  warn: Color = Color::fromARGBHex(0xffb85f5f),
+  inactive: Color = Colors.gray(),
+  border: Color = Colors.lightgray(),
+  information: Color = Colors.black().withAlpha(0.5),
+  whitespace: Color = Color::gray(UInt8::truncate(198)),
+  shortcut: Color = Colors.darkblue(),
+  separator: Color = Color::fromARGBHex(0xffaaaaaa),
+  title: Color = Colors.black(),
+  target: Color = Colors.darkgreen(),
+  veil: Color = Colors.black().withAlpha(0.32),
+  highlight: Color = Colors.lightsteelblue(),
+}
+
+class Properties{fonts: Fonts = Fonts{}, colors: Colors = Colors{}}
+class State{}
+
+class Theme{
+  properties: SKROL.TEagerProperty<Properties>,
+  optState: ?State = None(),
+} extends SKROL.StatefullObject {
+  //
+  fun getReference(): this {
+    Theme{properties => this.properties}
+  }
+
+  fun init(_scope: mutable SKROL.IScope): this {
+    // Font
+    this
+  }
+
+  fun changes(_old: SKROL.TimedObject): SKROL.IChanges {
+    invariant_violation("StatefullObject.changes new namaged in SKUI.Label.")
+  }
+}
+
+module end;

@@ -1,0 +1,40 @@
+module SKUILabel;
+
+class State{layout: SKROL.TLazyProperty<SKUI.INode, SKUI.IConstraints>}
+
+module end;
+
+module SKUI;
+
+class Label{
+  disabled: SKROL.TEagerProperty<Bool>,
+  text: SKROL.TEagerProperty<Text>,
+  icon: SKROL.TEagerProperty<?SKUI.IIcon>,
+  tooltip: SKROL.TEagerProperty<?Text>,
+  font: SKROL.TEagerProperty<SKUIFont.Font>,
+  config: SKROL.TEagerProperty<?SKUI.IConfiguration>,
+  optState: ?SKUILabel.State = None(),
+} extends SKROL.StatefullObject {
+  //
+  fun getReference(): this {
+    Label{
+      disabled => this.disabled,
+      text => this.text,
+      icon => this.icon,
+      tooltip => this.tooltip,
+      font => this.font,
+      config => this.config,
+      optState => None(),
+    }
+  }
+
+  fun changes(_old: SKROL.TimedObject): SKROL.IChanges {
+    invariant_violation("StatefullObject.changes new namaged in SKUI.Label.")
+  }
+
+  fun init(_scope: mutable SKROL.IScope): this {
+    this
+  }
+}
+
+module end;
