@@ -96,6 +96,10 @@ class StafullAdd(
     !this.state = Some(State(O.TEagerProperty(add, O.ObjectToInt())));
     this
   }
+
+  fun update(_scope: mutable O.IScope, _new: O.Object): Result<this, void> {
+    Success(this)
+  }
 }
 
 @test

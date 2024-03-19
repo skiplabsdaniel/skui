@@ -113,6 +113,7 @@ base mutable class IScope {
 
 base class StatefullObject extends Object uses HasClassName {
   fun init(scope: mutable IScope): this;
+  fun update(scope: mutable IScope, new: Object): Result<this, void>;
   fun changes(old: TimedObject): IChanges;
 }
 
@@ -323,6 +324,10 @@ class FloatParam(value: Float) extends IParameter uses ParamToTyped
 
 class DummySFO() extends StatefullObject {
   fun init(_scope: mutable IScope): this {
+    dummy()
+  }
+
+  fun update(_scope: mutable IScope, _new: Object): Result<this, void> {
     dummy()
   }
 

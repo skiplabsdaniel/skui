@@ -1,3 +1,5 @@
+module alias O = SKROL;
+
 module SKUITheme;
 
 const family: String = "Roboto";
@@ -106,20 +108,20 @@ class Properties{fonts: Fonts = Fonts{}, colors: Colors = Colors{}}
 class State{}
 
 class Theme{
-  properties: SKROL.TEagerProperty<Properties>,
+  properties: O.TEagerProperty<Properties>,
   optState: ?State = None(),
-} extends SKROL.StatefullObject {
+} extends O.StatefullObject {
   //
   fun getReference(): this {
     Theme{properties => this.properties}
   }
 
-  fun init(_scope: mutable SKROL.IScope): this {
+  fun init(_scope: mutable O.IScope, _optCurrent: ?O.Object = None()): this {
     // Font
     this
   }
 
-  fun changes(_old: SKROL.TimedObject): SKROL.IChanges {
+  fun changes(_old: O.TimedObject): O.IChanges {
     invariant_violation("StatefullObject.changes new namaged in SKUI.Label.")
   }
 }

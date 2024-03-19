@@ -1,20 +1,22 @@
+module alias O = SKROL;
+
 module SKUILabel;
 
-class State{layout: SKROL.TLazyProperty<SKUI.INode, SKUI.IConstraints>}
+class State{layout: O.TLazyProperty<SKUI.INode, SKUI.IConstraints>}
 
 module end;
 
 module SKUI;
 
 class Label{
-  disabled: SKROL.TEagerProperty<Bool>,
-  text: SKROL.TEagerProperty<Text>,
-  icon: SKROL.TEagerProperty<?SKUI.IIcon>,
-  tooltip: SKROL.TEagerProperty<?Text>,
-  font: SKROL.TEagerProperty<SKUIFont.Font>,
-  config: SKROL.TEagerProperty<?SKUI.IConfiguration>,
+  disabled: O.TEagerProperty<Bool>,
+  text: O.TEagerProperty<Text>,
+  icon: O.TEagerProperty<?SKUI.IIcon>,
+  tooltip: O.TEagerProperty<?Text>,
+  font: O.TEagerProperty<SKUIFont.Font>,
+  config: O.TEagerProperty<?SKUI.IConfiguration>,
   optState: ?SKUILabel.State = None(),
-} extends SKROL.StatefullObject {
+} extends O.StatefullObject {
   //
   fun getReference(): this {
     Label{
@@ -28,11 +30,11 @@ class Label{
     }
   }
 
-  fun changes(_old: SKROL.TimedObject): SKROL.IChanges {
+  fun changes(_old: O.TimedObject): O.IChanges {
     invariant_violation("StatefullObject.changes new namaged in SKUI.Label.")
   }
 
-  fun init(_scope: mutable SKROL.IScope): this {
+  fun init(_scope: mutable O.IScope, _optCurrent: ?O.Object = None()): this {
     this
   }
 }

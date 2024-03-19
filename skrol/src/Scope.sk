@@ -181,16 +181,24 @@ mutable class Scope(
     readable: IProperty,
     object: Object,
   ): void {
-    this.scopes.maybeGet(id).each(scope -> {
+    optScope = this.scopes.maybeGet(id);
+    optScope.each(scope -> {
       scope.invalidateExternalReaders();
       this.!scopes = this.scopes.remove(id);
     });
-
-    !object = this.checkObject(id, object);
+    optOld = this.values.maybeGet(id);
+    !object = (optScope, optOld) match {
+    | (Some(oldScope), Some(oldObject)) ->
+      (oldObject.value as StatefullObject _).update(oldScope, object) match {
+      | Success(v) ->
+        this.!scopes = this.scopes.set(id, oldScope);
+        v
+      | _ -> this.checkObject(id, object)
+      }
+    | _ -> this.checkObject(id, object)
+    };
     this.properties.set(id, readable);
-    this.values.maybeGet(id).each(old ->
-      this.!updated = this.updated.set(id, old)
-    );
+    optOld.each(old -> this.!updated = this.updated.set(id, old));
     this.!values = this.values.set(id, TimedObject(object, this.tick));
     this.invalidateReaders(id);
   }
