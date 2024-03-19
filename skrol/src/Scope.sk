@@ -65,7 +65,8 @@ mutable class Scope(
   private mutable lazyReads: SortedMap<(Int, IParameter), Reads> = SortedMap[],
   private mutable lazys: SortedSet<(Int, IParameter)> = SortedSet[],
   private mutable tick: Tick = Tick(0),
-  private mutable watches: SortedSet<Int> = SortedSet[],
+  private mutable watchedObjects: SortedSet<Int> = SortedSet[],
+  private mutable outputs: SortedSet<Int> = SortedSet[],
   private mutable updating: Int = -1,
   private mutable invalidateds: SortedSet<Int> = SortedSet[],
   private mutable updated: SortedMap<Int, TimedObject> = SortedMap[],
@@ -90,7 +91,19 @@ mutable class Scope(
   }
 
   mutable fun watch(id: Int): void {
-    this.!watches = this.watches.set(id)
+    this.!watchedObjects = this.watchedObjects.set(id)
+  }
+
+  mutable fun unwatch(id: Int): void {
+    this.!watchedObjects = this.watchedObjects.remove(id)
+  }
+
+  mutable fun output(id: Int): void {
+    this.!outputs = this.outputs.set(id)
+  }
+
+  mutable fun unoutput(id: Int): void {
+    this.!outputs = this.outputs.remove(id)
   }
 
   mutable fun combine(function: Function): IEagerProperty {
@@ -400,11 +413,15 @@ mutable class Scope(
       }
     };
     // Return watched updates
-    this.watches.each(id ->
+    this.watchedObjects.each(id ->
       this.updated.maybeGet(id).each(timed ->
         !watched = watched.set(Path(id, Some(this.path)), timed)
       )
     );
+    this.outputs.each(id -> {
+      timed = this.values.get(id);
+      !watched = watched.set(Path(id, Some(this.path)), timed)
+    });
 
     // Clear all uncomputed lazy values
     this.lazys.each(lv -> this.!lazyObjects = this.lazyObjects.remove(lv));
@@ -427,7 +444,8 @@ mutable class Scope(
       this.lazyReads,
       this.lazys,
       this.tick,
-      this.watches,
+      this.watchedObjects,
+      this.outputs,
     )
   }
 
@@ -444,7 +462,8 @@ mutable class Scope(
       this.lazyReads,
       this.lazys,
       this.tick,
-      this.watches,
+      this.watchedObjects,
+      this.outputs,
     );
     mscope.scopes.each((_, v) -> v.!optParent = Some(mscope));
     mscope

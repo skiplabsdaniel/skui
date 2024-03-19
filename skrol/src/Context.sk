@@ -3,24 +3,29 @@ module SKROL;
 mutable class Context(
   scope: mutable Scope = mutable Scope(Path(0)),
   mutable tick: Tick = Tick(0),
-  mutable watches: SortedMap<Path, IWatch> = SortedMap[],
-  mutable watchTicks: SortedMap<Path, Int> = SortedMap[],
+  mutable watchedObjects: SortedMap<Path, List<IWatch>> = SortedMap[],
+  mutable outputs: SortedMap<Path, List<Watch>> = SortedMap[],
 ) {
   //
   mutable fun update(): void {
     this.!tick = this.tick.next();
     watched = this.scope.update(this.tick);
     watched.each((path, timed) ->
-      this.watches.maybeGet(path).each(watch ->
-        watch match {
-        | w @ Watch _ -> w.apply(this.getObject(path))
-        | wc @ WatchChanges _ ->
-          this.getObject(path) match {
-          | sf @ StatefullObject _ -> wc.apply(sf.changes(timed))
-          | sl @ StatelessObject _ -> wc.apply(Change(sl))
+      this.watchedObjects.maybeGet(path).each(elements ->
+        elements.each(watch ->
+          watch match {
+          | w @ Watch _ -> w.apply(this.getObject(path))
+          | wc @ WatchChanges _ ->
+            this.getObject(path) match {
+            | sf @ StatefullObject _ -> wc.apply(sf.changes(timed))
+            | sl @ StatelessObject _ -> wc.apply(Change(sl))
+            }
           }
-        }
+        )
       )
+    );
+    this.outputs.each((path, elements) ->
+      elements.each(w -> w.apply(this.getObject(path)))
     )
   }
 
@@ -38,6 +43,11 @@ mutable class Context(
 
   mutable fun getScope(path: Path): mutable Scope {
     this.scope.getScope(path);
+  }
+
+  mutable fun getObjectScope(pPath: Path): mutable Scope {
+    path = pPath.optParent.fromSome();
+    this.getScope(path);
   }
 
   mutable fun getObject(pPath: Path): Object {
@@ -70,8 +80,7 @@ mutable class Context(
 
   mutable fun getLazyTime(property: ILazyProperty, param: IParameter): ?Tick {
     pPath = property.getPath();
-    path = pPath.optParent.fromSome();
-    scope = this.getScope(path);
+    scope = this.getObjectScope(pPath);
     scope.getLazyObjectTime(pPath, param)
   }
 
@@ -80,6 +89,66 @@ mutable class Context(
     path = pPath.optParent.fromSome();
     scope = this.getScope(path);
     property.set(scope, value);
+  }
+
+  mutable fun watch(property: IEagerProperty, watch: IWatch): IClosable {
+    pPath = property.getPath();
+    this.watchedObjects.maybeGet(pPath) match {
+    | Some(values) ->
+      this.!watchedObjects = this.watchedObjects.set(
+        pPath,
+        List.Cons(watch, values),
+      )
+    | _ ->
+      this.!watchedObjects = this.watchedObjects.set(
+        pPath,
+        List.Cons(watch, List.Nil()),
+      );
+      scope = this.getObjectScope(pPath);
+      scope.watch(pPath.id)
+    };
+    LamClosable(ctx ~> ctx.unwatch(property, watch))
+  }
+
+  mutable fun unwatch(property: IEagerProperty, watch: IWatch): void {
+    pPath = property.getPath();
+    this.watchedObjects.maybeGet(pPath).each(elements -> {
+      cleaned = elements.filter(w -> w != watch);
+      if (cleaned.isEmpty()) {
+        this.!watchedObjects = this.watchedObjects.remove(pPath);
+        scope = this.getObjectScope(pPath);
+        scope.unwatch(pPath.id);
+      } else {
+        this.!watchedObjects = this.watchedObjects.set(pPath, cleaned);
+      }
+    });
+  }
+
+  mutable fun output(property: IEagerProperty, watch: Watch): IClosable {
+    pPath = property.getPath();
+    this.outputs.maybeGet(pPath) match {
+    | Some(values) ->
+      this.!outputs = this.outputs.set(pPath, List.Cons(watch, values))
+    | _ ->
+      this.!outputs = this.outputs.set(pPath, List.Cons(watch, List.Nil()));
+      scope = this.getObjectScope(pPath);
+      scope.watch(pPath.id)
+    };
+    LamClosable(ctx ~> ctx.unoutput(property, watch))
+  }
+
+  mutable fun unoutput(property: IEagerProperty, watch: Watch): void {
+    pPath = property.getPath();
+    this.outputs.maybeGet(pPath).each(elements -> {
+      cleaned = elements.filter(w -> w != watch);
+      if (cleaned.isEmpty()) {
+        this.!outputs = this.outputs.remove(pPath);
+        scope = this.getObjectScope(pPath);
+        scope.unwatch(pPath.id);
+      } else {
+        this.!outputs = this.outputs.set(pPath, cleaned);
+      }
+    });
   }
 
   readonly fun chill(): Context {
