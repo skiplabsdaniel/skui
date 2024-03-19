@@ -129,10 +129,7 @@ mutable class Context(
     this.outputs.maybeGet(pPath) match {
     | Some(values) ->
       this.!outputs = this.outputs.set(pPath, List.Cons(watch, values))
-    | _ ->
-      this.!outputs = this.outputs.set(pPath, List.Cons(watch, List.Nil()));
-      scope = this.getObjectScope(pPath);
-      scope.watch(pPath.id)
+    | _ -> this.!outputs = this.outputs.set(pPath, List.Cons(watch, List.Nil()))
     };
     LamClosable(ctx ~> ctx.unoutput(property, watch))
   }
@@ -143,8 +140,6 @@ mutable class Context(
       cleaned = elements.filter(w -> w != watch);
       if (cleaned.isEmpty()) {
         this.!outputs = this.outputs.remove(pPath);
-        scope = this.getObjectScope(pPath);
-        scope.unwatch(pPath.id);
       } else {
         this.!outputs = this.outputs.set(pPath, cleaned);
       }
