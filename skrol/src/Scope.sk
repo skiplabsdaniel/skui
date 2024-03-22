@@ -87,6 +87,14 @@ mutable class Scope(
     this.properties.maybeGet(key).map(p -> p as IEagerProperty _)
   }
 
+  readonly fun object(key: Int): TimedObject {
+    this.values.get(key);
+  }
+
+  readonly fun maybeObject(key: Int): ?TimedObject {
+    this.values.maybeGet(key)
+  }
+
   mutable fun input(object: Object): IInputProperty {
     id = this.nextId;
     this.!nextId = this.nextId + 1;

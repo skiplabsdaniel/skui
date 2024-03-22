@@ -68,7 +68,7 @@ class SFArray private (
     }
   }
 
-  fun changes(old: TimedObject): IChanges {
+  fun changes(old: TimedObject, _mappable: mutable IMappable): IChanges {
     oldValue = old.value match {
     | a @ SFArray _ -> a.value
     | _ -> return Change(this.getReference())

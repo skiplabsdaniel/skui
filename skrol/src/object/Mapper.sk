@@ -88,10 +88,37 @@ class SFMapper private (
     }
   }
 
-  fun changes(_old: TimedObject): IChanges {
-    // Mappable is missing
+  fun changes(old: TimedObject, mappable: mutable IMappable): IChanges {
     // Get time to compute if value as been updated
-    todo()
+    oldValue = old.value match {
+    | a @ SFMapper _ -> a.value
+    | _ ->
+      return Change(
+        ObjectArray(this.value.map(v -> mappable.object(v.value).value)),
+      )
+    };
+    values = SortedMap::createFromItems(
+      this.value.mapWithIndex((idx, v) -> (v.value, idx)),
+    );
+    timedSteps = mutable Vector<Step>[];
+    oldValue.eachWithIndex((idx, v) -> {
+      mappable.maybeObject(v.value) match {
+      | Some(nv) ->
+        if (nv.tick > old.tick) {
+          timedSteps.push(Update(idx, nv.value));
+        };
+        !values = values.remove(v.value)
+      | _ -> timedSteps.push(Delete(idx))
+      }
+    });
+    values.each((k, v) -> {
+      insert = Insert(v, mappable.object(k).value);
+      timedSteps.push(insert)
+    });
+    if (timedSteps.isEmpty()) {
+      return NoChange();
+    };
+    Diff(timedSteps.toArray())
   }
 }
 

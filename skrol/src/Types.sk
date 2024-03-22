@@ -131,6 +131,8 @@ base mutable class Dependencies extends IUpdater {
 base mutable class IMappable {
   readonly fun get(key: Int): IEagerProperty;
   readonly fun maybeGet(key: Int): ?IEagerProperty;
+  readonly fun object(key: Int): TimedObject;
+  readonly fun maybeObject(key: Int): ?TimedObject;
 }
 
 base mutable class IScope extends IUpdater {
@@ -145,7 +147,7 @@ base mutable class IScope extends IUpdater {
 base class StatefullObject extends Object uses HasClassName {
   fun init(scope: mutable IScope): this;
   fun update(scope: mutable IScope, new: Object): Result<this, void>;
-  fun changes(old: TimedObject): IChanges;
+  fun changes(old: TimedObject, mappable: mutable IMappable): IChanges;
 }
 
 base class StatelessObject extends Object {
@@ -329,6 +331,9 @@ class IntArray(value: Array<Int>) extends StatelessObject uses ObjectToTyped
 class FloatArray(
   value: Array<Float>,
 ) extends StatelessObject uses ObjectToTyped
+class ObjectArray(
+  value: Array<Object>,
+) extends StatelessObject uses ObjectToTyped
 
 fun int(v: Int): IntObject {
   IntObject(v)
@@ -366,7 +371,7 @@ class DummySFO() extends StatefullObject {
     dummy()
   }
 
-  fun changes(_old: TimedObject): IChanges {
+  fun changes(_old: TimedObject, _mappable: mutable IMappable): IChanges {
     dummy()
   }
 

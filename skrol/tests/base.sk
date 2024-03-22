@@ -81,7 +81,7 @@ class StafullAdd(
     StafullAdd(this.i1, this.i2)
   }
 
-  fun changes(_old: O.TimedObject): O.IChanges {
+  fun changes(_old: O.TimedObject, _mappable: mutable O.IMappable): O.IChanges {
     todo()
   }
 
