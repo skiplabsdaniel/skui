@@ -50,11 +50,13 @@ class Reads(
   }
 }
 
+// TODO manage deleted
+
 mutable class Scope(
   path: Path,
   private optLogger: ?mutable ILogger = None(),
   private mutable optParent: ?mutable Scope = None(),
-  private properties: mutable Vector<IProperty> = mutable Vector[],
+  private mutable properties: SortedMap<Int, IProperty> = SortedMap[],
   private mutable scopes: SortedMap<Int, mutable Scope> = SortedMap[],
   private mutable readers: SortedMap<Int, Readers> = SortedMap[],
   private mutable combines: SortedMap<Int, Function> = SortedMap[],
@@ -67,26 +69,28 @@ mutable class Scope(
   private mutable lazys: SortedSet<(Int, IParameter)> = SortedSet[],
   private mutable tick: Tick = Tick(0),
   private mutable watchedObjects: SortedSet<Int> = SortedSet[],
+  private mutable nextId: Int = 0,
   private mutable updating: Int = -1,
   private mutable invalidateds: SortedSet<Int> = SortedSet[],
   private mutable updated: SortedMap<Int, TimedObject> = SortedMap[],
 ) extends Dependencies, IScope {
   //
+
   mutable fun input(object: Object): IInputProperty {
-    id = this.properties.size();
+    id = this.nextId;
+    this.!nextId = this.nextId + 1;
     !object = this.checkObject(id, object);
-    prop = InputProperty(Path(this.properties.size(), Some(this.path)));
+    prop = InputProperty(Path(id, Some(this.path)));
     this.!values = this.values.set(id, TimedObject(object, this.tick));
-    this.properties.push(prop);
+    this.!properties = this.properties.set(id, prop);
     prop
   }
 
   mutable fun lazy(function: LazyFunction): ILazyProperty {
-    prop = LazyProperty(
-      function,
-      Path(this.properties.size(), Some(this.path)),
-    );
-    this.properties.push(prop);
+    id = this.nextId;
+    this.!nextId = this.nextId + 1;
+    prop = LazyProperty(function, Path(id, Some(this.path)));
+    this.!properties = this.properties.set(id, prop);
     prop
   }
 
@@ -99,12 +103,13 @@ mutable class Scope(
   }
 
   mutable fun combine(function: Function): IEagerProperty {
-    id = this.properties.size();
+    id = this.nextId;
+    this.!nextId = this.nextId + 1;
     property = EagerProperty(Path(id, Some(this.path)));
     value = function.call(this, Some(EagerReader(property.path)));
     this.!values = this.values.set(id, TimedObject(value, this.tick));
     this.!combines = this.combines.set(id, function);
-    this.properties.push(property);
+    this.!properties = this.properties.set(id, property);
     property
   }
 
@@ -206,7 +211,7 @@ mutable class Scope(
       }
     | _ -> this.checkObject(id, object)
     };
-    this.properties.set(id, readable);
+    this.!properties = this.properties.set(id, readable);
     optOld.each(old -> this.!updated = this.updated.set(id, old));
     this.!values = this.values.set(id, TimedObject(object, this.tick));
     this.invalidateReaders(id);
@@ -218,7 +223,7 @@ mutable class Scope(
     value: Object,
     param: IParameter,
   ): void {
-    this.properties.set(id, property);
+    this.!properties = this.properties.set(id, property);
     this.!lazyObjects = this.lazyObjects.set(
       (id, param),
       TimedObject(value, this.tick),
@@ -227,25 +232,26 @@ mutable class Scope(
     this.invalidateReaders(id)
   }
 
-  mutable fun set(path: Path, property: IProperty, value: Object): void {
+  mutable fun set(property: IProperty, value: Object): void {
+    path = property.getPath();
     path.optParent match {
     | Some(parent) if (parent == this.path) ->
       this.setIn(path.id, property, value)
-    | Some _ -> this.optParent.fromSome().set(path, property, value)
+    | Some _ -> this.optParent.fromSome().set(property, value)
     | _ -> invariant_violation("Property have to get scope parent")
     }
   }
 
   mutable fun setLazy(
-    path: Path,
     property: ILazyProperty,
     value: Object,
     param: IParameter,
   ): void {
+    path = property.getPath();
     path.optParent match {
     | Some(parent) if (parent == this.path) ->
       this.setLazyIn(path.id, property, value, param)
-    | Some _ -> this.optParent.fromSome().setLazy(path, property, value, param)
+    | Some _ -> this.optParent.fromSome().setLazy(property, value, param)
     | _ -> invariant_violation("Property have to get scope parent")
     }
   }
@@ -438,6 +444,7 @@ mutable class Scope(
       this.lazys,
       this.tick,
       this.watchedObjects,
+      this.nextId,
     )
   }
 
@@ -446,7 +453,7 @@ mutable class Scope(
       this.path,
       Some(logger),
       None(),
-      this.properties.clone(),
+      this.properties,
       this.scopes.map((_, v) -> v.clone(logger)),
       this.readers,
       this.combines,
@@ -456,6 +463,7 @@ mutable class Scope(
       this.lazys,
       this.tick,
       this.watchedObjects,
+      this.nextId,
     );
     mscope.scopes.each((_, v) -> v.!optParent = Some(mscope));
     mscope
@@ -483,6 +491,21 @@ mutable class Scope(
 
   mutable fun error(msg: String, meta: Logger.Metadata): void {
     this.log(Logger.Error(), msg, meta)
+  }
+
+  mutable fun remove(properties: Array<Int>): void {
+    // TODO manage watched
+    properties.each(p -> {
+      this.!properties = this.properties.remove(p);
+      this.!values = this.values.remove(p);
+      this.!scopes = this.scopes.remove(p);
+      lazy = this.lazyObjects;
+      lazy.each((k, _v) ->
+        if (k.i0 == p) {
+          this.!lazyObjects = this.lazyObjects.remove(k)
+        }
+      )
+    });
   }
 }
 

@@ -28,4 +28,16 @@ class FloatToObject() extends Converter<Float, Object> {
   }
 }
 
+class IntArrayToObject() extends Converter<Array<Int>, Object> {
+  fun convert(from_: Array<Int>): Object {
+    IntArray(from_)
+  }
+}
+
+class ObjectToIntArray() extends Converter<Object, Array<Int>> {
+  fun convert(from_: Object): Array<Int> {
+    IntArray::type(from_).value
+  }
+}
+
 module end;

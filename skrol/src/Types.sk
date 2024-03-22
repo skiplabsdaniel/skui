@@ -1,6 +1,6 @@
 module SKROL;
 
-value class Tick(value: Int) uses Show {
+value class Tick(value: Int) uses Show, Orderable {
   fun next(): this {
     static(this.value + 1)
   }
@@ -58,7 +58,7 @@ base class Object {
 
 base class IParameter uses Orderable
 base class IWatch uses Equality
-base class IChanges
+
 base class IClosable {
   fun close(context: mutable Context): void;
 }
@@ -67,11 +67,17 @@ base class Watch extends IWatch {
   fun apply(object: Object): void;
 }
 
+base class IChanges {
+  children =
+  | NoChange()
+  | Change(object: Object)
+  | Diff(Array<Step>)
+}
+
 base class WatchChanges extends IWatch {
   fun apply(changes: IChanges): void;
 }
 
-class Change(object: Object) extends IChanges
 class LamClosable(fn: mutable Context ~> void) extends IClosable {
   //
   fun close(context: mutable Context): void {
@@ -99,15 +105,20 @@ trait ParamToTyped {
   }
 }
 
-base mutable class Dependencies {
-  mutable fun getTick(): Tick;
-  mutable fun set(path: Path, property: IProperty, value: Object): void;
+base mutable class IUpdater {
+  mutable fun set(property: IProperty, value: Object): void;
   mutable fun setLazy(
-    path: Path,
     property: ILazyProperty,
     value: Object,
     param: IParameter,
   ): void;
+  readonly fun getObject(path: Path): Object;
+  readonly fun getLazyObject(path: Path, param: IParameter): ?Object;
+}
+
+base mutable class Dependencies extends IUpdater {
+  mutable fun getTick(): Tick;
+
   mutable fun addReader(path: Path, reader: Reader): void;
   mutable fun clearLazyReads(path: Path, param: IParameter): void;
   mutable fun addLazyRead(path: Path, param: IParameter, read: Path): void;
@@ -117,11 +128,12 @@ base mutable class Dependencies {
   readonly fun getObjectTime(path: Path): Tick;
 }
 
-base mutable class IScope {
+base mutable class IScope extends IUpdater {
   // The object must manage the state to be able the update it
   mutable fun input(value: Object): IInputProperty;
   mutable fun lazy(function: LazyFunction): ILazyProperty;
   mutable fun combine(function: Function): IEagerProperty;
+  mutable fun remove(properties: Array<Int>): void;
 }
 
 base class StatefullObject extends Object uses HasClassName {
@@ -154,7 +166,7 @@ base class ILazyReadable {
 }
 
 base class IWritable {
-  fun set(dependencies: mutable Dependencies, value: Object): void;
+  fun set(updater: mutable IUpdater, value: Object): void;
 }
 
 base class Reader(path: Path) uses Orderable {
@@ -307,6 +319,10 @@ class FloatObject(
 class BoolObject(value: Bool) extends StatelessObject uses ObjectToTyped
 class StringObject(value: String) extends StatelessObject uses ObjectToTyped
 class RangeObject(value: Range) extends StatelessObject uses ObjectToTyped
+class IntArray(value: Array<Int>) extends StatelessObject uses ObjectToTyped
+class FloatArray(
+  value: Array<Float>,
+) extends StatelessObject uses ObjectToTyped
 
 fun int(v: Int): IntObject {
   IntObject(v)

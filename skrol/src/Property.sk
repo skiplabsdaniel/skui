@@ -30,10 +30,10 @@ base class EagerPropertyBase final (path: Path) {
 class EagerProperty extends EagerPropertyBase, IEagerProperty
 
 class InputProperty extends EagerPropertyBase, IInputProperty {
-  fun set(dependencies: mutable Dependencies, value: Object): void {
-    current = dependencies.getObject(this.path);
+  fun set(updater: mutable IUpdater, value: Object): void {
+    current = updater.getObject(this.path);
     if (native_eq(current.getReference(), value.getReference()) != 0) {
-      dependencies.set(this.path, this, value);
+      updater.set(this, value);
     }
   }
 }
@@ -67,7 +67,7 @@ class LazyProperty(function: LazyFunction, path: Path) extends ILazyProperty {
         param,
         Some(LazyReader(param, this.path)),
       );
-      dependencies.setLazy(this.path, this, value, param);
+      dependencies.setLazy(this, value, param);
       value
     }
   }
@@ -85,6 +85,20 @@ class LazyProperty(function: LazyFunction, path: Path) extends ILazyProperty {
 
   fun getTime(dependencies: mutable Dependencies): Tick {
     dependencies.getObjectTime(this.path)
+  }
+}
+
+class TInputProperty<T: frozen>(
+  property: IInputProperty,
+  fromObject: Converter<Object, T>,
+  toObject: Converter<T, Object>,
+) uses Equality {
+  fun get(dependencies: mutable Dependencies, optReader: ?Reader = None()): T {
+    this.fromObject.convert(this.property.get(dependencies, optReader))
+  }
+
+  fun set(updater: mutable IUpdater, value: T): void {
+    this.property.set(updater, this.toObject.convert(value))
   }
 }
 

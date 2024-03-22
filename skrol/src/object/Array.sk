@@ -1,0 +1,84 @@
+module SKROL;
+
+class SFArrayState(
+  size: TInputProperty<Int>,
+  order: TInputProperty<Array<Int>>,
+  properties: Array<IInputProperty>,
+)
+
+class SFArray private (
+  value: Array<Object>,
+  optState: ?SFArrayState = None(),
+) extends StatefullObject {
+  //
+  fun getReference(): Object {
+    SFArray(this.value)
+  }
+
+  fun init(scope: mutable IScope): this {
+    size = scope.input(IntObject(this.value.size()));
+    properties = this.value.map(scope.input);
+    order = scope.input(IntArray(properties.map(p -> p.getPath().id)));
+    SFArray(
+      this.value,
+      Some(
+        SFArrayState(
+          TInputProperty(size, ObjectToInt(), IntToObject()),
+          TInputProperty(order, ObjectToIntArray(), IntArrayToObject()),
+          properties,
+        ),
+      ),
+    )
+  }
+
+  fun update(scope: mutable IScope, new: Object): Result<this, void> {
+    newArray = new match {
+    | a @ SFArray _ -> a.value
+    | _ -> return Failure(void)
+    };
+    this.optState match {
+    | Some(state) ->
+      steps = process(this.value, newArray);
+      if (steps.isEmpty()) {
+        return Success(this);
+      };
+      properties = Vector::mcreateFromItems(state.properties);
+      deleted = mutable Vector<IEagerProperty>[];
+      steps.each(step ->
+        step match {
+        | Insert(index, value) -> properties.insert(index, scope.input(value))
+        | Delete(index) ->
+          deleted.push(properties[index]);
+          properties.delete(index)
+        | Move(from, to) -> properties.set(to, state.properties[from])
+        | Update _ -> void
+        }
+      );
+      i = 0;
+      for (object in newArray) {
+        properties[i].set(scope, object);
+        !i = i + 1;
+      };
+      order = properties.map(p -> p.getPath().id).toArray();
+      state.order.set(scope, order);
+      state.size.set(scope, newArray.size());
+      scope.remove(deleted.map(p -> p.getPath().id).toArray());
+      Success(this)
+    | _ -> Failure(void)
+    }
+  }
+
+  fun changes(old: TimedObject): IChanges {
+    oldValue = old.value match {
+    | a @ SFArray _ -> a.value
+    | _ -> return Change(this.getReference())
+    };
+    steps = process(oldValue, this.value);
+    if (steps.isEmpty()) {
+      return NoChange();
+    };
+    Diff(steps)
+  }
+}
+
+module end;

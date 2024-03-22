@@ -1,0 +1,168 @@
+module SKROL;
+
+base class Step {
+  children =
+  | Insert(index: Int, value: Object)
+  | Delete(index: Int)
+  | Move(from: Int, to: Int)
+  | Update(index: Int, value: Object)
+}
+
+base class Occurence uses Equality {
+  children =
+  | Zero()
+  | One()
+  | Two()
+  | Many()
+
+  fun incr(): Occurence {
+    this match {
+    | Zero() -> One()
+    | One() -> Two()
+    | Two()
+    | Many() ->
+      Many()
+    }
+  }
+}
+
+class Data(
+  oldOccurence: Occurence = Zero(),
+  newOccurence: Occurence = Zero(),
+  optLastOldIndex: ?Int = None(),
+) {
+  fun inBoth(): Bool {
+    !(this.oldOccurence == Zero() || this.newOccurence == Zero())
+  }
+}
+
+class Element(hash: Int, optOther: ?Int = None())
+
+fun process(old: Sequence<Object>, new: Array<Object>): Array<Step> {
+  table = mutable Map<Int, Data>[];
+  newVector = fillData(new, table, false);
+  oldVector = fillData(old, table, true);
+  findUniqueVirtualEntries(oldVector, newVector, table);
+  expandUniqueEntriesAsc(oldVector, newVector);
+  expandUniqueEntriesDesc(oldVector, newVector);
+  steps = mutable Vector<Step>[];
+  deleteOffsets = Array::mfill(oldVector.size(), 0);
+  offset = 0;
+  oldVector.eachWithIndex((index, line) -> {
+    deleteOffsets.set(index, offset);
+    if (line.optOther.isNone()) {
+      steps.insert(0, Delete(index));
+      !offset = offset + 1;
+    }
+  });
+  !offset = 0;
+  newVector.eachWithIndex((index, line) -> {
+    line.optOther match {
+    | Some(oldIndex) ->
+      oldElement = oldVector[oldIndex];
+      if (oldElement.hash != line.hash) {
+        steps.push(Update(index, new[index]));
+      };
+      deleteOffset = deleteOffsets[oldIndex];
+      if ((oldIndex - deleteOffset + offset) != index) {
+        steps.push(Move(oldIndex, index))
+      }
+    | _ ->
+      steps.push(Insert(index, new[index]));
+      !offset = offset + 1
+    }
+  });
+  steps.toArray();
+}
+
+fun findUniqueVirtualEntries(
+  old: mutable Vector<Element>,
+  new: mutable Vector<Element>,
+  table: readonly Map<Int, Data>,
+): void {
+  new.eachWithIndex((index, line) -> {
+    data = table.get(line.hash);
+    if (data.inBoth()) {
+      data.optLastOldIndex.each(oldIndex -> {
+        !line.optOther = Some(oldIndex);
+        new.set(index, line);
+        oldElement = old[oldIndex];
+        !oldElement.optOther = Some(index);
+        old.set(oldIndex, oldElement);
+      })
+    }
+  });
+}
+
+fun expandUniqueEntriesAsc(
+  old: mutable Vector<Element>,
+  new: mutable Vector<Element>,
+): void {
+  new.eachWithIndex((i, line) -> {
+    line.optOther.each(j -> {
+      new.maybeGet(i + 1).each(nlp1 ->
+        old.maybeGet(j + 1).each(olp1 ->
+          if (nlp1.hash == olp1.hash) {
+            !nlp1.optOther = Some(j + 1);
+            new.set(i + 1, nlp1);
+            !olp1.optOther = Some(i + 1);
+            old.set(j + 1, olp1);
+          }
+        )
+      )
+    })
+  });
+}
+
+fun expandUniqueEntriesDesc(
+  old: mutable Vector<Element>,
+  new: mutable Vector<Element>,
+): void {
+  for (i in Range(0, new.size()).reversed()) {
+    line = new[i];
+    line.optOther.each(j -> {
+      new.maybeGet(i - 1).each(nlm1 ->
+        old.maybeGet(j - 1).each(olm1 ->
+          if (nlm1.hash == olm1.hash) {
+            !nlm1.optOther = Some(j - 1);
+            new.set(i - 1, nlm1);
+            !olm1.optOther = Some(i - 1);
+            old.set(j - 1, olm1);
+          }
+        )
+      )
+    })
+  }
+}
+
+fun fillData(
+  objects: Sequence<Object>,
+  table: mutable Map<Int, Data>,
+  old: Bool,
+): mutable Vector<Element> {
+  elements = mutable Vector<Element>[];
+  objects.each(object -> {
+    hash = hash(object.getReference());
+    checkData(hash, elements.size(), table, old);
+    elements.push(Element(hash));
+  });
+  elements;
+}
+
+fun checkData(
+  hash: Int,
+  index: Int,
+  table: mutable Map<Int, Data>,
+  old: Bool,
+): void {
+  data = table.maybeGet(hash).default(Data());
+  if (old) {
+    !data.oldOccurence = data.oldOccurence.incr();
+    !data.optLastOldIndex = Some(index);
+  } else {
+    !data.newOccurence = data.newOccurence.incr()
+  };
+  table.set(hash, data);
+}
+
+module end;
