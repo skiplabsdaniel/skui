@@ -73,8 +73,19 @@ mutable class Scope(
   private mutable updating: Int = -1,
   private mutable invalidateds: SortedSet<Int> = SortedSet[],
   private mutable updated: SortedMap<Int, TimedObject> = SortedMap[],
-) extends Dependencies, IScope {
+) extends Dependencies, IScope, IMappable {
   //
+  mutable fun getMappable(): mutable IMappable {
+    this.optParent.fromSome()
+  }
+
+  readonly fun get(key: Int): IEagerProperty {
+    this.properties.get(key) as IEagerProperty _;
+  }
+
+  readonly fun maybeGet(key: Int): ?IEagerProperty {
+    this.properties.maybeGet(key).map(p -> p as IEagerProperty _)
+  }
 
   mutable fun input(object: Object): IInputProperty {
     id = this.nextId;
@@ -360,10 +371,10 @@ mutable class Scope(
     }
   }
 
-  readonly fun get(path: Path): IProperty {
+  readonly fun getProperty(path: Path): IProperty {
     path.optParent match {
     | Some(parent) if (parent == this.path) -> this.properties.get(path.id)
-    | Some _ -> this.optParent.fromSome().get(path)
+    | Some _ -> this.optParent.fromSome().getProperty(path)
     | _ -> invariant_violation("Property have to get scope parent")
     }
   }

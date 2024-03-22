@@ -128,12 +128,18 @@ base mutable class Dependencies extends IUpdater {
   readonly fun getObjectTime(path: Path): Tick;
 }
 
+base mutable class IMappable {
+  readonly fun get(key: Int): IEagerProperty;
+  readonly fun maybeGet(key: Int): ?IEagerProperty;
+}
+
 base mutable class IScope extends IUpdater {
   // The object must manage the state to be able the update it
   mutable fun input(value: Object): IInputProperty;
   mutable fun lazy(function: LazyFunction): ILazyProperty;
   mutable fun combine(function: Function): IEagerProperty;
   mutable fun remove(properties: Array<Int>): void;
+  mutable fun getMappable(): mutable IMappable;
 }
 
 base class StatefullObject extends Object uses HasClassName {
