@@ -5,7 +5,7 @@ module SKROLTest;
 
 @test
 fun eager(): void {
-  context = mutable O.Context();
+  context = O.Context::create();
   i1 = context.input(O.int(0));
   i2 = context.input(O.int(0));
   i3 = context.combine(
@@ -43,7 +43,7 @@ fun lazyFunction(
 
 @test
 fun lazy(): void {
-  context = mutable O.Context();
+  context = O.Context::create();
   i1 = context.input(O.int(0));
   i2 = context.lazy(O.LazyFunction(Array[], Array[], lazyFunction));
   param = O.IntParam(2);
@@ -104,7 +104,7 @@ class StafullAdd(
 
 @test
 fun statefull(): void {
-  context = mutable O.Context();
+  context = O.Context::create();
   i1 = context.input(O.int(0));
   i2 = context.input(O.int(0));
   obj3 = StafullAdd(i1, i2);
@@ -135,7 +135,6 @@ fun statefull(): void {
     !expect = Array[i, 2, i + 3];
     T.expectEq(got, expect);
   };
-  //T.expectTrue(false);
 }
 
 module end;

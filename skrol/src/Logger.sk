@@ -1,0 +1,131 @@
+module SKROL;
+
+const errorConfig: Logger.Config = Logger.Config{minLevel => Logger.Error()};
+const traceConfig: Logger.Config = Logger.Config{minLevel => Logger.Trace()};
+const debugConfig: Logger.Config = Logger.Config{minLevel => Logger.Debug()};
+const infoConfig: Logger.Config = Logger.Config{minLevel => Logger.Info()};
+
+class Log(level: Logger.Level, msg: String, meta: Logger.Metadata)
+
+mutable base class ILogger {
+  //
+  mutable fun trace(msg: String, meta: Logger.Metadata): void {
+    this.log(Logger.Trace(), msg, meta)
+  }
+
+  mutable fun debug(msg: String, meta: Logger.Metadata): void {
+    this.log(Logger.Debug(), msg, meta)
+  }
+
+  mutable fun info(msg: String, meta: Logger.Metadata): void {
+    this.log(Logger.Info(), msg, meta)
+  }
+
+  mutable fun error(msg: String, meta: Logger.Metadata): void {
+    this.log(Logger.Error(), msg, meta)
+  }
+
+  mutable fun log(
+    level: Logger.Level,
+    msg: String,
+    meta: Logger.Metadata,
+  ): void;
+
+  mutable fun flush(): void;
+
+  readonly fun chill(): this;
+  readonly fun clone(): mutable this;
+}
+
+fun format(config: Logger.Config, log: Log): String {
+  timestamp = Time.strftime("%Y-%m-%dT%H:%M:%S", log.meta.timestamp);
+  if (config.color) {
+    color = log.level match {
+    | Logger.Trace()
+    | Logger.Debug() ->
+      TermColor.Default()
+    | Logger.Info() -> TermColor.Magenta()
+    | Logger.Error() -> TermColor.Red()
+    };
+    `${log.meta.filename}:${log.meta.lineno} ${timestamp} ` +
+      TermColor.colored(`[${log.level}]`, color) +
+      ` - ${log.msg}`
+  } else {
+    `${log.meta.filename}:${log.meta.lineno} ${timestamp} [${log.level}] - ${
+      log.msg
+    }`
+  }
+}
+
+mutable class BufferedLogger(
+  config: Logger.Config = Logger.Config{},
+  format: (Logger.Config, Log) ~> String = format,
+  logs: mutable Vector<Log> = mutable Vector[],
+) extends ILogger {
+  //
+  mutable fun log(
+    level: Logger.Level,
+    msg: String,
+    meta: Logger.Metadata,
+  ): void {
+    if (level.priority() < this.config.minLevel.priority()) {
+      return void
+    };
+    this.logs.push(Log(level, msg, meta))
+  }
+
+  mutable fun flush(): void {
+    this.logs.each(log -> {
+      msg = this.format(this.config, log);
+      log.level match {
+      | Logger.Error() -> print_error(msg)
+      | _ -> print_debug(msg)
+      }
+    });
+    this.logs.clear();
+  }
+
+  readonly fun chill(): ILogger {
+    BufferedLogger(this.config, this.format, this.logs.chill())
+  }
+
+  readonly fun clone(): mutable ILogger {
+    mutable BufferedLogger(this.config, this.format, this.logs.clone())
+  }
+}
+
+mutable class Logger(
+  config: Logger.Config = Logger.Config{},
+  format: (Logger.Config, Log) ~> String = format,
+) extends ILogger {
+  //
+  mutable fun log(
+    level: Logger.Level,
+    msg: String,
+    meta: Logger.Metadata,
+  ): void {
+    if (level.priority() < this.config.minLevel.priority()) {
+      return void
+    };
+    log = Log(level, msg, meta);
+    logmsg = this.format(this.config, log);
+    log.level match {
+    | Logger.Error() -> print_error(logmsg)
+    | _ -> print_debug(logmsg)
+    }
+  }
+
+  mutable fun flush(): void {
+    void
+  }
+
+  readonly fun chill(): Logger {
+    Logger(this.config, this.format)
+  }
+
+  readonly fun clone(): mutable Logger {
+    mutable Logger(this.config, this.format)
+  }
+}
+
+module end;

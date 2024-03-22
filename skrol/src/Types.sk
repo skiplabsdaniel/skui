@@ -1,8 +1,12 @@
 module SKROL;
 
-value class Tick(value: Int) {
+value class Tick(value: Int) uses Show {
   fun next(): this {
     static(this.value + 1)
+  }
+
+  fun toString(): String {
+    this.value.toString()
   }
 }
 

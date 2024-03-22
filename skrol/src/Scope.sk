@@ -52,6 +52,7 @@ class Reads(
 
 mutable class Scope(
   path: Path,
+  private optLogger: ?mutable ILogger = None(),
   private mutable optParent: ?mutable Scope = None(),
   private properties: mutable Vector<IProperty> = mutable Vector[],
   private mutable scopes: SortedMap<Int, mutable Scope> = SortedMap[],
@@ -168,7 +169,11 @@ mutable class Scope(
   private mutable fun checkObject(id: Int, object: Object): Object {
     object match {
     | sf @ StatefullObject _ ->
-      subscope = mutable Scope(Path(id, Some(this.path)), Some(this));
+      subscope = mutable Scope(
+        Path(id, Some(this.path)),
+        this.optLogger,
+        Some(this),
+      );
       this.!scopes = this.scopes.set(id, subscope);
       sf.init(subscope)
     | _ -> object
@@ -422,6 +427,7 @@ mutable class Scope(
     Scope(
       this.path,
       None(),
+      None(),
       this.properties.chill(),
       this.scopes.map((_, v) -> v.chill()),
       this.readers,
@@ -435,12 +441,13 @@ mutable class Scope(
     )
   }
 
-  readonly fun clone(optParent: ?mutable Scope = None()): mutable Scope {
+  readonly fun clone(logger: mutable ILogger): mutable Scope {
     mscope = mutable Scope(
       this.path,
-      optParent,
+      Some(logger),
+      None(),
       this.properties.clone(),
-      this.scopes.map((_, v) -> v.clone()),
+      this.scopes.map((_, v) -> v.clone(logger)),
       this.readers,
       this.combines,
       this.values,
@@ -452,6 +459,30 @@ mutable class Scope(
     );
     mscope.scopes.each((_, v) -> v.!optParent = Some(mscope));
     mscope
+  }
+
+  mutable fun log(
+    level: Logger.Level,
+    msg: String,
+    meta: Logger.Metadata,
+  ): void {
+    this.optLogger.each(l -> l.log(level, msg, meta))
+  }
+
+  mutable fun trace(msg: String, meta: Logger.Metadata): void {
+    this.log(Logger.Trace(), msg, meta)
+  }
+
+  mutable fun debug(msg: String, meta: Logger.Metadata): void {
+    this.log(Logger.Debug(), msg, meta)
+  }
+
+  mutable fun info(msg: String, meta: Logger.Metadata): void {
+    this.log(Logger.Info(), msg, meta)
+  }
+
+  mutable fun error(msg: String, meta: Logger.Metadata): void {
+    this.log(Logger.Error(), msg, meta)
   }
 }
 

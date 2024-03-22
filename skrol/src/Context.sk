@@ -1,14 +1,23 @@
 module SKROL;
 
-mutable class Context(
-  scope: mutable Scope = mutable Scope(Path(0)),
+mutable class Context private (
+  scope: mutable Scope,
+  logger: mutable ILogger,
   mutable tick: Tick = Tick(0),
   mutable watchedObjects: SortedMap<Path, List<IWatch>> = SortedMap[],
   mutable outputs: SortedMap<Path, List<Watch>> = SortedMap[],
 ) {
   //
+  static fun create(
+    logger: mutable ILogger = mutable BufferedLogger(),
+  ): mutable this {
+    scope = mutable Scope(Path(0), Some(logger));
+    mutable Context(scope, logger)
+  }
+
   mutable fun update(): void {
     this.!tick = this.tick.next();
+    #log (this.logger.trace, `Start update n°${this.tick}`);
     watched = this.scope.update(this.tick);
     watched.each((path, timed) ->
       this.watchedObjects.maybeGet(path).each(elements ->
@@ -26,7 +35,9 @@ mutable class Context(
     );
     this.outputs.each((path, elements) ->
       elements.each(w -> w.apply(this.getObject(path)))
-    )
+    );
+    #log (this.logger.trace, `End update n°${this.tick}`);
+    this.logger.flush();
   }
 
   mutable fun input(supplier: Object): IInputProperty {
@@ -147,11 +158,12 @@ mutable class Context(
   }
 
   readonly fun chill(): Context {
-    Context(this.scope.chill(), this.tick)
+    Context(this.scope.chill(), this.logger.chill(), this.tick)
   }
 
   readonly fun clone(): mutable Context {
-    mutable Context(this.scope.clone(), this.tick)
+    logger = this.logger.clone();
+    mutable Context(this.scope.clone(logger), logger, this.tick)
   }
 }
 
