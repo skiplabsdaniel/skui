@@ -5,7 +5,7 @@ module SKROLTest;
 
 @test
 fun eager(): void {
-  context = O.Context::create();
+  context = O.Context::createForLevel(Logger.Error());
   i1 = context.input(O.int(0));
   i2 = context.input(O.int(0));
   i3 = context.combine(
@@ -29,7 +29,7 @@ fun eager(): void {
   T.expectEq(got, expect);
   getTime = (prop: O.IEagerProperty) -> context.getTime(prop).value;
   !got = Array[i1, i2, i3].map(getTime);
-  !expect = Array[0, 1, 2];
+  !expect = Array[1, 2, 2];
   T.expectEq(got, expect);
 }
 
@@ -43,7 +43,7 @@ fun lazyFunction(
 
 @test
 fun lazy(): void {
-  context = O.Context::create();
+  context = O.Context::createForLevel(Logger.Error());
   i1 = context.input(O.int(0));
   i2 = context.lazy(O.LazyFunction(Array[], Array[], lazyFunction));
   param = O.IntParam(2);
@@ -65,7 +65,7 @@ fun lazy(): void {
   getTime = (prop: O.IEagerProperty) -> context.getTime(prop).value;
   lgetTime = prop -> context.getLazyTime(prop, param).map(v -> v.value);
   !got = Array[Some(getTime(i1)), lgetTime(i2), Some(getTime(i3))];
-  !expect = Array[Some(0), Some(0), Some(1)];
+  !expect = Array[Some(1), Some(0), Some(1)];
   T.expectEq(got, expect);
 }
 
@@ -104,7 +104,7 @@ class StafullAdd(
 
 @test
 fun statefull(): void {
-  context = O.Context::create();
+  context = O.Context::createForLevel(Logger.Error());
   i1 = context.input(O.int(0));
   i2 = context.input(O.int(0));
   obj3 = StafullAdd(i1, i2);
@@ -126,7 +126,7 @@ fun statefull(): void {
   T.expectEq(got, expect);
   getTime = (prop: O.IEagerProperty) -> context.getTime(prop).value;
   !got = Array[i1, i2, watched].map(getTime);
-  !expect = Array[0, 1, 2];
+  !expect = Array[1, 2, 2];
   T.expectEq(got, expect);
   for (i in Range(0, 1000)) {
     context.set(i1, O.int(i));
@@ -135,6 +135,49 @@ fun statefull(): void {
     !expect = Array[i, 2, i + 3];
     T.expectEq(got, expect);
   };
+}
+
+@test
+fun sfarray(): void {
+  context = O.Context::createForLevel(Logger.Error());
+  v1 = Array["a", "b", "c", "d"].map(v -> O.StringObject(v));
+  i1 = context.input(O.SFArray(v1));
+  check = (expect, size) -> {
+    v = context.get(i1, O.SFArray::type);
+    got = v.list(context.getScope).map(array ->
+      array.map(t -> (SKROL.StringObject::type(t.value).value, t.tick.value))
+    );
+    T.expectEq(got, Some(expect));
+    T.expectEq(v.size(context.getScope), Some(size));
+  };
+  context.update();
+  check(Array[("a", 0), ("b", 0), ("c", 0), ("d", 0)], (4, O.Tick(0)));
+  v2 = Array["a", "b", "c", "d", "e"].map(v -> O.StringObject(v));
+  context.set(i1, O.SFArray(v2));
+  context.update();
+  check(
+    Array[("a", 0), ("b", 0), ("c", 0), ("d", 0), ("e", 2)],
+    (5, O.Tick(2)),
+  );
+  v3 = Array["e", "a", "b", "c", "d"].map(v -> O.StringObject(v));
+  context.set(i1, O.SFArray(v3));
+  context.update();
+  check(
+    Array[("e", 2), ("a", 0), ("b", 0), ("c", 0), ("d", 0)],
+    (5, O.Tick(2)),
+  );
+  v4 = Array["e", "a", "c", "d"].map(v -> O.StringObject(v));
+  context.set(i1, O.SFArray(v4));
+  context.update();
+  check(Array[("e", 2), ("a", 0), ("c", 0), ("d", 0)], (4, O.Tick(4)));
+
+  v5 = Array["d", "e", "a", "f", "c"].map(v -> O.StringObject(v));
+  context.set(i1, O.SFArray(v5));
+  context.update();
+  check(
+    Array[("d", 0), ("e", 2), ("a", 0), ("f", 5), ("c", 0)],
+    (5, O.Tick(5)),
+  );
 }
 
 module end;

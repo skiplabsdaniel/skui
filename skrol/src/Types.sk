@@ -106,6 +106,7 @@ trait ParamToTyped {
 }
 
 base mutable class IUpdater {
+  mutable fun getTick(): Tick;
   mutable fun set(property: IProperty, value: Object): void;
   mutable fun setLazy(
     property: ILazyProperty,
@@ -113,12 +114,11 @@ base mutable class IUpdater {
     param: IParameter,
   ): void;
   readonly fun getObject(path: Path): Object;
+  readonly fun getTimedObject(path: Path): TimedObject;
   readonly fun getLazyObject(path: Path, param: IParameter): ?Object;
 }
 
 base mutable class Dependencies extends IUpdater {
-  mutable fun getTick(): Tick;
-
   mutable fun addReader(path: Path, reader: Reader): void;
   mutable fun clearLazyReads(path: Path, param: IParameter): void;
   mutable fun addLazyRead(path: Path, param: IParameter, read: Path): void;
@@ -137,11 +137,32 @@ base mutable class IMappable {
 
 base mutable class IScope extends IUpdater {
   // The object must manage the state to be able the update it
+  readonly fun getPath(): Path;
   mutable fun input(value: Object): IInputProperty;
   mutable fun lazy(function: LazyFunction): ILazyProperty;
   mutable fun combine(function: Function): IEagerProperty;
   mutable fun remove(properties: Array<Int>): void;
   mutable fun getMappable(): mutable IMappable;
+  mutable fun log(
+    level: Logger.Level,
+    msg: String,
+    meta: Logger.Metadata,
+  ): void;
+  mutable fun trace(msg: String, meta: Logger.Metadata): void {
+    this.log(Logger.Trace(), msg, meta)
+  }
+
+  mutable fun debug(msg: String, meta: Logger.Metadata): void {
+    this.log(Logger.Debug(), msg, meta)
+  }
+
+  mutable fun info(msg: String, meta: Logger.Metadata): void {
+    this.log(Logger.Info(), msg, meta)
+  }
+
+  mutable fun error(msg: String, meta: Logger.Metadata): void {
+    this.log(Logger.Error(), msg, meta)
+  }
 }
 
 base class StatefullObject extends Object uses HasClassName {
@@ -162,6 +183,10 @@ base class IReadable {
     optReader: ?Reader = None(),
   ): Object;
   fun getTime(dependencies: mutable Dependencies): Tick;
+  fun getTimed(
+    dependencies: mutable Dependencies,
+    optReader: ?Reader = None(),
+  ): TimedObject;
 }
 
 base class ILazyReadable {

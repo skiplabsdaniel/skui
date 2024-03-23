@@ -64,6 +64,7 @@ fun process(old: Sequence<Object>, new: Array<Object>): Array<Step> {
         steps.push(Update(index, new[index]));
       };
       deleteOffset = deleteOffsets[oldIndex];
+      // TODO Reduce move list
       if ((oldIndex - deleteOffset + offset) != index) {
         steps.push(Move(oldIndex, index))
       }

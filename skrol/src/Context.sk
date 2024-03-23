@@ -15,9 +15,13 @@ mutable class Context private (
     mutable Context(scope, logger)
   }
 
+  static fun createForLevel(minLevel: Logger.Level): mutable this {
+    static::create(mutable BufferedLogger(Logger.Config{minLevel}))
+  }
+
   mutable fun update(): void {
     this.!tick = this.tick.next();
-    #log (this.logger.trace, `Start update n°${this.tick}`);
+    #log (this.logger.debug, `Enter Context.update n°${this.tick}`);
     watched = this.scope.update(this.tick);
     watched.each((path, timed) ->
       this.watchedObjects.maybeGet(path).each(elements ->
@@ -38,7 +42,7 @@ mutable class Context private (
     this.outputs.each((path, elements) ->
       elements.each(w -> w.apply(this.getObject(path)))
     );
-    #log (this.logger.trace, `End update n°${this.tick}`);
+    #log (this.logger.debug, `Exit Context.update n°${this.tick}`);
     this.logger.flush();
   }
 

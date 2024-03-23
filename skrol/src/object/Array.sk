@@ -1,28 +1,34 @@
 module SKROL;
 
 class SFArrayState(
+  path: Path,
   size: TInputProperty<Int>,
   order: TInputProperty<Array<Int>>,
   properties: Array<IInputProperty>,
 )
 
-class SFArray private (
+class SFArray(
   value: Array<Object>,
   optState: ?SFArrayState = None(),
-) extends StatefullObject {
+) extends StatefullObject uses ObjectToTyped {
   //
   fun getReference(): Object {
     SFArray(this.value)
   }
 
   fun init(scope: mutable IScope): this {
+    path = scope.getPath();
+    tick = scope.getTick();
+    #log (scope.debug, `Enter SFArray.init ${path} on tick ${tick}`);
     size = scope.input(IntObject(this.value.size()));
     properties = this.value.map(scope.input);
     order = scope.input(IntArray(properties.map(p -> p.getPath().id)));
+    #log (scope.debug, `Exit SFArray.init ${path} on tick ${tick}`);
     SFArray(
       this.value,
       Some(
         SFArrayState(
+          scope.getPath(),
           TInputProperty(size, ObjectToInt(), IntToObject()),
           TInputProperty(order, ObjectToIntArray(), IntArrayToObject()),
           properties,
@@ -38,10 +44,16 @@ class SFArray private (
     };
     this.optState match {
     | Some(state) ->
+      #log (
+        scope.debug,
+        `Enter SFArray.update ${state.path} on tick ${scope.getTick()}`,
+      );
       steps = process(this.value, newArray);
       if (steps.isEmpty()) {
         return Success(this);
       };
+
+      #log (scope.debug, inspect(steps).toString());
       properties = Vector::mcreateFromItems(state.properties);
       deleted = mutable Vector<IEagerProperty>[];
       steps.each(step ->
@@ -63,9 +75,42 @@ class SFArray private (
       state.order.set(scope, order);
       state.size.set(scope, newArray.size());
       scope.remove(deleted.map(p -> p.getPath().id).toArray());
-      Success(this)
+      #log (scope.debug, `Exit SFArray.update ${state.path}`);
+      Success(
+        SFArray(
+          newArray,
+          Some(
+            SFArrayState(
+              state.path,
+              state.size,
+              state.order,
+              properties.toArray(),
+            ),
+          ),
+        ),
+      )
     | _ -> Failure(void)
     }
+  }
+
+  fun list(
+    getDependencies: Path -> mutable Dependencies,
+    optReader: ?Reader = None(),
+  ): ?Array<TimedObject> {
+    this.optState.map(state -> {
+      deps = getDependencies(state.path);
+      state.properties.map(p -> p.getTimed(deps, optReader))
+    })
+  }
+
+  fun size(
+    getDependencies: Path -> mutable Dependencies,
+    optReader: ?Reader = None(),
+  ): ?(Int, Tick) {
+    this.optState.map(state -> {
+      deps = getDependencies(state.path);
+      state.size.getTimed(deps, optReader)
+    })
   }
 
   fun changes(old: TimedObject, _mappable: mutable IMappable): IChanges {
