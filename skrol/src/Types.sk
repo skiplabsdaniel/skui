@@ -56,7 +56,8 @@ base class Object {
   fun getReference(): Object;
 }
 
-base class IParameter uses Orderable
+base class IKey uses Orderable
+base class IParameter extends IKey
 base class IWatch uses Equality
 
 base class IClosable {
@@ -145,10 +146,14 @@ base mutable class IScope extends IUpdater, ILoggerBase {
   mutable fun getMappable(): mutable IMappable;
 }
 
-base class StatefullObject extends Object uses HasClassName {
+base class StatefullObject extends Object {
   fun init(scope: mutable IScope): this;
   fun update(scope: mutable IScope, new: Object): Result<this, void>;
   fun changes(old: TimedObject, mappable: mutable IMappable): IChanges;
+}
+
+base class MappableObject extends StatefullObject {
+  fun map(fn: IMappingFn): Object;
 }
 
 base class StatelessObject extends Object {
@@ -217,16 +222,89 @@ base class IEagerProperty extends IProperty, IReadable uses Equality
 base class ILazyProperty extends IProperty, ILazyReadable uses Equality
 base class IInputProperty extends IEagerProperty, IWritable
 
-class Function(
+base class ITransformer {
+  fun init(g: Int -> Object, lg: (Int, IParameter) -> Object): (Object, this);
+  fun update(
+    g: Int -> Object,
+    lg: (Int, IParameter) -> Object,
+    invaliders: Array<(Int, Keys)>,
+    lInvaliders: Array<(Int, Keys)>,
+  ): Result<(Object, this), void>;
+}
+
+class PureFn(
+  fn: (Int -> Object, (Int, IParameter) -> Object) ~> Object,
+) extends ITransformer {
+  fun init(g: Int -> Object, lg: (Int, IParameter) -> Object): (Object, this) {
+    (this.fn(g, lg), this)
+  }
+
+  fun update(
+    _g: Int -> Object,
+    _lg: (Int, IParameter) -> Object,
+    _invaliders: Array<(Int, Keys)>,
+    _lInvaliders: Array<(Int, Keys)>,
+  ): Result<(Object, this), void> {
+    Failure(void)
+  }
+}
+
+class Function private (
   inputs: Array<IEagerProperty>,
   lazys: Array<ILazyProperty>,
-  fn: (Int -> Object, (Int, IParameter) -> Object) ~> Object,
+  transformer: ITransformer,
+  private eagerIdxForPath: SortedMap<Path, Int>,
+  private lazyIdxForPath: SortedMap<Path, Int>,
 ) {
-  fun call(dependencies: mutable Dependencies, optReader: ?Reader): Object {
-    this.fn(
+  static fun create(
+    inputs: Array<IEagerProperty>,
+    lazys: Array<ILazyProperty>,
+    transformer: ITransformer,
+  ): this {
+    eagerIdxForPath = SortedMap::createFromItems(
+      inputs.mapWithIndex((idx, p) -> (p.getPath(), idx)),
+    );
+    lazyIdxForPath = SortedMap::createFromItems(
+      lazys.mapWithIndex((idx, p) -> (p.getPath(), idx)),
+    );
+    static(inputs, lazys, transformer, eagerIdxForPath, lazyIdxForPath)
+  }
+
+  fun init(
+    dependencies: mutable Dependencies,
+    optReader: ?Reader,
+  ): (Object, this) {
+    (object, !this.transformer) = this.transformer.init(
       idx -> this.inputs[idx].get(dependencies, optReader),
       (idx, param) -> this.lazys[idx].get(dependencies, param, optReader),
-    )
+    );
+    (object, this)
+  }
+
+  fun update(
+    dependencies: mutable Dependencies,
+    invaliders: Invaliders,
+    optReader: ?Reader,
+  ): (Object, this) {
+    is1 = mutable Vector[];
+    invaliders.each((path, keys) ->
+      this.eagerIdxForPath.maybeGet(path).each(idx -> is1.push((idx, keys)))
+    );
+    is2 = mutable Vector[];
+    invaliders.each((path, keys) ->
+      this.lazyIdxForPath.maybeGet(path).each(idx -> is1.push((idx, keys)))
+    );
+    this.transformer.update(
+      idx -> this.inputs[idx].get(dependencies, optReader),
+      (idx, param) -> this.lazys[idx].get(dependencies, param, optReader),
+      is1.toArray(),
+      is2.toArray(),
+    ) match {
+    | Success((object, transformer)) ->
+      !this.transformer = transformer;
+      (object, this)
+    | _ -> this.init(dependencies, optReader)
+    }
   }
 }
 

@@ -14,7 +14,7 @@ class SFMapper private (
   value: Array<IntObject>,
   fn: IMappingFn,
   optState: ?SFMapperState = None(),
-) extends StatefullObject {
+) extends MappableObject {
   //
   fun getReference(): Object {
     SFMapper(this.value, this.fn)
@@ -25,10 +25,10 @@ class SFMapper private (
     size = scope.input(IntObject(this.value.size()));
 
     properties = this.value.map(idx -> {
-      function = Function(
+      function = Function::create(
         Array[mappable.get(idx.value)],
         Array[],
-        (getter, _) ~> this.fn.apply(getter(0)),
+        PureFn((getter, _) ~> this.fn.apply(getter(0))),
       );
       scope.combine(function)
     });
@@ -64,10 +64,10 @@ class SFMapper private (
       steps.each(step ->
         step match {
         | Insert(index, value) ->
-          function = Function(
+          function = Function::create(
             Array[mappable.get(toint(value))],
             Array[],
-            (getter, _) ~> this.fn.apply(getter(0)),
+            PureFn((getter, _) ~> this.fn.apply(getter(0))),
           );
           properties.insert(index, scope.combine(function))
         | Delete(index) ->
@@ -119,6 +119,10 @@ class SFMapper private (
       return NoChange();
     };
     Diff(timedSteps.toArray())
+  }
+
+  fun map(_fn: IMappingFn): Object {
+    todo()
   }
 }
 

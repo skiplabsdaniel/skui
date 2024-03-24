@@ -32,6 +32,64 @@ class Readers(
   }
 }
 
+class Keys(all: Bool = false, keys: SortedSet<IKey> = SortedSet[]) {
+  fun add(key: IKey): this {
+    !this.keys = this.keys.set(key);
+    this
+  }
+}
+
+class Invalider(path: Path, optKey: ?IKey)
+
+class Invaliders(values: SortedMap<Path, Keys> = SortedMap[]) {
+  //
+  fun add(invalider: Invalider): this {
+    keys = this.values.maybeGet(invalider.path) match {
+    | Some(keys) -> keys
+    | _ -> Keys()
+    };
+    !keys = invalider.optKey match {
+    | Some(key) -> keys.add(key)
+    | _ -> keys with {all => true}
+    };
+    !this.values = this.values.set(invalider.path, keys);
+    this
+  }
+
+  fun map<V>(f: (Path, Keys) -> V): SortedMap<Path, V> {
+    this.values.map(f)
+  }
+
+  fun each<V>(f: (Path, Keys) -> void): void {
+    this.values.each(f)
+  }
+}
+
+class Invalidateds(values: SortedMap<Int, Invaliders> = SortedMap[]) {
+  //
+  fun add(invalidated: Int, invalider: Invalider): this {
+    invaliders = this.values.maybeGet(invalidated) match {
+    | Some(invaliders) -> invaliders
+    | _ -> Invaliders()
+    };
+    !this.values = this.values.set(invalidated, invaliders.add(invalider));
+    this
+  }
+
+  fun contains(invalidated: Int): Bool {
+    this.values.containsKey(invalidated)
+  }
+
+  fun minimum(): ?(Int, Invaliders) {
+    this.values.minimum()
+  }
+
+  fun remove(invalidated: Int): this {
+    !this.values = this.values.remove(invalidated);
+    this
+  }
+}
+
 class Reads(
   set: SortedSet<Path> = SortedSet[],
   reads: List<Path> = List.Nil(),
@@ -72,7 +130,7 @@ mutable class Scope(
   private mutable watchedObjects: SortedSet<Int> = SortedSet[],
   private mutable nextId: Int = 0,
   private mutable updating: Int = -1,
-  private mutable invalidateds: SortedSet<Int> = SortedSet[],
+  private mutable invalidateds: Invalidateds = Invalidateds(),
   private mutable updated: SortedMap<Int, TimedObject> = SortedMap[],
 ) extends Dependencies, IScope, IMappable {
   //
@@ -130,11 +188,25 @@ mutable class Scope(
     id = this.nextId;
     this.!nextId = this.nextId + 1;
     property = EagerProperty(Path(id, Some(this.path)));
-    value = function.call(this, Some(EagerReader(property.path)));
+    (value, !function) = function.init(this, Some(EagerReader(property.path)));
     this.!values = this.values.set(id, TimedObject(value, this.tick));
     this.!combines = this.combines.set(id, function);
     this.!properties = this.properties.set(id, property);
     property
+  }
+
+  mutable fun map(property: IEagerProperty, fn: IMappingFn): IEagerProperty {
+    function = Function::create(
+      Array[property],
+      Array[],
+      PureFn((g, _lg) ~> {
+        g(0) match {
+        | mo @ MappableObject _ -> mo.map(fn)
+        | o -> fn.apply(o)
+        }
+      }),
+    );
+    this.combine(function)
   }
 
   mutable fun getTick(): Tick {
@@ -217,8 +289,10 @@ mutable class Scope(
     };
   }
 
-  private mutable fun invalidateReaders(id: Int): void {
-    this.readers.maybeGet(id).each(rs -> rs.each(r -> this.invalidate(r)));
+  private mutable fun invalidateReaders(id: Int, invalider: Invalider): void {
+    this.readers.maybeGet(id).each(rs ->
+      rs.each(r -> this.invalidate(invalider, r))
+    );
     this.!readers = this.readers.remove(id);
   }
 
@@ -228,9 +302,10 @@ mutable class Scope(
     #log (this.debug, () ~>
       `Scope.setIn property ${id} in scope ${path} on tick ${tick}`
     );
+    invalider = Invalider(Path(id, Some(this.path)), None());
     optScope = this.scopes.maybeGet(id);
     optScope.each(scope -> {
-      scope.invalidateExternalReaders();
+      scope.invalidateExternalReaders(invalider);
       this.!scopes = this.scopes.remove(id);
     });
     optOld = this.values.maybeGet(id);
@@ -240,7 +315,7 @@ mutable class Scope(
       (oldObject.value as StatefullObject _).update(oldScope, object) match {
       | Success(v) ->
         this.!scopes = this.scopes.set(id, oldScope);
-        this.!invalidateds = this.invalidateds.set(id);
+        this.!invalidateds = this.invalidateds.add(id, invalider);
         v
       | _ -> this.checkObject(id, object)
       }
@@ -248,7 +323,7 @@ mutable class Scope(
     };
     optOld.each(old -> this.!updated = this.updated.set(id, old));
     this.!values = this.values.set(id, TimedObject(object, this.tick));
-    this.invalidateReaders(id);
+    this.invalidateReaders(id, invalider);
   }
 
   private mutable fun setLazyIn(
@@ -260,8 +335,9 @@ mutable class Scope(
       (id, param),
       TimedObject(value, this.tick),
     );
+    invalider = Invalider(Path(id, Some(this.path)), Some(param));
     this.!lazys = this.lazys.remove((id, param));
-    this.invalidateReaders(id)
+    this.invalidateReaders(id, invalider)
   }
 
   mutable fun set(property: IProperty, value: Object): void {
@@ -337,7 +413,7 @@ mutable class Scope(
   }
 
   // TODO: verify reader are invalidated in decalaration order
-  mutable fun invalidate(reader: RelativeReader): void {
+  mutable fun invalidate(invalider: Invalider, reader: RelativeReader): void {
     reader match {
     | cr @ ChildReader _ ->
       scope = this;
@@ -353,16 +429,20 @@ mutable class Scope(
           assert(id > this.updating, () ->
             invalidationError(id, this.updating, this.path)
           );
-          scope.!invalidateds = scope.invalidateds.set(id);
+          scope.!invalidateds = scope.invalidateds.add(id, invalider);
           // Propagate the invalidation to the statfull object corresponding to the scope
           // to trigger the update
-          scope.optParent.each(s -> s.invalidate(EagerParentReader(scope.path)))
+          scope.optParent.each(s ->
+            s.invalidate(invalider, EagerParentReader(scope.path))
+          )
         }
       | LazyChildReader(param, _) ->
         scope.!lazys = scope.lazys.set((id, param));
         // Invalidate the statfull object corresponding to the scope
         // to trigger the update
-        scope.optParent.each(s -> s.invalidate(EagerParentReader(scope.path)))
+        scope.optParent.each(s ->
+          s.invalidate(invalider, EagerParentReader(scope.path))
+        )
       }
     | pr @ ParentReader _ ->
       pr.path.optParent match {
@@ -375,18 +455,22 @@ mutable class Scope(
             assert(p.id > this.updating, () ->
               invalidationError(p.id, this.updating, this.path)
             );
-            this.!invalidateds = this.invalidateds.set(p.id);
+            this.!invalidateds = this.invalidateds.add(p.id, invalider);
             // Propagate the invalidation to the statfull object corresponding to the scope
             // to trigger the update
-            this.optParent.each(s -> s.invalidate(EagerParentReader(this.path)))
+            this.optParent.each(s ->
+              s.invalidate(invalider, EagerParentReader(this.path))
+            )
           }
         | LazyParentReader(param, p) ->
           this.!lazys = this.lazys.set((p.id, param));
           // Invalidate the statfull object corresponding to the scope
           // to trigger the update
-          this.optParent.each(s -> s.invalidate(EagerParentReader(this.path)))
+          this.optParent.each(s ->
+            s.invalidate(invalider, EagerParentReader(this.path))
+          )
         }
-      | Some _ -> this.optParent.fromSome().invalidate(reader)
+      | Some _ -> this.optParent.fromSome().invalidate(invalider, reader)
       | _ -> invariant_violation("Property have to get scope parent")
       }
     }
@@ -400,17 +484,20 @@ mutable class Scope(
     }
   }
 
-  mutable fun invalidateExternalReaders(optPath: ?Path = None()): void {
+  mutable fun invalidateExternalReaders(
+    invalider: Invalider,
+    optPath: ?Path = None(),
+  ): void {
     path = optPath.default(this.path);
     this.scopes.each((_, sscope) ->
-      sscope.invalidateExternalReaders(Some(path))
+      sscope.invalidateExternalReaders(invalider, Some(path))
     );
     this.readers.each((_, v) ->
       v.each(r ->
         r match {
         | pr @ ParentReader(p) ->
           if (!p.isChildOf(path)) {
-            this.invalidate(pr)
+            this.invalidate(invalider, pr)
           }
         | ChildReader _ -> void
         }
@@ -435,8 +522,8 @@ mutable class Scope(
       }
     };
     loop {
-      this.invalidateds.min() match {
-      | Some(invalidated) ->
+      this.invalidateds.minimum() match {
+      | Some((invalidated, invaliders)) ->
         this.!updating = invalidated;
         this.properties[invalidated] match {
         | IInputProperty _ ->
@@ -447,7 +534,12 @@ mutable class Scope(
         | eager @ IEagerProperty _ ->
           function = this.combines[invalidated];
           current = this.values[invalidated].value;
-          value = function.call(this, Some(EagerReader(eager.getPath())));
+          (value, !function) = function.update(
+            this,
+            invaliders,
+            Some(EagerReader(eager.getPath())),
+          );
+          this.!combines = this.combines.set(invalidated, function);
           if (native_eq(current.getReference(), value.getReference()) != 0) {
             this.setIn(invalidated, value);
           }

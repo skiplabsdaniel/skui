@@ -9,8 +9,12 @@ fun eager(): void {
   i1 = context.input(O.int(0));
   i2 = context.input(O.int(0));
   i3 = context.combine(
-    O.Function(Array[i1, i2], Array[], (gs, _lgs) ~>
-      O.IntObject::type(gs(0)) + O.IntObject::type(gs(1))
+    O.Function::create(
+      Array[i1, i2],
+      Array[],
+      O.PureFn((gs, _lgs) ~>
+        O.IntObject::type(gs(0)) + O.IntObject::type(gs(1))
+      ),
     ),
   );
   get = prop -> context.get(prop, O.toint);
@@ -48,8 +52,12 @@ fun lazy(): void {
   i2 = context.lazy(O.LazyFunction(Array[], Array[], lazyFunction));
   param = O.IntParam(2);
   i3 = context.combine(
-    O.Function(Array[i1], Array[i2], (gs, lgs) ~>
-      O.IntObject::type(gs(0)) + O.IntObject::type(lgs(0, param))
+    O.Function::create(
+      Array[i1],
+      Array[i2],
+      O.PureFn((gs, lgs) ~>
+        O.IntObject::type(gs(0)) + O.IntObject::type(lgs(0, param))
+      ),
     ),
   );
   get = (prop: O.IEagerProperty) -> context.get(prop, O.toint);
@@ -87,11 +95,15 @@ class StafullAdd(
 
   fun init(scope: mutable O.IScope): this {
     add = scope.combine(
-      O.Function(Array[this.i1, this.i2], Array[], (gs, _lgs) ~> {
-        v1 = O.IntObject::type(gs(0));
-        v2 = O.IntObject::type(gs(1));
-        v1 + v2 + O.IntObject(1)
-      }),
+      O.Function::create(
+        Array[this.i1, this.i2],
+        Array[],
+        O.PureFn((gs, _lgs) ~> {
+          v1 = O.IntObject::type(gs(0));
+          v2 = O.IntObject::type(gs(1));
+          v1 + v2 + O.IntObject(1)
+        }),
+      ),
     );
     !this.state = Some(State(O.TEagerProperty(add, O.ObjectToInt())));
     this

@@ -10,7 +10,7 @@ class SFArrayState(
 class SFArray(
   value: Array<Object>,
   optState: ?SFArrayState = None(),
-) extends StatefullObject uses ObjectToTyped {
+) extends MappableObject uses ObjectToTyped {
   //
   fun getReference(): Object {
     SFArray(this.value)
@@ -43,6 +43,7 @@ class SFArray(
     | _ -> return Failure(void)
     };
     this.optState match {
+    | Some(state) if (state.path != scope.getPath()) -> Failure(void)
     | Some(state) ->
       tick = scope.getTick();
       #log (scope.debug, () ~>
@@ -121,6 +122,10 @@ class SFArray(
       return NoChange();
     };
     Diff(steps)
+  }
+
+  fun map(_fn: IMappingFn): Object {
+    todo()
   }
 }
 
