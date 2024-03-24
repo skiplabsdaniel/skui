@@ -7,29 +7,32 @@ const infoConfig: Logger.Config = Logger.Config{minLevel => Logger.Info()};
 
 class Log(level: Logger.Level, msg: String, meta: Logger.Metadata)
 
-mutable base class ILogger {
-  //
-  mutable fun trace(msg: String, meta: Logger.Metadata): void {
+mutable base class ILoggerBase {
+  mutable fun trace(msg: () ~> String, meta: Logger.Metadata): void {
     this.log(Logger.Trace(), msg, meta)
   }
 
-  mutable fun debug(msg: String, meta: Logger.Metadata): void {
+  mutable fun debug(msg: () ~> String, meta: Logger.Metadata): void {
     this.log(Logger.Debug(), msg, meta)
   }
 
-  mutable fun info(msg: String, meta: Logger.Metadata): void {
+  mutable fun info(msg: () ~> String, meta: Logger.Metadata): void {
     this.log(Logger.Info(), msg, meta)
   }
 
-  mutable fun error(msg: String, meta: Logger.Metadata): void {
+  mutable fun error(msg: () ~> String, meta: Logger.Metadata): void {
     this.log(Logger.Error(), msg, meta)
   }
 
   mutable fun log(
     level: Logger.Level,
-    msg: String,
+    msg: () ~> String,
     meta: Logger.Metadata,
   ): void;
+}
+
+mutable base class ILogger extends ILoggerBase {
+  //
 
   mutable fun flush(): void;
 
@@ -65,13 +68,13 @@ mutable class BufferedLogger(
   //
   mutable fun log(
     level: Logger.Level,
-    msg: String,
+    msg: () ~> String,
     meta: Logger.Metadata,
   ): void {
     if (level.priority() < this.config.minLevel.priority()) {
       return void
     };
-    this.logs.push(Log(level, msg, meta))
+    this.logs.push(Log(level, msg(), meta))
   }
 
   mutable fun flush(): void {
@@ -101,13 +104,13 @@ mutable class Logger(
   //
   mutable fun log(
     level: Logger.Level,
-    msg: String,
+    msg: () ~> String,
     meta: Logger.Metadata,
   ): void {
     if (level.priority() < this.config.minLevel.priority()) {
       return void
     };
-    log = Log(level, msg, meta);
+    log = Log(level, msg(), meta);
     logmsg = this.format(this.config, log);
     log.level match {
     | Logger.Error() -> print_error(logmsg)

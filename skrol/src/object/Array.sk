@@ -19,11 +19,11 @@ class SFArray(
   fun init(scope: mutable IScope): this {
     path = scope.getPath();
     tick = scope.getTick();
-    #log (scope.debug, `Enter SFArray.init ${path} on tick ${tick}`);
+    #log (scope.debug, () ~> `Enter SFArray.init ${path} on tick ${tick}`);
     size = scope.input(IntObject(this.value.size()));
     properties = this.value.map(scope.input);
     order = scope.input(IntArray(properties.map(p -> p.getPath().id)));
-    #log (scope.debug, `Exit SFArray.init ${path} on tick ${tick}`);
+    #log (scope.debug, () ~> `Exit SFArray.init ${path} on tick ${tick}`);
     SFArray(
       this.value,
       Some(
@@ -44,16 +44,14 @@ class SFArray(
     };
     this.optState match {
     | Some(state) ->
-      #log (
-        scope.debug,
-        `Enter SFArray.update ${state.path} on tick ${scope.getTick()}`,
+      tick = scope.getTick();
+      #log (scope.debug, () ~>
+        `Enter SFArray.update ${state.path} on tick ${tick}`
       );
       steps = process(this.value, newArray);
       if (steps.isEmpty()) {
         return Success(this);
       };
-
-      #log (scope.debug, inspect(steps).toString());
       properties = Vector::mcreateFromItems(state.properties);
       deleted = mutable Vector<IEagerProperty>[];
       steps.each(step ->
@@ -75,7 +73,7 @@ class SFArray(
       state.order.set(scope, order);
       state.size.set(scope, newArray.size());
       scope.remove(deleted.map(p -> p.getPath().id).toArray());
-      #log (scope.debug, `Exit SFArray.update ${state.path}`);
+      #log (scope.debug, () ~> `Exit SFArray.update ${state.path}`);
       Success(
         SFArray(
           newArray,

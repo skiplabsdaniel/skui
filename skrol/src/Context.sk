@@ -21,7 +21,8 @@ mutable class Context private (
 
   mutable fun update(): void {
     this.!tick = this.tick.next();
-    #log (this.logger.debug, `Enter Context.update n°${this.tick}`);
+    tick = this.tick;
+    #log (this.logger.debug, () ~> `Enter Context.update n°${tick}`);
     watched = this.scope.update(this.tick);
     watched.each((path, timed) ->
       this.watchedObjects.maybeGet(path).each(elements ->
@@ -42,7 +43,7 @@ mutable class Context private (
     this.outputs.each((path, elements) ->
       elements.each(w -> w.apply(this.getObject(path)))
     );
-    #log (this.logger.debug, `Exit Context.update n°${this.tick}`);
+    #log (this.logger.debug, () ~> `Exit Context.update n°${tick}`);
     this.logger.flush();
   }
 

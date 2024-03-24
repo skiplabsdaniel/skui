@@ -223,9 +223,10 @@ mutable class Scope(
   }
 
   private mutable fun setIn(id: Int, object: Object): void {
-    #log (
-      this.debug,
-      `Scope.setIn[0] property ${id} in scope ${this.getPath()} on tick ${this.getTick()}`,
+    path = this.getPath();
+    tick = this.getTick();
+    #log (this.debug, () ~>
+      `Scope.setIn property ${id} in scope ${path} on tick ${tick}`
     );
     optScope = this.scopes.maybeGet(id);
     optScope.each(scope -> {
@@ -419,7 +420,8 @@ mutable class Scope(
 
   mutable fun update(tick: Tick): SortedMap<Path, TimedObject> {
     this.!tick = tick;
-    #log (this.debug, `Enter Scope.update '${this.path}' on tick ${this.tick}`);
+    path = this.path;
+    #log (this.debug, () ~> `Enter Scope.update '${path}' on tick ${tick}`);
     watched = SortedMap[];
     loop {
       this.next.minimum() match {
@@ -469,7 +471,7 @@ mutable class Scope(
     this.!lazys = SortedSet[];
     this.!updated = SortedMap[];
     this.!updating = -1;
-    #log (this.debug, `Exit Scope.update '${this.path}' on tick ${this.tick}`);
+    #log (this.debug, () ~> `Exit Scope.update '${path}' on tick ${tick}`);
     watched
   }
 
@@ -517,7 +519,7 @@ mutable class Scope(
 
   mutable fun log(
     level: Logger.Level,
-    msg: String,
+    msg: () ~> String,
     meta: Logger.Metadata,
   ): void {
     this.optLogger.each(l -> l.log(level, msg, meta))

@@ -135,7 +135,7 @@ base mutable class IMappable {
   readonly fun maybeObject(key: Int): ?TimedObject;
 }
 
-base mutable class IScope extends IUpdater {
+base mutable class IScope extends IUpdater, ILoggerBase {
   // The object must manage the state to be able the update it
   readonly fun getPath(): Path;
   mutable fun input(value: Object): IInputProperty;
@@ -143,26 +143,6 @@ base mutable class IScope extends IUpdater {
   mutable fun combine(function: Function): IEagerProperty;
   mutable fun remove(properties: Array<Int>): void;
   mutable fun getMappable(): mutable IMappable;
-  mutable fun log(
-    level: Logger.Level,
-    msg: String,
-    meta: Logger.Metadata,
-  ): void;
-  mutable fun trace(msg: String, meta: Logger.Metadata): void {
-    this.log(Logger.Trace(), msg, meta)
-  }
-
-  mutable fun debug(msg: String, meta: Logger.Metadata): void {
-    this.log(Logger.Debug(), msg, meta)
-  }
-
-  mutable fun info(msg: String, meta: Logger.Metadata): void {
-    this.log(Logger.Info(), msg, meta)
-  }
-
-  mutable fun error(msg: String, meta: Logger.Metadata): void {
-    this.log(Logger.Error(), msg, meta)
-  }
 }
 
 base class StatefullObject extends Object uses HasClassName {
