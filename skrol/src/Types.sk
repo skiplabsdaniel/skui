@@ -229,7 +229,7 @@ base class ITransformer {
     lg: (Int, IParameter) -> Object,
     invaliders: Array<(Int, Keys)>,
     lInvaliders: Array<(Int, Keys)>,
-  ): Result<(Object, this), void>;
+  ): Result<(Object, SortedSet<IKey>, this), void>;
 }
 
 class PureFn(
@@ -244,7 +244,7 @@ class PureFn(
     _lg: (Int, IParameter) -> Object,
     _invaliders: Array<(Int, Keys)>,
     _lInvaliders: Array<(Int, Keys)>,
-  ): Result<(Object, this), void> {
+  ): Result<(Object, SortedSet<IKey>, this), void> {
     Failure(void)
   }
 }
@@ -285,7 +285,7 @@ class Function private (
     dependencies: mutable Dependencies,
     invaliders: Invaliders,
     optReader: ?Reader,
-  ): (Object, this) {
+  ): (Object, ?SortedSet<IKey>, this) {
     is1 = mutable Vector[];
     invaliders.each((path, keys) ->
       this.eagerIdxForPath.maybeGet(path).each(idx -> is1.push((idx, keys)))
@@ -300,10 +300,12 @@ class Function private (
       is1.toArray(),
       is2.toArray(),
     ) match {
-    | Success((object, transformer)) ->
+    | Success((object, keys, transformer)) ->
       !this.transformer = transformer;
-      (object, this)
-    | _ -> this.init(dependencies, optReader)
+      (object, if (keys.isEmpty()) None() else Some(keys), this)
+    | _ ->
+      res = this.init(dependencies, optReader);
+      (res.i0, None(), res.i1)
     }
   }
 }

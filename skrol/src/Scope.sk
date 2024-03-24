@@ -39,7 +39,7 @@ class Keys(all: Bool = false, keys: SortedSet<IKey> = SortedSet[]) {
   }
 }
 
-class Invalider(path: Path, optKey: ?IKey)
+class Invalider(path: Path, optKeys: ?SortedSet<IKey>)
 
 class Invaliders(values: SortedMap<Path, Keys> = SortedMap[]) {
   //
@@ -48,9 +48,9 @@ class Invaliders(values: SortedMap<Path, Keys> = SortedMap[]) {
     | Some(keys) -> keys
     | _ -> Keys()
     };
-    !keys = invalider.optKey match {
-    | Some(key) -> keys.add(key)
-    | _ -> keys with {all => true}
+    invalider.optKeys match {
+    | Some(ikeys) -> ikeys.each(key -> !keys = keys.add(key))
+    | _ -> !keys = keys with {all => true}
     };
     !this.values = this.values.set(invalider.path, keys);
     this
@@ -296,13 +296,17 @@ mutable class Scope(
     this.!readers = this.readers.remove(id);
   }
 
-  private mutable fun setIn(id: Int, object: Object): void {
+  private mutable fun setIn(
+    id: Int,
+    object: Object,
+    optKeys: ?SortedSet<IKey>,
+  ): void {
     path = this.getPath();
     tick = this.getTick();
     #log (this.debug, () ~>
       `Scope.setIn property ${id} in scope ${path} on tick ${tick}`
     );
-    invalider = Invalider(Path(id, Some(this.path)), None());
+    invalider = Invalider(Path(id, Some(this.path)), optKeys);
     optScope = this.scopes.maybeGet(id);
     optScope.each(scope -> {
       scope.invalidateExternalReaders(invalider);
@@ -335,7 +339,7 @@ mutable class Scope(
       (id, param),
       TimedObject(value, this.tick),
     );
-    invalider = Invalider(Path(id, Some(this.path)), Some(param));
+    invalider = Invalider(Path(id, Some(this.path)), Some(SortedSet[param]));
     this.!lazys = this.lazys.remove((id, param));
     this.invalidateReaders(id, invalider)
   }
@@ -515,7 +519,7 @@ mutable class Scope(
       | Some((next, value)) ->
         current = this.values[next].value;
         if (native_eq(current.getReference(), value.getReference()) != 0) {
-          this.setIn(next, value);
+          this.setIn(next, value, None());
         };
         this.!next = this.next.remove(next)
       | _ -> break void
@@ -534,14 +538,14 @@ mutable class Scope(
         | eager @ IEagerProperty _ ->
           function = this.combines[invalidated];
           current = this.values[invalidated].value;
-          (value, !function) = function.update(
+          (value, optKeys, !function) = function.update(
             this,
             invaliders,
             Some(EagerReader(eager.getPath())),
           );
           this.!combines = this.combines.set(invalidated, function);
           if (native_eq(current.getReference(), value.getReference()) != 0) {
-            this.setIn(invalidated, value);
+            this.setIn(invalidated, value, optKeys);
           }
         | ILazyProperty _ ->
           // Lazy value is computed only on need.
