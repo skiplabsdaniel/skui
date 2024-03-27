@@ -152,6 +152,15 @@ base class StatefullObject extends Object {
   fun changes(old: TimedObject, mappable: mutable IMappable): IChanges;
 }
 
+base class IMappingFn uses Equality {
+  fun apply(value: Object): Object;
+}
+
+base class IReducerFn(default: Object) uses Equality {
+  fun apply(acc: Object, value: Object): Object;
+  fun revert(cum: Object, value: Object): Result<this, void>;
+}
+
 base class MappableObject extends StatefullObject {
   fun map(fn: IMappingFn): Object;
 }
@@ -222,28 +231,53 @@ base class IEagerProperty extends IProperty, IReadable uses Equality
 base class ILazyProperty extends IProperty, ILazyReadable uses Equality
 base class IInputProperty extends IEagerProperty, IWritable
 
+type EagerAccessor = (Int, Int -> Object);
+type LazyAccessor = (Int, (Int, IParameter) -> Object);
+
 base class ITransformer {
-  fun init(g: Int -> Object, lg: (Int, IParameter) -> Object): (Object, this);
+  fun init(eager: EagerAccessor, lazy: LazyAccessor): (Object, this);
   fun update(
-    g: Int -> Object,
-    lg: (Int, IParameter) -> Object,
-    invaliders: Array<(Int, Keys)>,
-    lInvaliders: Array<(Int, Keys)>,
+    eager: EagerAccessor,
+    eagerInvaliders: Array<(Int, Keys)>,
+    lazy: LazyAccessor,
+    lazyInvaliders: Array<(Int, Keys)>,
   ): Result<(Object, SortedSet<IKey>, this), void>;
 }
 
-class PureFn(
-  fn: (Int -> Object, (Int, IParameter) -> Object) ~> Object,
-) extends ITransformer {
-  fun init(g: Int -> Object, lg: (Int, IParameter) -> Object): (Object, this) {
-    (this.fn(g, lg), this)
+base class EagerTransformer {
+  //
+  fun eagerInit(accessor: EagerAccessor): (Object, this);
+  fun eagerUpdate(
+    accessor: EagerAccessor,
+    invaliders: Array<(Int, Keys)>,
+  ): Result<(Object, SortedSet<IKey>, this), void>;
+
+  fun init(eager: EagerAccessor, _lazy: LazyAccessor): (Object, this) {
+    this.eagerInit(eager)
   }
 
   fun update(
-    _g: Int -> Object,
-    _lg: (Int, IParameter) -> Object,
-    _invaliders: Array<(Int, Keys)>,
-    _lInvaliders: Array<(Int, Keys)>,
+    eager: EagerAccessor,
+    eagerInvaliders: Array<(Int, Keys)>,
+    _lazy: LazyAccessor,
+    _lazyInvaliders: Array<(Int, Keys)>,
+  ): Result<(Object, SortedSet<IKey>, this), void> {
+    this.eagerUpdate(eager, eagerInvaliders)
+  }
+}
+
+class PureFn(
+  accessors: (EagerAccessor, LazyAccessor) ~> Object,
+) extends ITransformer {
+  fun init(eager: EagerAccessor, lazy: LazyAccessor): (Object, this) {
+    (this.accessors(eager, lazy), this)
+  }
+
+  fun update(
+    _eager: EagerAccessor,
+    _eagerInvaliders: Array<(Int, Keys)>,
+    _lazy: LazyAccessor,
+    _lazyInvaliders: Array<(Int, Keys)>,
   ): Result<(Object, SortedSet<IKey>, this), void> {
     Failure(void)
   }
@@ -275,8 +309,14 @@ class Function private (
     optReader: ?Reader,
   ): (Object, this) {
     (object, !this.transformer) = this.transformer.init(
-      idx -> this.inputs[idx].get(dependencies, optReader),
-      (idx, param) -> this.lazys[idx].get(dependencies, param, optReader),
+      (
+        this.inputs.size(),
+        idx -> this.inputs[idx].get(dependencies, optReader),
+      ),
+      (
+        this.lazys.size(),
+        (idx, param) -> this.lazys[idx].get(dependencies, param, optReader),
+      ),
     );
     (object, this)
   }
@@ -295,9 +335,15 @@ class Function private (
       this.lazyIdxForPath.maybeGet(path).each(idx -> is1.push((idx, keys)))
     );
     this.transformer.update(
-      idx -> this.inputs[idx].get(dependencies, optReader),
-      (idx, param) -> this.lazys[idx].get(dependencies, param, optReader),
+      (
+        this.inputs.size(),
+        idx -> this.inputs[idx].get(dependencies, optReader),
+      ),
       is1.toArray(),
+      (
+        this.lazys.size(),
+        (idx, param) -> this.lazys[idx].get(dependencies, param, optReader),
+      ),
       is2.toArray(),
     ) match {
     | Success((object, keys, transformer)) ->

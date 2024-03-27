@@ -13,7 +13,7 @@ fun eager(): void {
       Array[i1, i2],
       Array[],
       O.PureFn((gs, _lgs) ~>
-        O.IntObject::type(gs(0)) + O.IntObject::type(gs(1))
+        O.IntObject::type(gs.i1(0)) + O.IntObject::type(gs.i1(1))
       ),
     ),
   );
@@ -56,7 +56,7 @@ fun lazy(): void {
       Array[i1],
       Array[i2],
       O.PureFn((gs, lgs) ~>
-        O.IntObject::type(gs(0)) + O.IntObject::type(lgs(0, param))
+        O.IntObject::type(gs.i1(0)) + O.IntObject::type(lgs.i1(0, param))
       ),
     ),
   );
@@ -99,8 +99,8 @@ class StafullAdd(
         Array[this.i1, this.i2],
         Array[],
         O.PureFn((gs, _lgs) ~> {
-          v1 = O.IntObject::type(gs(0));
-          v2 = O.IntObject::type(gs(1));
+          v1 = O.IntObject::type(gs.i1(0));
+          v2 = O.IntObject::type(gs.i1(1));
           v1 + v2 + O.IntObject(1)
         }),
       ),

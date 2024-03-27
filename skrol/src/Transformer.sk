@@ -1,0 +1,62 @@
+module SKROL;
+
+class REagerCollect() extends EagerTransformer {
+  //
+  fun eagerInit(accessor: EagerAccessor): (Object, this) {
+    (ObjectArray(Array::fillBy(accessor.i0, accessor.i1)), this)
+  }
+
+  fun eagerUpdate(
+    _accessor: EagerAccessor,
+    _invaliders: Array<(Int, Keys)>,
+  ): Result<(Object, SortedSet<IKey>, this), void> {
+    // TODO: Manage diff
+    Failure(void)
+  }
+}
+
+class REagerMap(fn: IMappingFn) extends EagerTransformer {
+  //
+  fun eagerInit(accessor: EagerAccessor): (Object, this) {
+    assert(accessor.i0 == 1, () ~> "Invalid mapped Env");
+    (
+      accessor.i1(0) match {
+      | oa @ ObjectArray _ -> ObjectArray(oa.value.map(this.fn.apply))
+      | o -> this.fn.apply(o)
+      },
+      this,
+    )
+  }
+
+  fun eagerUpdate(
+    _accessor: EagerAccessor,
+    _invaliders: Array<(Int, Keys)>,
+  ): Result<(Object, SortedSet<IKey>, this), void> {
+    // TODO: Manage diff
+    Failure(void)
+  }
+}
+
+class REagerReduce(fn: IReducerFn) extends EagerTransformer {
+  //
+  fun eagerInit(accessor: EagerAccessor): (Object, this) {
+    assert(accessor.i0 == 1, () ~> "Invalid reduced Env");
+    (
+      accessor.i1(0) match {
+      | oa @ ObjectArray _ -> oa.value.reduce(this.fn.apply, this.fn.default)
+      | o -> this.fn.apply(this.fn.default, o)
+      },
+      this,
+    )
+  }
+
+  fun eagerUpdate(
+    _accessor: EagerAccessor,
+    _invaliders: Array<(Int, Keys)>,
+  ): Result<(Object, SortedSet<IKey>, this), void> {
+    // TODO: Manage diff
+    Failure(void)
+  }
+}
+
+module end;

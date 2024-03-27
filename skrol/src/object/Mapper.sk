@@ -6,10 +6,6 @@ class SFMapperState(
   properties: Array<IEagerProperty>,
 )
 
-base class IMappingFn uses Equality {
-  fun apply(value: Object): Object;
-}
-
 class SFMapper private (
   value: Array<IntObject>,
   fn: IMappingFn,
@@ -28,7 +24,7 @@ class SFMapper private (
       function = Function::create(
         Array[mappable.get(idx.value)],
         Array[],
-        PureFn((getter, _) ~> this.fn.apply(getter(0))),
+        PureFn((getter, _) ~> this.fn.apply(getter.i1(0))),
       );
       scope.combine(function)
     });
@@ -67,7 +63,7 @@ class SFMapper private (
           function = Function::create(
             Array[mappable.get(toint(value))],
             Array[],
-            PureFn((getter, _) ~> this.fn.apply(getter(0))),
+            PureFn((getter, _) ~> this.fn.apply(getter.i1(0))),
           );
           properties.insert(index, scope.combine(function))
         | Delete(index) ->

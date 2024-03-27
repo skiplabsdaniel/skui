@@ -200,7 +200,7 @@ mutable class Scope(
       Array[property],
       Array[],
       PureFn((g, _lg) ~> {
-        g(0) match {
+        g.i1(0) match {
         | mo @ MappableObject _ -> mo.map(fn)
         | o -> fn.apply(o)
         }
