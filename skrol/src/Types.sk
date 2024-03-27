@@ -56,8 +56,12 @@ base class Object {
   fun getReference(): Object;
 }
 
-base class IKey uses Orderable
-base class IParameter extends IKey
+base class IModifier uses Orderable {
+  children =
+  | Empty()
+}
+
+base class IParameter extends IModifier
 base class IWatch uses Equality
 
 base class IClosable {
@@ -92,6 +96,14 @@ class Nil() extends StatelessObject
 
 trait ObjectToTyped {
   macro static fun type(obj: Object): this {
+    obj match {
+    | x @ #ThisClass _ -> x
+    }
+  }
+}
+
+trait KeyToTyped {
+  macro static fun ktype(obj: IModifier): this {
     obj match {
     | x @ #ThisClass _ -> x
     }
@@ -239,10 +251,10 @@ base class ITransformer {
   fun update(
     object: Object,
     eager: EagerAccessor,
-    eagerInvaliders: Array<(Int, Keys)>,
+    eagerInvaliders: Int -> ?IModifier,
     lazy: LazyAccessor,
-    lazyInvaliders: Array<(Int, Keys)>,
-  ): Result<(Object, SortedSet<IKey>, this), void>;
+    lazyInvaliders: Int -> ?Array<IModifier>,
+  ): Result<(Object, IModifier, this), void>;
 }
 
 base class EagerTransformer {
@@ -251,8 +263,8 @@ base class EagerTransformer {
   fun eagerUpdate(
     object: Object,
     accessor: EagerAccessor,
-    invaliders: Array<(Int, Keys)>,
-  ): Result<(Object, SortedSet<IKey>, this), void>;
+    invaliders: Int -> ?IModifier,
+  ): Result<(Object, IModifier, this), void>;
 
   fun init(eager: EagerAccessor, _lazy: LazyAccessor): (Object, this) {
     this.eagerInit(eager)
@@ -261,10 +273,10 @@ base class EagerTransformer {
   fun update(
     object: Object,
     eager: EagerAccessor,
-    eagerInvaliders: Array<(Int, Keys)>,
+    eagerInvaliders: Int -> ?IModifier,
     _lazy: LazyAccessor,
-    _lazyInvaliders: Array<(Int, Keys)>,
-  ): Result<(Object, SortedSet<IKey>, this), void> {
+    _lazyInvaliders: Int -> ?Array<IModifier>,
+  ): Result<(Object, IModifier, this), void> {
     this.eagerUpdate(object, eager, eagerInvaliders)
   }
 }
@@ -279,10 +291,10 @@ class PureFn(
   fun update(
     _object: Object,
     _eager: EagerAccessor,
-    _eagerInvaliders: Array<(Int, Keys)>,
+    _eagerInvaliders: Int -> ?IModifier,
     _lazy: LazyAccessor,
-    _lazyInvaliders: Array<(Int, Keys)>,
-  ): Result<(Object, SortedSet<IKey>, this), void> {
+    _lazyInvaliders: Int -> ?Array<IModifier>,
+  ): Result<(Object, IModifier, this), void> {
     Failure(void)
   }
 }
@@ -330,31 +342,38 @@ class Function private (
     object: Object,
     invaliders: Invaliders,
     optReader: ?Reader,
-  ): (Object, ?SortedSet<IKey>, this) {
-    is1 = mutable Vector[];
-    invaliders.each((path, keys) ->
-      this.eagerIdxForPath.maybeGet(path).each(idx -> is1.push((idx, keys)))
+  ): (Object, ?IModifier, this) {
+    is1 = mutable Map[];
+    invaliders.each((path, modifier) ->
+      this.eagerIdxForPath.maybeGet(path).each(idx -> is1.set(idx, modifier))
     );
-    is2 = mutable Vector[];
-    invaliders.each((path, keys) ->
-      this.lazyIdxForPath.maybeGet(path).each(idx -> is1.push((idx, keys)))
+    is2 = mutable Map[];
+    invaliders.each((path, modifier) ->
+      this.lazyIdxForPath.maybeGet(path).each(idx -> {
+        v = is2.maybeGet(idx) match {
+        | Some(v) -> v
+        | _ -> mutable Vector<IModifier>[]
+        };
+        v.push(modifier)
+      })
     );
+    fIs2 = is2.map((_k, v) -> v.toArray());
     this.transformer.update(
       object,
       (
         this.inputs.size(),
         idx -> this.inputs[idx].get(dependencies, optReader),
       ),
-      is1.toArray(),
+      is1.maybeGet,
       (
         this.lazys.size(),
         (idx, param) -> this.lazys[idx].get(dependencies, param, optReader),
       ),
-      is2.toArray(),
+      fIs2.maybeGet,
     ) match {
-    | Success((nobject, keys, transformer)) ->
+    | Success((nobject, modifier, transformer)) ->
       !this.transformer = transformer;
-      (nobject, if (keys.isEmpty()) None() else Some(keys), this)
+      (nobject, Some(modifier), this)
     | _ ->
       res = this.init(dependencies, optReader);
       (res.i0, None(), res.i1)

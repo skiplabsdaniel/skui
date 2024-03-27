@@ -1,5 +1,7 @@
 module SKROL;
 
+class Steps(steps: Array<Step>) extends IModifier uses KeyToTyped
+
 class REagerCollect() extends EagerTransformer {
   //
   fun eagerInit(accessor: EagerAccessor): (Object, this) {
@@ -7,12 +9,18 @@ class REagerCollect() extends EagerTransformer {
   }
 
   fun eagerUpdate(
-    _object: Object,
-    _accessor: EagerAccessor,
-    _invaliders: Array<(Int, Keys)>,
-  ): Result<(Object, SortedSet<IKey>, this), void> {
-    // TODO: Manage diff
-    Failure(void)
+    object: Object,
+    accessor: EagerAccessor,
+    _invaliders: Int -> ?IModifier,
+  ): Result<(Object, IModifier, this), void> {
+    // TODO: improve using invaliders ??
+    current = ObjectArray::type(object).value;
+    new = Array::fillBy(accessor.i0, accessor.i1);
+    steps = process(current, new);
+    if (steps.isEmpty()) {
+      return Success((object, Empty(), this));
+    };
+    Success((ObjectArray(new), Steps(steps), this));
   }
 }
 
@@ -30,12 +38,52 @@ class REagerMap(fn: IMappingFn) extends EagerTransformer {
   }
 
   fun eagerUpdate(
-    _object: Object,
-    _accessor: EagerAccessor,
-    _invaliders: Array<(Int, Keys)>,
-  ): Result<(Object, SortedSet<IKey>, this), void> {
-    // TODO: Manage diff
-    Failure(void)
+    object: Object,
+    accessor: EagerAccessor,
+    invaliders: Int -> ?IModifier,
+  ): Result<(Object, IModifier, this), void> {
+    object match {
+    | ooa @ ObjectArray _ ->
+      accessor.i1(0) match {
+      | noa @ ObjectArray _ ->
+        invaliders(0) match {
+        | Some(Empty _) -> Success((object, Empty(), this))
+        | Some(steps @ Steps _) ->
+          current = ooa.value;
+          new = Vector::mcreateFromItems(current);
+          nSteps = steps.steps.map(step ->
+            step match {
+            | Insert(index, value) ->
+              iv = this.fn.apply(value);
+              new.insert(index, iv);
+              Insert(index, iv)
+            | Delete(index) ->
+              new.delete(index);
+              Delete(index)
+            | Move(from, to) ->
+              new.set(to, current[from]);
+              Move(from, to)
+            | Update(index, value) ->
+              uv = this.fn.apply(value);
+              new.set(index, uv);
+              Update(index, uv)
+            }
+          );
+          Success((ObjectArray(new.toArray()), Steps(nSteps), this))
+        | _ ->
+          current = ooa.value;
+          new = noa.value.map(this.fn.apply);
+          steps = process(current, new);
+          if (steps.isEmpty()) {
+            Success((object, Empty(), this))
+          } else {
+            Success((ObjectArray(new), Steps(steps), this))
+          }
+        }
+      | _ -> Failure(void)
+      }
+    | _ -> Failure(void)
+    }
   }
 }
 
@@ -55,8 +103,8 @@ class REagerReduce(fn: IReducerFn) extends EagerTransformer {
   fun eagerUpdate(
     _object: Object,
     _accessor: EagerAccessor,
-    _invaliders: Array<(Int, Keys)>,
-  ): Result<(Object, SortedSet<IKey>, this), void> {
+    _invaliders: Int -> ?IModifier,
+  ): Result<(Object, IModifier, this), void> {
     // TODO: Manage diff
     Failure(void)
   }

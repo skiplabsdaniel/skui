@@ -1,11 +1,34 @@
 module SKROL;
 
-base class Step {
+base class Step uses Orderable {
   children =
   | Insert(index: Int, value: Object)
   | Delete(index: Int)
   | Move(from: Int, to: Int)
   | Update(index: Int, value: Object)
+
+  fun compare(other: Step): Order {
+    (this, other) match {
+    | (Insert(idx1, v1), Insert(idx2, v2)) ->
+      ic = idx1.compare(idx2);
+      if (ic == EQ()) hash(v1).compare(hash(v2)) else ic
+    | (Insert _, _) -> LT()
+    | (Delete(idx1), Delete(idx2)) -> idx1.compare(idx2)
+    | (Delete _, _) -> GT()
+    | (Move(fidx1, tidx1), Move(fidx2, tidx2)) ->
+      ic = fidx1.compare(fidx2);
+      if (ic == EQ()) tidx1.compare(tidx2) else ic
+    | (Move _, Insert _) -> GT()
+    | (Move _, Delete _) -> LT()
+    | (Move _, _) -> LT()
+    | (Update(idx1, v1), Update(idx2, v2)) ->
+      ic = idx1.compare(idx2);
+      if (ic == EQ()) hash(v1).compare(hash(v2)) else ic
+    | (Update _, Insert _) -> GT()
+    | (Update _, Delete _) -> LT()
+    | (Update _, _) -> GT()
+    }
+  }
 }
 
 base class Occurence uses Equality {
