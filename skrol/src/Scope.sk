@@ -540,6 +540,7 @@ mutable class Scope(
           current = this.values[invalidated].value;
           (value, optKeys, !function) = function.update(
             this,
+            current,
             invaliders,
             Some(EagerReader(eager.getPath())),
           );

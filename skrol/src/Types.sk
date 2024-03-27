@@ -237,6 +237,7 @@ type LazyAccessor = (Int, (Int, IParameter) -> Object);
 base class ITransformer {
   fun init(eager: EagerAccessor, lazy: LazyAccessor): (Object, this);
   fun update(
+    object: Object,
     eager: EagerAccessor,
     eagerInvaliders: Array<(Int, Keys)>,
     lazy: LazyAccessor,
@@ -248,6 +249,7 @@ base class EagerTransformer {
   //
   fun eagerInit(accessor: EagerAccessor): (Object, this);
   fun eagerUpdate(
+    object: Object,
     accessor: EagerAccessor,
     invaliders: Array<(Int, Keys)>,
   ): Result<(Object, SortedSet<IKey>, this), void>;
@@ -257,12 +259,13 @@ base class EagerTransformer {
   }
 
   fun update(
+    object: Object,
     eager: EagerAccessor,
     eagerInvaliders: Array<(Int, Keys)>,
     _lazy: LazyAccessor,
     _lazyInvaliders: Array<(Int, Keys)>,
   ): Result<(Object, SortedSet<IKey>, this), void> {
-    this.eagerUpdate(eager, eagerInvaliders)
+    this.eagerUpdate(object, eager, eagerInvaliders)
   }
 }
 
@@ -274,6 +277,7 @@ class PureFn(
   }
 
   fun update(
+    _object: Object,
     _eager: EagerAccessor,
     _eagerInvaliders: Array<(Int, Keys)>,
     _lazy: LazyAccessor,
@@ -323,6 +327,7 @@ class Function private (
 
   fun update(
     dependencies: mutable Dependencies,
+    object: Object,
     invaliders: Invaliders,
     optReader: ?Reader,
   ): (Object, ?SortedSet<IKey>, this) {
@@ -335,6 +340,7 @@ class Function private (
       this.lazyIdxForPath.maybeGet(path).each(idx -> is1.push((idx, keys)))
     );
     this.transformer.update(
+      object,
       (
         this.inputs.size(),
         idx -> this.inputs[idx].get(dependencies, optReader),
@@ -346,9 +352,9 @@ class Function private (
       ),
       is2.toArray(),
     ) match {
-    | Success((object, keys, transformer)) ->
+    | Success((nobject, keys, transformer)) ->
       !this.transformer = transformer;
-      (object, if (keys.isEmpty()) None() else Some(keys), this)
+      (nobject, if (keys.isEmpty()) None() else Some(keys), this)
     | _ ->
       res = this.init(dependencies, optReader);
       (res.i0, None(), res.i1)

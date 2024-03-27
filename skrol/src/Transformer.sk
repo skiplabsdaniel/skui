@@ -7,6 +7,7 @@ class REagerCollect() extends EagerTransformer {
   }
 
   fun eagerUpdate(
+    _object: Object,
     _accessor: EagerAccessor,
     _invaliders: Array<(Int, Keys)>,
   ): Result<(Object, SortedSet<IKey>, this), void> {
@@ -29,6 +30,7 @@ class REagerMap(fn: IMappingFn) extends EagerTransformer {
   }
 
   fun eagerUpdate(
+    _object: Object,
     _accessor: EagerAccessor,
     _invaliders: Array<(Int, Keys)>,
   ): Result<(Object, SortedSet<IKey>, this), void> {
@@ -51,6 +53,7 @@ class REagerReduce(fn: IReducerFn) extends EagerTransformer {
   }
 
   fun eagerUpdate(
+    _object: Object,
     _accessor: EagerAccessor,
     _invaliders: Array<(Int, Keys)>,
   ): Result<(Object, SortedSet<IKey>, this), void> {
