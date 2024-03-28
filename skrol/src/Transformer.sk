@@ -27,6 +27,7 @@ class REagerCollect() extends EagerTransformer {
 class REagerMap(fn: IMappingFn) extends EagerTransformer {
   //
   fun eagerInit(accessor: EagerAccessor): (Object, this) {
+    // TODO: manage statefull object
     assert(accessor.i0 == 1, () ~> "Invalid mapped Env");
     (
       accessor.i1(0) match {
@@ -42,6 +43,7 @@ class REagerMap(fn: IMappingFn) extends EagerTransformer {
     accessor: EagerAccessor,
     invaliders: Int -> ?IModifier,
   ): Result<(Object, IModifier, this), void> {
+    // TODO: manage statefull object
     object match {
     | ooa @ ObjectArray _ ->
       accessor.i1(0) match {

@@ -117,6 +117,10 @@ class SFMapper private (
     Diff(timedSteps.toArray())
   }
 
+  fun delete(_scope: mutable IScope): void {
+    todo()
+  }
+
   fun map(_fn: IMappingFn): Object {
     todo()
   }

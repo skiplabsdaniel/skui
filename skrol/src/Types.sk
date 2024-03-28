@@ -162,6 +162,7 @@ base class StatefullObject extends Object {
   fun init(scope: mutable IScope): this;
   fun update(scope: mutable IScope, new: Object): Result<this, void>;
   fun changes(old: TimedObject, mappable: mutable IMappable): IChanges;
+  fun delete(scope: mutable IScope): void;
 }
 
 base class IMappingFn uses Equality {
@@ -532,6 +533,10 @@ class DummySFO() extends StatefullObject {
   }
 
   fun getReference(): Object {
+    dummy()
+  }
+
+  fun delete(_scope: mutable IScope): void {
     dummy()
   }
 }

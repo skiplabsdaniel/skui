@@ -112,6 +112,12 @@ class StafullAdd(
   fun update(_scope: mutable O.IScope, _new: O.Object): Result<this, void> {
     Success(this)
   }
+
+  fun delete(scope: mutable O.IScope): void {
+    this.state.each(state ->
+      scope.remove(Array[state.add.property.getPath().id])
+    )
+  }
 }
 
 @test

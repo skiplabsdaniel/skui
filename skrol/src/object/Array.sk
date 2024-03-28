@@ -92,6 +92,19 @@ class SFArray(
     }
   }
 
+  fun delete(scope: mutable IScope): void {
+    path = scope.getPath();
+    tick = scope.getTick();
+    #log (scope.debug, () ~> `Enter SFArray.delete ${path} on tick ${tick}`);
+    this.optState.each(state -> {
+      gid = prop ~> prop.getPath().id;
+      toDelete = Array[gid(state.size.property), gid(state.order.property)];
+      !toDelete = toDelete.concat(state.properties.map(gid));
+      scope.remove(toDelete)
+    });
+    #log (scope.debug, () ~> `Exit SFArray.delete ${path} on tick ${tick}`);
+  }
+
   fun list(
     getDependencies: Path -> mutable Dependencies,
     optReader: ?Reader = None(),
