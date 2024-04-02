@@ -66,11 +66,11 @@ class SFMapper private (
             PureFn((getter, _) ~> this.fn.apply(getter.i1(0))),
           );
           properties.insert(index, scope.combine(function))
-        | Delete(index) ->
+        | Delete(index, _) ->
           deleted.push(properties[index]);
           properties.delete(index)
         | Move(from, to) -> properties.set(to, state.properties[from])
-        | Update(_index, _value) ->
+        | Update(_index, _old, _value) ->
           // this is also a new value
           todo()
         }
@@ -101,10 +101,10 @@ class SFMapper private (
       mappable.maybeObject(v.value) match {
       | Some(nv) ->
         if (nv.tick > old.tick) {
-          timedSteps.push(Update(idx, nv.value));
+          timedSteps.push(Update(idx, old.value, nv.value));
         };
         !values = values.remove(v.value)
-      | _ -> timedSteps.push(Delete(idx))
+      | _ -> timedSteps.push(Delete(idx, v))
       }
     });
     values.each((k, v) -> {

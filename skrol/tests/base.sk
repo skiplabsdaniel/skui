@@ -198,4 +198,73 @@ fun sfarray(): void {
   );
 }
 
+class AddMap(v: Int) extends O.IMappingFn {
+  fun apply(value: O.Object): O.Object {
+    O.IntObject(O.IntObject::type(value).value + this.v)
+  }
+}
+
+class Sum() extends O.IReducerFn {
+  //
+  fun default(): O.Object {
+    O.IntObject(0)
+  }
+
+  fun apply(acc: O.Object, value: O.Object): O.Object {
+    O.IntObject::type(acc) + O.IntObject::type(value)
+  }
+
+  fun revert(cum: O.Object, value: O.Object): Result<O.Object, void> {
+    Success(O.IntObject::type(cum) - O.IntObject::type(value))
+  }
+}
+
+@test
+fun mapReduce(): void {
+  logger = mutable O.Logger(Logger.Config{minLevel => Logger.Debug()});
+  try {
+    context = O.Context::create(logger);
+    v1 = Array[0, 1, 2, 3].map(v -> O.IntObject(v));
+    i1 = context.input(O.ObjectArray(v1));
+    c1 = context.combine(
+      O.Function::create(Array[i1], Array[], O.REagerMap(AddMap(1))),
+    );
+    c2 = context.combine(
+      O.Function::create(Array[c1], Array[], O.REagerMap(AddMap(2))),
+    );
+    c3 = context.combine(
+      O.Function::create(Array[c2], Array[], O.REagerReduce(Sum())),
+    );
+    check = (c, expect) -> {
+      v = context.get(c, O.ObjectArray::type);
+      got = v.value.map(v -> O.IntObject::type(v).value);
+      T.expectEq(got, expect);
+    };
+    check2 = (expect) -> {
+      v = context.get(c3, O.IntObject::type);
+      got = v.value;
+      T.expectEq(got, expect);
+    };
+    check(c1, Array[1, 2, 3, 4]);
+    check(c2, Array[3, 4, 5, 6]);
+    check2(18);
+    v2 = Array[0, 1, 2, 3, 4].map(v -> O.IntObject(v));
+    context.set(i1, O.ObjectArray(v2));
+    context.update();
+    check(c1, Array[1, 2, 3, 4, 5]);
+    check(c2, Array[3, 4, 5, 6, 7]);
+    check2(25);
+    v3 = Array[0, 2, 3, 4].map(v -> O.IntObject(v));
+    context.set(i1, O.ObjectArray(v3));
+    context.update();
+    check(c1, Array[1, 3, 4, 5]);
+    check(c2, Array[3, 5, 6, 7]);
+    check2(21);
+  } catch {
+  | err ->
+    logger.flush();
+    throw err
+  }
+}
+
 module end;

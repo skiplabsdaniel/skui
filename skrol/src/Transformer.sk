@@ -4,11 +4,15 @@ class Steps(steps: Array<Step>) extends IModifier uses KeyToTyped
 
 class REagerCollect() extends EagerTransformer {
   //
-  fun eagerInit(accessor: EagerAccessor): (Object, this) {
+  fun eagerInit(
+    _scope: mutable IScope,
+    accessor: EagerAccessor,
+  ): (Object, this) {
     (ObjectArray(Array::fillBy(accessor.i0, accessor.i1)), this)
   }
 
   fun eagerUpdate(
+    _scope: mutable IScope,
     object: Object,
     accessor: EagerAccessor,
     _invaliders: Int -> ?IModifier,
@@ -26,25 +30,34 @@ class REagerCollect() extends EagerTransformer {
 
 class REagerMap(fn: IMappingFn) extends EagerTransformer {
   //
-  fun eagerInit(accessor: EagerAccessor): (Object, this) {
-    // TODO: manage statefull object
+  fun eagerInit(
+    scope: mutable IScope,
+    accessor: EagerAccessor,
+  ): (Object, this) {
+    tick = scope.getTick();
+    #log (scope.debug, () ~> `Enter REagerMap.eagerInit n°${tick}`);
     assert(accessor.i0 == 1, () ~> "Invalid mapped Env");
-    (
+    v = (
       accessor.i1(0) match {
-      | oa @ ObjectArray _ -> ObjectArray(oa.value.map(this.fn.apply))
-      | o -> this.fn.apply(o)
+      | oa @ ObjectArray _ ->
+        ObjectArray(oa.value.map(v -> scope.initObject(this.fn.apply(v))))
+      | o -> scope.initObject(this.fn.apply(o))
       },
       this,
-    )
+    );
+    #log (scope.debug, () ~> `Exit REagerMap.eagerInit on tick ${tick}`);
+    v
   }
 
   fun eagerUpdate(
+    scope: mutable IScope,
     object: Object,
     accessor: EagerAccessor,
     invaliders: Int -> ?IModifier,
   ): Result<(Object, IModifier, this), void> {
-    // TODO: manage statefull object
-    object match {
+    tick = scope.getTick();
+    #log (scope.debug, () ~> `Enter REagerMap.eagerUpdate on tick ${tick}`);
+    ret = object match {
     | ooa @ ObjectArray _ ->
       accessor.i1(0) match {
       | noa @ ObjectArray _ ->
@@ -56,25 +69,28 @@ class REagerMap(fn: IMappingFn) extends EagerTransformer {
           nSteps = steps.steps.map(step ->
             step match {
             | Insert(index, value) ->
-              iv = this.fn.apply(value);
+              iv = scope.initObject(this.fn.apply(value));
               new.insert(index, iv);
               Insert(index, iv)
-            | Delete(index) ->
+            | Delete(index, _) ->
+              deleted = current[index];
+              scope.deleteObject(current[index]);
               new.delete(index);
-              Delete(index)
+              Delete(index, deleted)
             | Move(from, to) ->
               new.set(to, current[from]);
               Move(from, to)
-            | Update(index, value) ->
-              uv = this.fn.apply(value);
+            | Update(index, _, value) ->
+              ov = current[index];
+              (uv, _) = scope.updateObject(ov, this.fn.apply(value));
               new.set(index, uv);
-              Update(index, uv)
+              Update(index, ov, uv)
             }
           );
           Success((ObjectArray(new.toArray()), Steps(nSteps), this))
         | _ ->
           current = ooa.value;
-          new = noa.value.map(this.fn.apply);
+          new = noa.value.map(v -> scope.initObject(this.fn.apply(v)));
           steps = process(current, new);
           if (steps.isEmpty()) {
             Success((object, Empty(), this))
@@ -85,30 +101,64 @@ class REagerMap(fn: IMappingFn) extends EagerTransformer {
       | _ -> Failure(void)
       }
     | _ -> Failure(void)
-    }
+    };
+    #log (scope.debug, () ~> `Exit REagerMap.eagerUpdate on tick ${tick}`);
+    ret
   }
 }
 
 class REagerReduce(fn: IReducerFn) extends EagerTransformer {
   //
-  fun eagerInit(accessor: EagerAccessor): (Object, this) {
+  fun eagerInit(
+    _scope: mutable IScope,
+    accessor: EagerAccessor,
+  ): (Object, this) {
+    // Statefull objects reducer ???
     assert(accessor.i0 == 1, () ~> "Invalid reduced Env");
     (
       accessor.i1(0) match {
-      | oa @ ObjectArray _ -> oa.value.reduce(this.fn.apply, this.fn.default)
-      | o -> this.fn.apply(this.fn.default, o)
+      | oa @ ObjectArray _ -> oa.value.reduce(this.fn.apply, this.fn.default())
+      | o -> this.fn.apply(this.fn.default(), o)
       },
       this,
     )
   }
 
   fun eagerUpdate(
-    _object: Object,
-    _accessor: EagerAccessor,
-    _invaliders: Int -> ?IModifier,
+    _scope: mutable IScope,
+    cummulated: Object,
+    accessor: EagerAccessor,
+    invaliders: Int -> ?IModifier,
   ): Result<(Object, IModifier, this), void> {
-    // TODO: Manage diff
-    Failure(void)
+    // Statefull objects reducer ???
+    accessor.i1(0) match {
+    | ObjectArray _ ->
+      invaliders(0) match {
+      | Some(Empty _) -> Success((cummulated, Empty(), this))
+      | Some(steps @ Steps _) ->
+        nv = cummulated;
+        for (step in steps.steps) {
+          step match {
+          | Insert(_, value) -> !nv = this.fn.apply(cummulated, value)
+          | Delete(_, value) ->
+            this.fn.revert(cummulated, value) match {
+            | Success(v) -> !nv = v
+            | _ -> return Failure(void)
+            }
+          | Move _ -> void
+          | Update(_, ov, uv) ->
+            this.fn.revert(cummulated, ov) match {
+            | Success(v) -> !nv = v
+            | _ -> return Failure(void)
+            };
+            !nv = this.fn.apply(cummulated, uv)
+          }
+        };
+        Success((nv, Empty(), this))
+      | _ -> Failure(void)
+      }
+    | _ -> Failure(void)
+    }
   }
 }
 

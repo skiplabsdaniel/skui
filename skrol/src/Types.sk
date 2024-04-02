@@ -1,5 +1,7 @@
 module SKROL;
 
+type Builder = (id: Int) -> mutable IScope;
+
 value class Tick(value: Int) uses Show, Orderable {
   fun next(): this {
     static(this.value + 1)
@@ -156,6 +158,9 @@ base mutable class IScope extends IUpdater, ILoggerBase {
   mutable fun combine(function: Function): IEagerProperty;
   mutable fun remove(properties: Array<Int>): void;
   mutable fun getMappable(): mutable IMappable;
+  mutable fun initObject(object: Object): Object;
+  mutable fun updateObject(current: Object, new: Object): (Object, Bool);
+  mutable fun deleteObject(object: Object): void;
 }
 
 base class StatefullObject extends Object {
@@ -169,9 +174,10 @@ base class IMappingFn uses Equality {
   fun apply(value: Object): Object;
 }
 
-base class IReducerFn(default: Object) uses Equality {
+base class IReducerFn uses Equality {
+  fun default(): Object;
   fun apply(acc: Object, value: Object): Object;
-  fun revert(cum: Object, value: Object): Result<this, void>;
+  fun revert(cum: Object, value: Object): Result<Object, void>;
 }
 
 base class MappableObject extends StatefullObject {
@@ -248,8 +254,14 @@ type EagerAccessor = (Int, Int -> Object);
 type LazyAccessor = (Int, (Int, IParameter) -> Object);
 
 base class ITransformer {
-  fun init(eager: EagerAccessor, lazy: LazyAccessor): (Object, this);
+  fun init(
+    scope: mutable IScope,
+    eager: EagerAccessor,
+    lazy: LazyAccessor,
+  ): (Object, this);
+
   fun update(
+    scope: mutable IScope,
     object: Object,
     eager: EagerAccessor,
     eagerInvaliders: Int -> ?IModifier,
@@ -258,38 +270,50 @@ base class ITransformer {
   ): Result<(Object, IModifier, this), void>;
 }
 
-base class EagerTransformer {
+base class EagerTransformer extends ITransformer {
   //
-  fun eagerInit(accessor: EagerAccessor): (Object, this);
+  fun eagerInit(scope: mutable IScope, accessor: EagerAccessor): (Object, this);
   fun eagerUpdate(
+    scope: mutable IScope,
     object: Object,
     accessor: EagerAccessor,
     invaliders: Int -> ?IModifier,
   ): Result<(Object, IModifier, this), void>;
 
-  fun init(eager: EagerAccessor, _lazy: LazyAccessor): (Object, this) {
-    this.eagerInit(eager)
+  fun init(
+    scope: mutable IScope,
+    eager: EagerAccessor,
+    _lazy: LazyAccessor,
+  ): (Object, this) {
+    this.eagerInit(scope, eager)
   }
 
   fun update(
+    scope: mutable IScope,
     object: Object,
     eager: EagerAccessor,
     eagerInvaliders: Int -> ?IModifier,
     _lazy: LazyAccessor,
     _lazyInvaliders: Int -> ?Array<IModifier>,
   ): Result<(Object, IModifier, this), void> {
-    this.eagerUpdate(object, eager, eagerInvaliders)
+    this.eagerUpdate(scope, object, eager, eagerInvaliders)
   }
 }
 
 class PureFn(
   accessors: (EagerAccessor, LazyAccessor) ~> Object,
 ) extends ITransformer {
-  fun init(eager: EagerAccessor, lazy: LazyAccessor): (Object, this) {
+  //
+  fun init(
+    _scope: mutable IScope,
+    eager: EagerAccessor,
+    lazy: LazyAccessor,
+  ): (Object, this) {
     (this.accessors(eager, lazy), this)
   }
 
   fun update(
+    _scope: mutable IScope,
     _object: Object,
     _eager: EagerAccessor,
     _eagerInvaliders: Int -> ?IModifier,
@@ -323,9 +347,11 @@ class Function private (
 
   fun init(
     dependencies: mutable Dependencies,
+    scope: mutable IScope,
     optReader: ?Reader,
   ): (Object, this) {
     (object, !this.transformer) = this.transformer.init(
+      scope,
       (
         this.inputs.size(),
         idx -> this.inputs[idx].get(dependencies, optReader),
@@ -340,6 +366,7 @@ class Function private (
 
   fun update(
     dependencies: mutable Dependencies,
+    scope: mutable IScope,
     object: Object,
     invaliders: Invaliders,
     optReader: ?Reader,
@@ -360,6 +387,7 @@ class Function private (
     );
     fIs2 = is2.map((_k, v) -> v.toArray());
     this.transformer.update(
+      scope,
       object,
       (
         this.inputs.size(),
@@ -376,7 +404,7 @@ class Function private (
       !this.transformer = transformer;
       (nobject, Some(modifier), this)
     | _ ->
-      res = this.init(dependencies, optReader);
+      res = this.init(dependencies, scope, optReader);
       (res.i0, None(), res.i1)
     }
   }

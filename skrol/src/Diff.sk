@@ -3,9 +3,9 @@ module SKROL;
 base class Step uses Orderable {
   children =
   | Insert(index: Int, value: Object)
-  | Delete(index: Int)
+  | Delete(index: Int, value: Object)
   | Move(from: Int, to: Int)
-  | Update(index: Int, value: Object)
+  | Update(index: Int, from: Object, to: Object)
 
   fun compare(other: Step): Order {
     (this, other) match {
@@ -13,7 +13,9 @@ base class Step uses Orderable {
       ic = idx1.compare(idx2);
       if (ic == EQ()) hash(v1).compare(hash(v2)) else ic
     | (Insert _, _) -> LT()
-    | (Delete(idx1), Delete(idx2)) -> idx1.compare(idx2)
+    | (Delete(idx1, v1), Delete(idx2, v2)) ->
+      ic = idx1.compare(idx2);
+      if (ic == EQ()) hash(v1).compare(hash(v2)) else ic
     | (Delete _, _) -> GT()
     | (Move(fidx1, tidx1), Move(fidx2, tidx2)) ->
       ic = fidx1.compare(fidx2);
@@ -21,9 +23,9 @@ base class Step uses Orderable {
     | (Move _, Insert _) -> GT()
     | (Move _, Delete _) -> LT()
     | (Move _, _) -> LT()
-    | (Update(idx1, v1), Update(idx2, v2)) ->
+    | (Update(idx1, f1, t1), Update(idx2, f2, t2)) ->
       ic = idx1.compare(idx2);
-      if (ic == EQ()) hash(v1).compare(hash(v2)) else ic
+      if (ic == EQ()) hash((f1, t1)).compare(hash((f2, t2))) else ic
     | (Update _, Insert _) -> GT()
     | (Update _, Delete _) -> LT()
     | (Update _, _) -> GT()
@@ -61,7 +63,7 @@ class Data(
 
 class Element(hash: Int, optOther: ?Int = None())
 
-fun process(old: Sequence<Object>, new: Array<Object>): Array<Step> {
+fun process(old: Array<Object>, new: Array<Object>): Array<Step> {
   table = mutable Map<Int, Data>[];
   newVector = fillData(new, table, false);
   oldVector = fillData(old, table, true);
@@ -74,7 +76,7 @@ fun process(old: Sequence<Object>, new: Array<Object>): Array<Step> {
   oldVector.eachWithIndex((index, line) -> {
     deleteOffsets.set(index, offset);
     if (line.optOther.isNone()) {
-      steps.insert(0, Delete(index));
+      steps.insert(0, Delete(index, old[index]));
       !offset = offset + 1;
     }
   });
@@ -84,7 +86,7 @@ fun process(old: Sequence<Object>, new: Array<Object>): Array<Step> {
     | Some(oldIndex) ->
       oldElement = oldVector[oldIndex];
       if (oldElement.hash != line.hash) {
-        steps.push(Update(index, new[index]));
+        steps.push(Update(index, old[index], new[index]));
       };
       deleteOffset = deleteOffsets[oldIndex];
       // TODO Reduce move list

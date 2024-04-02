@@ -173,12 +173,25 @@ mutable class Scope(
 
   mutable fun combine(function: Function): IEagerProperty {
     id = this.nextId;
+    path = this.getPath();
+    tick = this.getTick();
+    #log (this.debug, () ~>
+      `Enter Scope.combine property ${id} in scope ${path} on tick ${tick}`
+    );
     this.!nextId = this.nextId + 1;
     property = EagerProperty(Path(id, Some(this.path)));
-    (value, !function) = function.init(this, Some(EagerReader(property.path)));
+    subscope = this.buildSubScope(id);
+    (value, !function) = function.init(
+      this,
+      subscope,
+      Some(EagerReader(property.path)),
+    );
     this.!values = this.values.set(id, TimedObject(value, this.tick));
     this.!combines = this.combines.set(id, function);
     this.!properties = this.properties.set(id, property);
+    #log (this.debug, () ~>
+      `Exit Scope.combine property ${id} in scope ${path} on tick ${tick}`
+    );
     property
   }
 
@@ -264,16 +277,19 @@ mutable class Scope(
 
   private mutable fun checkObject(id: Int, object: Object): Object {
     object match {
-    | sf @ StatefullObject _ ->
-      subscope = mutable Scope(
-        Path(id, Some(this.path)),
-        this.optLogger,
-        Some(this),
-      );
-      this.!scopes = this.scopes.set(id, subscope);
-      sf.init(subscope)
+    | sf @ StatefullObject _ -> sf.init(this.buildSubScope(id))
     | _ -> object
     };
+  }
+
+  private mutable fun buildSubScope(id: Int): mutable IScope {
+    subscope = mutable Scope(
+      Path(id, Some(this.path)),
+      this.optLogger,
+      Some(this),
+    );
+    this.!scopes = this.scopes.set(id, subscope);
+    subscope
   }
 
   private mutable fun invalidateReaders(id: Int, invalider: Invalider): void {
@@ -283,15 +299,17 @@ mutable class Scope(
     this.!readers = this.readers.remove(id);
   }
 
+  @debug
   private mutable fun setIn(
     id: Int,
     object: Object,
     optModifier: ?IModifier,
+    withScope: Bool = false,
   ): void {
     path = this.getPath();
     tick = this.getTick();
     #log (this.debug, () ~>
-      `Scope.setIn property ${id} in scope ${path} on tick ${tick}`
+      `Enter Scope.setIn property ${id} in scope ${path} on tick ${tick}`
     );
     invalider = Invalider(Path(id, Some(this.path)), optModifier);
     optScope = this.scopes.maybeGet(id);
@@ -303,18 +321,18 @@ mutable class Scope(
     !object = (optScope, optOld) match {
     | (Some(oldScope), Some(oldObject)) ->
       oldScope.!tick = this.tick;
-      (oldObject.value as StatefullObject _).update(oldScope, object) match {
-      | Success(v) ->
-        this.!scopes = this.scopes.set(id, oldScope);
-        this.!invalidateds = this.invalidateds.add(id, invalider);
-        v
-      | _ -> this.checkObject(id, object)
-      }
+      (nobject, updated) = oldScope.updateObject(oldObject.value, object);
+      if (updated) this.!invalidateds = this.invalidateds.add(id, invalider);
+      if (updated || withScope) this.!scopes = this.scopes.set(id, oldScope);
+      nobject
     | _ -> this.checkObject(id, object)
     };
     optOld.each(old -> this.!updated = this.updated.set(id, old));
     this.!values = this.values.set(id, TimedObject(object, this.tick));
     this.invalidateReaders(id, invalider);
+    #log (this.debug, () ~>
+      `Exit Scope.setIn property ${id} in scope ${path} on tick ${tick}`
+    );
   }
 
   private mutable fun setLazyIn(
@@ -525,15 +543,18 @@ mutable class Scope(
         | eager @ IEagerProperty _ ->
           function = this.combines[invalidated];
           current = this.values[invalidated].value;
+          scope = this.scopes[invalidated];
+          scope.!tick = this.tick;
           (value, optKeys, !function) = function.update(
             this,
+            scope,
             current,
             invaliders,
             Some(EagerReader(eager.getPath())),
           );
           this.!combines = this.combines.set(invalidated, function);
           if (native_eq(current.getReference(), value.getReference()) != 0) {
-            this.setIn(invalidated, value, optKeys);
+            this.setIn(invalidated, value, optKeys, true);
           }
         | ILazyProperty _ ->
           // Lazy value is computed only on need.
@@ -557,6 +578,31 @@ mutable class Scope(
     this.!updating = -1;
     #log (this.debug, () ~> `Exit Scope.update '${path}' on tick ${tick}`);
     watched
+  }
+
+  mutable fun initObject(object: Object): Object {
+    object match {
+    | sf @ StatefullObject _ -> sf.init(this)
+    | _ -> object
+    }
+  }
+
+  mutable fun updateObject(current: Object, new: Object): (Object, Bool) {
+    current match {
+    | sf @ StatefullObject _ ->
+      sf.update(this, new) match {
+      | Success(v) -> (v, true)
+      | _ -> (this.initObject(new), false)
+      }
+    | _ -> (this.initObject(new), false)
+    }
+  }
+
+  mutable fun deleteObject(object: Object): void {
+    object match {
+    | sf @ StatefullObject _ -> sf.delete(this)
+    | _ -> void
+    }
   }
 
   readonly fun chill(): Scope {

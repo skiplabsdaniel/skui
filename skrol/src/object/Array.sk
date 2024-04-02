@@ -58,7 +58,7 @@ class SFArray(
       steps.each(step ->
         step match {
         | Insert(index, value) -> properties.insert(index, scope.input(value))
-        | Delete(index) ->
+        | Delete(index, _) ->
           deleted.push(properties[index]);
           properties.delete(index)
         | Move(from, to) -> properties.set(to, state.properties[from])
