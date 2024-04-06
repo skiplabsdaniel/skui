@@ -1,0 +1,120 @@
+module alias O = SKROL;
+
+module SKUIFont;
+
+base class Style uses Orderable
+
+class Text(value: String, font: Font) extends O.IParameter
+class Displayed(
+  value: String,
+  style: Style,
+  pxRange: Int = 8,
+) extends O.IParameter
+class Glyph(c: Char, font: Font) extends O.IParameter
+
+class Support() extends O.StatefullObject uses O.ObjectToTyped {
+  //
+  fun getReference(): this {
+    Support()
+  }
+
+  fun init(_scope: mutable O.IScope): this {
+    // Font
+    this
+  }
+
+  fun update(_scope: mutable O.IScope, _new: O.Object): Result<this, void> {
+    Failure(void)
+  }
+
+  fun changes(_old: O.TimedObject, _mappable: mutable O.IMappable): O.IChanges {
+    O.Change(this.getReference())
+  }
+
+  fun delete(_scope: mutable O.IScope): void {
+    void
+  }
+}
+/*
+  fun getTextSize(
+    context: mutable SKStore.Context,
+    chars: Vector<Char>,
+    range: Text.Range,
+    faceId: Font.FaceID,
+  ): Geometry.Size {
+    optPrevious: ?Char = None();
+    width = 0.0;
+    height = 0.0;
+    for (i in range.toRange()) {
+      char = chars[i];
+      glyph = this.glyphProps(context, Font.GlyphID::create(faceId, char));
+      !height = Math.max(height, glyph.height());
+      !width = width + glyph.width() + glyph.getKern(optPrevious);
+    };
+    Geometry.Size(width, height);
+  }
+
+  glyphHdl = SKStore.LHandle::lazy(
+    Font.GlyphID::keyType,
+    Font.GlyphFile::type,
+    context,
+    glyphPath,
+    (context, _self, gid) ~> {
+      futur = faceSources(context, gid.fid);
+      futur
+        .maybeGet()
+        .map(typeface -> {
+          face = typeface.face;
+          optGlyph = face.getGlyph(gid.char);
+          if (optGlyph.isNone()) {
+            !optGlyph = face.getGlyph('\ufffd');
+          };
+          if (optGlyph.isNone()) {
+            !optGlyph = face.getGlyph('?');
+          };
+          optGlyph match {
+          | Some(glyph) -> Font.GlyphFile(Some(face), glyph)
+          | _ -> Font.GlyphFile::default(Some(face), gid.fid.size)
+          };
+        })
+        .default(Font.GlyphFile::default(None(), gid.fid.size))
+    },
+    false,
+  );
+
+  fun faceSupplier(
+  context: mutable SKStore.Context,
+  fontSources: Ui.GetterOne<SKStore.Future<TrueType.File>, Font.TypefaceInfo>,
+  optBasename: ?SKStore.DirName = None(),
+): Ui.GetterOne<SKStore.Future<Font.TypeFace>, Font.FaceID> {
+  facePath = SKStore.DirName::check("fonts/ttfs/faces/", optBasename);
+  faceHdl = SKStore.LHandle::lazy(
+    Font.FaceID::keyType,
+    SKStore.Loadable::btype,
+    context,
+    facePath,
+    (context, _self, fid) ~> {
+      futur = fontSources(context, fid.typeface);
+      futur.load(context, (_, fontFile) ~> {
+        Font.TypeFace(
+          fid.typeface,
+          TrueType.Face::make(
+            fontFile.font,
+            Font.Options{
+              size => fid.size,
+              dpi => fid.dpi,
+              hinting => fid.hinting,
+            },
+          ),
+        )
+      })
+    },
+    false,
+  );
+  (ctx, faceId) ~>
+    SKStore.LoadableFuture(Font.TypeFace::type, faceHdl.get(ctx, faceId))
+}
+*/
+
+
+module end;

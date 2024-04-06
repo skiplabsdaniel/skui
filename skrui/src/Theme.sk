@@ -2,127 +2,108 @@ module alias O = SKROL;
 
 module SKUITheme;
 
-const family: String = "Roboto";
-const monospace: String = "NotoMono";
+class Category() extends O.Category
 
-const defaultFace: SKUIFont.Font = SKUIFont.Font(
-  SKUIFont.Typeface(family, SKUIFont.Weight::normal, SKUIFont.Normal()),
-  11.0,
-);
+class Changes(
+  colors: SortedMap<String, Color>,
+  fonts: SortedMap<String, SKUIFont.Font>,
+) extends O.IChanges
 
-const largeFace: SKUIFont.Font = SKUIFont.Font(
-  SKUIFont.Typeface(family, SKUIFont.Weight::normal, SKUIFont.Normal()),
-  12.0,
-);
-
-const boldFace: SKUIFont.Font = SKUIFont.Font(
-  SKUIFont.Typeface(family, SKUIFont.Weight::bold, SKUIFont.Normal()),
-  11.0,
-);
-
-const bigFace: SKUIFont.Font = SKUIFont.Font(
-  SKUIFont.Typeface(family, SKUIFont.Weight::bold, SKUIFont.Normal()),
-  14.0,
-);
-
-const smallFace: SKUIFont.Font = SKUIFont.Font(
-  SKUIFont.Typeface(family, SKUIFont.Weight::normal, SKUIFont.Normal()),
-  9.0,
-);
-
-const smallBoldFace: SKUIFont.Font = SKUIFont.Font(
-  SKUIFont.Typeface(family, SKUIFont.Weight::bold, SKUIFont.Normal()),
-  9.0,
-);
-
-const smallItalicFace: SKUIFont.Font = SKUIFont.Font(
-  SKUIFont.Typeface(family, SKUIFont.Weight::normal, SKUIFont.Italic()),
-  9.0,
-);
-
-const mediumFace: SKUIFont.Font = SKUIFont.Font(
-  SKUIFont.Typeface(family, SKUIFont.Weight::normal, SKUIFont.Normal()),
-  10.0,
-);
-
-const mediumBoldFace: SKUIFont.Font = SKUIFont.Font(
-  SKUIFont.Typeface(family, SKUIFont.Weight::bold, SKUIFont.Normal()),
-  10.0,
-);
-
-const monospaceFace: SKUIFont.Font = SKUIFont.Font(
-  SKUIFont.Typeface(monospace, SKUIFont.Weight::normal, SKUIFont.Normal()),
-  11.0,
-);
-
-base class TFont {
-  children =
-  | TFBasic()
-  | TFAction()
-  | TFLabel()
-  | TFHelper()
-  | TFBadge()
-  | TFPlaceHolder()
-  | TFTree()
-  | TFMonospace()
-  | TFTable()
-  | TFHeader()
+class Properties{fonts: Fonts = Fonts{}, colors: Colors = Colors{}} {
+  //
+  fun changes(other: Properties): Changes {
+    Changes(this.colors.changes(other.colors), this.fonts.changes(other.fonts))
+  }
 }
 
-class Fonts{
-  basic: SKUIFont.Font = defaultFace,
-  action: SKUIFont.Font = boldFace,
-  helper: SKUIFont.Font = smallItalicFace,
-  tooltip: SKUIFont.Font = smallBoldFace,
-  title: SKUIFont.Font = bigFace,
-  discriminant: SKUIFont.Font = smallFace,
-  shortcut: SKUIFont.Font = smallFace,
-  label: SKUIFont.Font = smallFace,
-  badge: SKUIFont.Font = smallBoldFace,
-  placeholder: SKUIFont.Font = bigFace,
-  tree: SKUIFont.Font = mediumFace,
-  table: SKUIFont.Font = defaultFace,
-  header: SKUIFont.Font = boldFace,
-  monospace: SKUIFont.Font = monospaceFace,
-}
+class State{colors: ColorsState, fonts: FontsState} {
+  static fun fromProperties(
+    scope: mutable O.IScope,
+    properties: Properties,
+  ): this {
+    static{
+      colors => ColorsState::fromColors(scope, properties.colors),
+      fonts => FontsState::fromFonts(scope, properties.fonts),
+    }
+  }
 
-class Colors{
-  base: Color = Colors.white(),
-  regular: Color = Colors.black().withAlpha(0.9),
-  primary: Color = Color::fromARGBHex(0xff5f5fb8),
-  accent: Color = Color::fromARGBHex(0xffd8894a),
-  warn: Color = Color::fromARGBHex(0xffb85f5f),
-  inactive: Color = Colors.gray(),
-  border: Color = Colors.lightgray(),
-  information: Color = Colors.black().withAlpha(0.5),
-  whitespace: Color = Color::gray(UInt8::truncate(198)),
-  shortcut: Color = Colors.darkblue(),
-  separator: Color = Color::fromARGBHex(0xffaaaaaa),
-  title: Color = Colors.black(),
-  target: Color = Colors.darkgreen(),
-  veil: Color = Colors.black().withAlpha(0.32),
-  highlight: Color = Colors.lightsteelblue(),
-}
+  fun update(updater: mutable O.IUpdater, properties: Properties): void {
+    this.colors.update(updater, properties.colors);
+    this.fonts.update(updater, properties.fonts);
+  }
 
-class Properties{fonts: Fonts = Fonts{}, colors: Colors = Colors{}}
-class State{}
+  fun getColor(
+    dependencies: mutable O.Dependencies,
+    color: TColor,
+    optReader: ?O.Reader = None(),
+  ): Color {
+    this.colors.getColor(dependencies, color, optReader)
+  }
+
+  fun getFont(
+    dependencies: mutable O.Dependencies,
+    color: TFont,
+    optReader: ?O.Reader = None(),
+  ): SKUIFont.Font {
+    this.fonts.getFont(dependencies, color, optReader)
+  }
+
+  fun delete(scope: mutable O.IScope): void {
+    this.colors.delete(scope);
+    this.fonts.delete(scope);
+  }
+}
 
 class Theme{
-  properties: O.TEagerProperty<Properties>,
+  properties: Properties,
   optState: ?State = None(),
-} extends O.StatefullObject {
+} extends O.StatefullObject uses O.ObjectToTyped {
   //
   fun getReference(): this {
     Theme{properties => this.properties}
   }
 
-  fun init(_scope: mutable O.IScope, _optCurrent: ?O.Object = None()): this {
+  fun init(scope: mutable O.IScope): this {
     // Font
+    !this.optState = Some(State::fromProperties(scope, this.properties));
     this
   }
 
-  fun changes(_old: O.TimedObject): O.IChanges {
-    invariant_violation("StatefullObject.changes new namaged in SKUI.Label.")
+  fun update(scope: mutable O.IScope, new: O.Object): Result<this, void> {
+    new match {
+    | theme @ Theme _ ->
+      this.optState match {
+      | Some(state) ->
+        state.update(scope, theme.properties);
+        Success(this)
+      | _ -> Failure(void)
+      }
+    | _ -> Failure(void)
+    }
+  }
+
+  fun changes(old: O.TimedObject, _mappable: mutable O.IMappable): O.IChanges {
+    old.value match {
+    | theme @ Theme _ -> this.properties.changes(theme.properties)
+    | _ -> O.Change(this.getReference())
+    }
+  }
+
+  fun delete(scope: mutable O.IScope): void {
+    this.optState.each(state -> state.delete(scope))
+  }
+}
+
+trait CheckChanges<V: frozen> {
+  macro fun changes(other: inst): SortedMap<String, V> {
+    diff = SortedMap<String, V>[];
+    #forEachField (#field) {
+      // Use isEqual to ensure that fields implement Equality
+      if (native_eq(this.#field, other.#field) != 0) {
+        !diff = diff.set("#field", this.#field)
+      }
+    };
+    diff
   }
 }
 

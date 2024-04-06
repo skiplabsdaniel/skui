@@ -155,13 +155,13 @@ base class Slant() uses Hashable, Orderable, Show {
   }
 }
 
-class Typeface(family: String, weight: Weight, slant: Slant)
+class Typeface(family: String, weight: Weight, slant: Slant) uses Orderable
 
 class Font(
   typeface: Typeface,
   size: Float,
   dpi: Float = 96.0,
   hinting: Font.Hinting = Font.HintingNone(),
-)
+) uses Orderable
 
 module end;

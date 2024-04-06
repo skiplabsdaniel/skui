@@ -1,0 +1,31 @@
+module alias O = SKROL;
+
+module SKUITheme;
+
+base class TThickness extends O.Key {
+  children =
+  | TTTrackWidth()
+  | TTSeparator()
+  | TTTreeTabulation()
+  | TTLoading()
+  | TTMenuSeparator()
+  | TTMark()
+  | TTInputIcon()
+  | TTSplit()
+  | TTTrack()
+  | TTRuler()
+  | TTActions()
+  | TTMinItemWidth()
+  | TTIndicator()
+  | TTTooltip()
+  | TTLineSpacing()
+  | TTActionHorizontalSide()
+  | TTActionVerticalSide()
+  | TTIconTextGap()
+  | TTIconIconGap()
+  | TTMonospacePadding()
+  | TTScrollBar()
+  | TTShadow()
+}
+
+module end;

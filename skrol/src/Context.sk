@@ -1,13 +1,37 @@
 module SKROL;
 
+base class Categorized
+
+base class Key uses Orderable
+base class Category uses Orderable
+
+trait CategorizedToType {
+  macro static fun cat(obj: Categorized): this {
+    obj match {
+    | x @ #ThisClass _ -> x
+    }
+  }
+}
+
 mutable class Context private (
   scope: mutable Scope,
   logger: mutable ILogger,
   mutable tick: Tick = Tick(0),
+  mutable globals: SortedMap<Key, Categorized> = SortedMap[],
+  mutable streams: SortedMap<IStreamID, IStreamManager> = SortedMap[],
   mutable watchedObjects: SortedMap<Path, List<IWatch>> = SortedMap[],
   mutable outputs: SortedMap<Path, List<Watch>> = SortedMap[],
 ) {
   //
+
+  readonly fun getGlobal<T: frozen>(key: Key, conv: Categorized ~> T): ?T {
+    this.globals.maybeGet(key).map(conv);
+  }
+
+  mutable fun setGlobal(key: Key, value: Categorized): void {
+    this.!globals = this.globals.set(key, value)
+  }
+
   static fun create(
     logger: mutable ILogger = mutable BufferedLogger(),
   ): mutable this {
@@ -165,12 +189,53 @@ mutable class Context private (
   }
 
   readonly fun chill(): Context {
-    Context(this.scope.chill(), this.logger.chill(), this.tick)
+    Context(
+      this.scope.chill(),
+      this.logger.chill(),
+      this.tick,
+      this.globals,
+      this.streams,
+    )
   }
 
   readonly fun clone(): mutable Context {
     logger = this.logger.clone();
-    mutable Context(this.scope.clone(logger), logger, this.tick)
+    mutable Context(
+      this.scope.clone(logger),
+      logger,
+      this.tick,
+      this.globals,
+      this.streams,
+    )
+  }
+
+  mutable fun read(id: IStreamID, manager: IStreamManager): void {
+    this.!streams = this.streams.set(id, manager);
+    readStream(id.toJSON(), manageNextChunck);
+  }
+
+  mutable fun manageNextChunck(
+    id: IStreamID,
+    chunk: Array<UInt8>,
+    progress: Float,
+    optError: ?JSON.Value,
+  ): Bool {
+    this.streams.maybeGet(id) match {
+    | Some(manager) ->
+      optError match {
+      | Some(e) if (!(e is JSON.Null _)) ->
+        manager.error(this, e);
+        false
+      | _ ->
+        manager.manage(this, chunk, progress) match {
+        | Some(nm) ->
+          this.!streams = this.streams.set(id, nm);
+          true
+        | _ -> false
+        }
+      }
+    | _ -> false
+    }
   }
 }
 

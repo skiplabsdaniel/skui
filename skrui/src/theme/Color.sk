@@ -1,0 +1,148 @@
+module alias O = SKROL;
+
+module SKUITheme;
+
+base class TColor {
+  children =
+  | TCBase()
+  | TCRegular()
+  | TCPrimary()
+  | TCAccent()
+  | TCWarn()
+  | TCInactive()
+  | TCBorder()
+  | TCInformation()
+  | TCWhitespace()
+  | TCShortcut()
+  | TCSeparator()
+  | TCTitle()
+  | TCTarget()
+  | TCVeil()
+  | TCHighlight()
+}
+
+class Colors{
+  base: Color = Colors.white(),
+  regular: Color = Colors.black().withAlpha(0.9),
+  primary: Color = Color::fromARGBHex(0xff5f5fb8),
+  accent: Color = Color::fromARGBHex(0xffd8894a),
+  warn: Color = Color::fromARGBHex(0xffb85f5f),
+  inactive: Color = Colors.gray(),
+  border: Color = Colors.lightgray(),
+  information: Color = Colors.black().withAlpha(0.5),
+  whitespace: Color = Color::gray(UInt8::truncate(198)),
+  shortcut: Color = Colors.darkblue(),
+  separator: Color = Color::fromARGBHex(0xffaaaaaa),
+  title: Color = Colors.black(),
+  target: Color = Colors.darkgreen(),
+  veil: Color = Colors.black().withAlpha(0.32),
+  highlight: Color = Colors.lightsteelblue(),
+} uses CheckChanges<Color>
+
+class ColorObject(color: Color) extends O.StatelessObject uses O.ObjectToTyped
+
+class ObjectToColor() extends O.Converter<O.Object, Color> {
+  fun convert(from_: O.Object): Color {
+    ColorObject::type(from_).color
+  }
+}
+
+class ColorToObject() extends O.Converter<Color, O.Object> {
+  fun convert(color: Color): O.Object {
+    ColorObject(color)
+  }
+}
+
+class ColorsState{
+  base: O.TInputProperty<Color>,
+  regular: O.TInputProperty<Color>,
+  primary: O.TInputProperty<Color>,
+  accent: O.TInputProperty<Color>,
+  warn: O.TInputProperty<Color>,
+  inactive: O.TInputProperty<Color>,
+  border: O.TInputProperty<Color>,
+  information: O.TInputProperty<Color>,
+  whitespace: O.TInputProperty<Color>,
+  shortcut: O.TInputProperty<Color>,
+  separator: O.TInputProperty<Color>,
+  title: O.TInputProperty<Color>,
+  target: O.TInputProperty<Color>,
+  veil: O.TInputProperty<Color>,
+  highlight: O.TInputProperty<Color>,
+  properties: Array<Int>,
+} {
+  static fun fromColors(scope: mutable O.IScope, colors: Colors): this {
+    properties = mutable Vector[];
+    toColorProperty = color -> {
+      prop = scope.input(ColorObject(color));
+      properties.push(prop.getPath().id);
+      O.TInputProperty(prop, ObjectToColor(), ColorToObject())
+    };
+    static{
+      base => toColorProperty(colors.base),
+      regular => toColorProperty(colors.regular),
+      primary => toColorProperty(colors.primary),
+      accent => toColorProperty(colors.accent),
+      warn => toColorProperty(colors.warn),
+      inactive => toColorProperty(colors.inactive),
+      border => toColorProperty(colors.border),
+      information => toColorProperty(colors.information),
+      whitespace => toColorProperty(colors.whitespace),
+      shortcut => toColorProperty(colors.shortcut),
+      separator => toColorProperty(colors.separator),
+      title => toColorProperty(colors.title),
+      target => toColorProperty(colors.target),
+      veil => toColorProperty(colors.veil),
+      highlight => toColorProperty(colors.highlight),
+      properties => properties.toArray(),
+    }
+  }
+
+  fun update(updater: mutable O.IUpdater, colors: Colors): void {
+    this.base.set(updater, colors.base);
+    this.regular.set(updater, colors.regular);
+    this.primary.set(updater, colors.primary);
+    this.accent.set(updater, colors.accent);
+    this.warn.set(updater, colors.warn);
+    this.inactive.set(updater, colors.inactive);
+    this.border.set(updater, colors.border);
+    this.information.set(updater, colors.information);
+    this.whitespace.set(updater, colors.whitespace);
+    this.shortcut.set(updater, colors.shortcut);
+    this.separator.set(updater, colors.separator);
+    this.title.set(updater, colors.title);
+    this.target.set(updater, colors.target);
+    this.veil.set(updater, colors.veil);
+    this.highlight.set(updater, colors.highlight);
+  }
+
+  fun getColor(
+    dependencies: mutable O.Dependencies,
+    color: TColor,
+    optReader: ?O.Reader = None(),
+  ): Color {
+    color match {
+    | TCBase() -> this.base.get(dependencies, optReader)
+    | TCRegular() -> this.regular.get(dependencies, optReader)
+    | TCPrimary() -> this.primary.get(dependencies, optReader)
+    | TCAccent() -> this.accent.get(dependencies, optReader)
+    | TCWarn() -> this.warn.get(dependencies, optReader)
+    | TCInactive() -> this.inactive.get(dependencies, optReader)
+    | TCBorder() -> this.border.get(dependencies, optReader)
+    | TCInformation() -> this.information.get(dependencies, optReader)
+    | TCWhitespace() -> this.whitespace.get(dependencies, optReader)
+    | TCShortcut() -> this.shortcut.get(dependencies, optReader)
+    | TCSeparator() -> this.separator.get(dependencies, optReader)
+    | TCTitle() -> this.title.get(dependencies, optReader)
+    | TCTarget() -> this.target.get(dependencies, optReader)
+    | TCVeil() -> this.veil.get(dependencies, optReader)
+    | TCHighlight() -> this.highlight.get(dependencies, optReader)
+    }
+  }
+
+  fun delete(scope: mutable O.IScope): void {
+    scope.remove(this.properties);
+  }
+}
+
+module end;

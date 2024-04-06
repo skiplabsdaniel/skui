@@ -1,9 +1,18 @@
+module alias O = SKROL;
+
 module SKUI;
 
 base class IConfiguration
 base class INode
 base class IIcon
+base class ITextStyle
 
-base class IConstraints extends SKROL.IParameter
+base class IConstraints extends SKROL.IParameter {
+  fun constrain(size: Geometry.Size): Geometry.Size;
+}
+
+class SizeObject(
+  size: Geometry.Size,
+) extends O.StatelessObject uses O.ObjectToTyped
 
 module end;

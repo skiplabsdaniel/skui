@@ -1,0 +1,37 @@
+module SKROL;
+
+@debug
+@cpp_extern
+native fun readStream(
+  id: JSON.Value,
+  (
+    id: JSON.Value,
+    chunk: Array<UInt8>,
+    progress: Float,
+    error: ?JSON.Value,
+  ) ~> Bool,
+): void;
+
+fun manageNextChunck(
+  _id: JSON.Value,
+  _chunk: Array<UInt8>,
+  _progress: Float,
+  _error: ?JSON.Value,
+): Bool {
+  false
+}
+
+base class IStreamID uses Orderable {
+  fun toJSON(): JSON.Value;
+}
+
+base class IStreamManager {
+  fun manage(
+    ctx: mutable Context,
+    chunk: Array<UInt8>,
+    progress: Float,
+  ): ?IStreamManager;
+  fun error(ctx: mutable Context, error: JSON.Value): void;
+}
+
+module end;

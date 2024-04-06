@@ -1,0 +1,206 @@
+module SKUI;
+
+base class ISize
+
+base class ValuedSize final (value: Float) extends ISize uses Orderable {
+  protected fun unit(): String;
+
+  fun toString(): String {
+    `${this.value} ${this.unit()}`;
+  }
+  /*static fun fromString(str: String): ?Dim {
+    tokens = mutable Vector<Text.TokenInfo>[];
+    lexer = mutable Text.Lexer{
+      text => str.chars(),
+      tokens,
+      splitNumberAndToken => true,
+    };
+    lexer.lex();
+    fTokens = tokens.filter(t -> t.kind != Text.KWhiteSpace());
+    if (
+      fTokens.size() >= 2 &&
+      fTokens[0].kind == Text.KNumber() &&
+      fTokens[1].kind == Text.KSymbol() &&
+      fTokens.maybeGet(2).map(v -> v.kind == Text.KToken()).default(true)
+    ) {
+      value = if (fTokens[0].text.contains(".")) {
+        fTokens[0].text.toFloat()
+      } else {
+        fTokens[0].text.toInt().toFloat()
+      };
+      if (fTokens[1].text == "%") {
+        Some(
+          fTokens
+            .maybeGet(2)
+            .map(v ->
+              v.text.lowercase() match {
+              | "h" -> RHeight(value)
+              | "w" -> RWidth(value)
+              | "max" -> RMax(value)
+              | "min" | _ -> RMin(value)
+              }
+            )
+            .default(RMin(value)),
+        )
+      } else {
+        None()
+      }
+    } else if (
+      fTokens.size() > 1 &&
+      fTokens[0].kind == Text.KNumber() &&
+      fTokens[1].kind == Text.KToken()
+    ) {
+      value = if (fTokens[0].text.contains(".")) {
+        fTokens[0].text.toFloat()
+      } else {
+        fTokens[0].text.toInt().toFloat()
+      };
+      fTokens[1].text.lowercase() match {
+      | "px" -> Some(Px(value))
+      | "pt" -> Some(Pt(value))
+      | "in" -> Some(Inch(value))
+      | "pc" -> Some(Pica(value))
+      | "cm" -> Some(Centimeter(value))
+      | "mm" -> Some(Millimeter(value))
+      | _ -> None()
+      }
+    } else if (fTokens.size() > 0 && fTokens[0].kind == Text.KNumber()) {
+      Some(
+        Px(
+          if (fTokens[0].text.contains(".")) {
+            fTokens[0].text.toFloat()
+          } else {
+            fTokens[0].text.toInt().toFloat()
+          },
+        ),
+      )
+    } else {
+      None()
+    }
+  }*/
+}
+
+base class LayoutSize extends ISize
+
+base class FixedSize extends ValuedSize, LayoutSize {
+  fun pixels(): Float;
+
+  fun scale(scale: Float): this {
+    static(this.value * scale)
+  }
+
+  overridable fun points(): Float {
+    9.0 * this.pixels() / 12.0;
+  }
+
+  overridable fun inches(): Float {
+    this.pixels() / 96.0;
+  }
+
+  overridable fun centimeters(): Float {
+    this.inches() * 2.54;
+  }
+
+  overridable fun millimeters(): Float {
+    this.centimeters() * 10.0;
+  }
+
+  overridable fun picas(): Float {
+    this.points() / 12.0;
+  }
+}
+
+class Px extends FixedSize {
+  fun pixels(): Float {
+    this.value;
+  }
+  protected fun unit(): String {
+    "px"
+  }
+}
+
+class Pt extends FixedSize {
+  fun pixels(): Float {
+    12.0 * this.value / 9.0;
+  }
+  fun pt(): Float {
+    this.value;
+  }
+  protected fun unit(): String {
+    "pt"
+  }
+}
+
+class Inch extends FixedSize {
+  fun pixels(): Float {
+    96.0 * this.value;
+  }
+  fun inches(): Float {
+    this.value;
+  }
+  protected fun unit(): String {
+    "in"
+  }
+}
+
+class Pica extends FixedSize {
+  fun pixels(): Float {
+    16.0 * this.value;
+  }
+  fun pt(): Float {
+    12.0 * this.value;
+  }
+  fun pc(): Float {
+    this.value;
+  }
+  protected fun unit(): String {
+    "pc"
+  }
+}
+
+class Centimeter extends FixedSize {
+  // 1 in = 96px
+  // 1 in	= 96px = 2.54 cm
+  fun pixels(): Float {
+    this.value * 96.0 / 2.54;
+  }
+
+  fun centimeters(): Float {
+    this.value;
+  }
+
+  protected fun unit(): String {
+    "cm"
+  }
+}
+
+class Millimeter extends FixedSize {
+  fun pixels(): Float {
+    this.centimeters() * 96.0 / 2.54;
+  }
+
+  fun centimeters(): Float {
+    this.value / 10.0;
+  }
+
+  fun millimeters(): Float {
+    this.value;
+  }
+
+  protected fun unit(): String {
+    "mm"
+  }
+}
+
+base class RelativeSize extends LayoutSize {
+  fun compute(size: FixedSize): FixedSize;
+}
+
+class ScaledSize(scale: Float) extends RelativeSize {
+  //
+  fun compute(size: FixedSize): FixedSize {
+    size.scale(this.scale)
+  }
+}
+
+module end;

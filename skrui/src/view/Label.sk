@@ -2,6 +2,41 @@ module alias O = SKROL;
 
 module SKUILabel;
 
+const kText: Int = 0;
+const kIcon: Int = 0;
+
+mutable base class Env {
+  mutable fun getIconTextGap(): Float;
+  mutable fun getLineSpacing(pt: Float): Float;
+  mutable fun getIconSize(pt: Float): ?Geometry.Size;
+  mutable fun getFontSize(): Float;
+  mutable fun getTextSize(pt: Float): ?Geometry.Size;
+  mutable fun getLabelSize(): Float;
+}
+
+fun layout(env: mutable Env, constraints: SKUI.IConstraints): O.Object {
+  fontSize = env.getFontSize();
+  iconTextGap = env.getIconTextGap();
+  innerSize = env.getTextSize(fontSize) match {
+  | Some(size) ->
+    env.getIconSize(fontSize) match {
+    | Some(iSize) ->
+      Geometry.Size(size.width + iSize.width + iconTextGap, size.height)
+    | _ -> size
+    }
+  | _ ->
+    env.getIconSize(fontSize) match {
+    | Some(iSize) -> iSize
+    | _ -> Geometry.Size::square(0.0)
+    }
+  };
+  labelSize = env.getLabelSize();
+  // Node(this, size, Array[], constUserData(Some(UiLabel.Layout(innerSize))))
+  SKUI.SizeObject(
+    constraints.constrain(innerSize + Geometry.Size(2.0 * labelSize, 0.0)),
+  )
+}
+
 class State{layout: O.TLazyProperty<SKUI.INode, SKUI.IConstraints>}
 
 module end;
@@ -11,7 +46,7 @@ module SKUI;
 class Label{
   disabled: O.TEagerProperty<Bool>,
   text: O.TEagerProperty<Text>,
-  icon: O.TEagerProperty<?SKUI.IIcon>,
+  icon: O.TEagerProperty<?SKUI.IIcon>, // Lazy
   tooltip: O.TEagerProperty<?Text>,
   font: O.TEagerProperty<SKUIFont.Font>,
   config: O.TEagerProperty<?SKUI.IConfiguration>,
@@ -30,12 +65,20 @@ class Label{
     }
   }
 
-  fun changes(_old: O.TimedObject): O.IChanges {
-    invariant_violation("StatefullObject.changes new namaged in SKUI.Label.")
+  fun init(_scope: mutable O.IScope): this {
+    this
   }
 
-  fun init(_scope: mutable O.IScope, _optCurrent: ?O.Object = None()): this {
-    this
+  fun update(_scope: mutable O.IScope, _new: O.Object): Result<this, void> {
+    Failure(void)
+  }
+
+  fun changes(_old: O.TimedObject, _mappable: mutable O.IMappable): O.IChanges {
+    invariant_violation("StatefullObject.changes not namaged in SKUI.Label.")
+  }
+
+  fun delete(_scope: mutable O.IScope): void {
+    void
   }
 }
 

@@ -1,0 +1,197 @@
+module alias O = SKROL;
+
+module SKUITheme;
+
+const family: String = "Roboto";
+const monospace: String = "NotoMono";
+
+const defaultFace: SKUIFont.Font = SKUIFont.Font(
+  SKUIFont.Typeface(family, SKUIFont.Weight::normal, SKUIFont.Normal()),
+  11.0,
+);
+
+const largeFace: SKUIFont.Font = SKUIFont.Font(
+  SKUIFont.Typeface(family, SKUIFont.Weight::normal, SKUIFont.Normal()),
+  12.0,
+);
+
+const boldFace: SKUIFont.Font = SKUIFont.Font(
+  SKUIFont.Typeface(family, SKUIFont.Weight::bold, SKUIFont.Normal()),
+  11.0,
+);
+
+const bigFace: SKUIFont.Font = SKUIFont.Font(
+  SKUIFont.Typeface(family, SKUIFont.Weight::bold, SKUIFont.Normal()),
+  14.0,
+);
+
+const smallFace: SKUIFont.Font = SKUIFont.Font(
+  SKUIFont.Typeface(family, SKUIFont.Weight::normal, SKUIFont.Normal()),
+  9.0,
+);
+
+const smallBoldFace: SKUIFont.Font = SKUIFont.Font(
+  SKUIFont.Typeface(family, SKUIFont.Weight::bold, SKUIFont.Normal()),
+  9.0,
+);
+
+const smallItalicFace: SKUIFont.Font = SKUIFont.Font(
+  SKUIFont.Typeface(family, SKUIFont.Weight::normal, SKUIFont.Italic()),
+  9.0,
+);
+
+const mediumFace: SKUIFont.Font = SKUIFont.Font(
+  SKUIFont.Typeface(family, SKUIFont.Weight::normal, SKUIFont.Normal()),
+  10.0,
+);
+
+const mediumBoldFace: SKUIFont.Font = SKUIFont.Font(
+  SKUIFont.Typeface(family, SKUIFont.Weight::bold, SKUIFont.Normal()),
+  10.0,
+);
+
+const monospaceFace: SKUIFont.Font = SKUIFont.Font(
+  SKUIFont.Typeface(monospace, SKUIFont.Weight::normal, SKUIFont.Normal()),
+  11.0,
+);
+
+base class TFont extends O.Key {
+  children =
+  | TFBasic()
+  | TFAction()
+  | TFLabel()
+  | TFTooltip()
+  | TFHelper()
+  | TFDiscriminant()
+  | TFBadge()
+  | TFPlaceHolder()
+  | TFTree()
+  | TFTitle()
+  | TFShortcut()
+  | TFMonospace()
+  | TFTable()
+  | TFHeader()
+}
+
+class FontObject(
+  font: SKUIFont.Font,
+) extends O.StatelessObject uses O.ObjectToTyped
+
+class ObjectToFont() extends O.Converter<O.Object, SKUIFont.Font> {
+  fun convert(from_: O.Object): SKUIFont.Font {
+    FontObject::type(from_).font
+  }
+}
+
+class FontToObject() extends O.Converter<SKUIFont.Font, O.Object> {
+  fun convert(font: SKUIFont.Font): O.Object {
+    FontObject(font)
+  }
+}
+
+class Fonts{
+  basic: SKUIFont.Font = defaultFace,
+  action: SKUIFont.Font = boldFace,
+  helper: SKUIFont.Font = smallItalicFace,
+  tooltip: SKUIFont.Font = smallBoldFace,
+  title: SKUIFont.Font = bigFace,
+  discriminant: SKUIFont.Font = smallFace,
+  shortcut: SKUIFont.Font = smallFace,
+  label: SKUIFont.Font = smallFace,
+  badge: SKUIFont.Font = smallBoldFace,
+  placeholder: SKUIFont.Font = bigFace,
+  tree: SKUIFont.Font = mediumFace,
+  table: SKUIFont.Font = defaultFace,
+  header: SKUIFont.Font = boldFace,
+  monospace: SKUIFont.Font = monospaceFace,
+} uses CheckChanges<SKUIFont.Font>
+
+class FontsState{
+  basic: O.TInputProperty<SKUIFont.Font>,
+  action: O.TInputProperty<SKUIFont.Font>,
+  helper: O.TInputProperty<SKUIFont.Font>,
+  tooltip: O.TInputProperty<SKUIFont.Font>,
+  title: O.TInputProperty<SKUIFont.Font>,
+  discriminant: O.TInputProperty<SKUIFont.Font>,
+  shortcut: O.TInputProperty<SKUIFont.Font>,
+  label: O.TInputProperty<SKUIFont.Font>,
+  badge: O.TInputProperty<SKUIFont.Font>,
+  placeholder: O.TInputProperty<SKUIFont.Font>,
+  tree: O.TInputProperty<SKUIFont.Font>,
+  table: O.TInputProperty<SKUIFont.Font>,
+  header: O.TInputProperty<SKUIFont.Font>,
+  monospace: O.TInputProperty<SKUIFont.Font>,
+  properties: Array<Int>,
+} {
+  static fun fromFonts(scope: mutable O.IScope, fonts: Fonts): this {
+    properties = mutable Vector[];
+    toFontProperty = color -> {
+      prop = scope.input(FontObject(color));
+      properties.push(prop.getPath().id);
+      O.TInputProperty(prop, ObjectToFont(), FontToObject())
+    };
+    static{
+      basic => toFontProperty(fonts.basic),
+      action => toFontProperty(fonts.action),
+      helper => toFontProperty(fonts.helper),
+      tooltip => toFontProperty(fonts.tooltip),
+      title => toFontProperty(fonts.title),
+      discriminant => toFontProperty(fonts.discriminant),
+      shortcut => toFontProperty(fonts.shortcut),
+      label => toFontProperty(fonts.label),
+      badge => toFontProperty(fonts.badge),
+      placeholder => toFontProperty(fonts.placeholder),
+      tree => toFontProperty(fonts.tree),
+      table => toFontProperty(fonts.table),
+      header => toFontProperty(fonts.header),
+      monospace => toFontProperty(fonts.monospace),
+      properties => properties.toArray(),
+    }
+  }
+
+  fun update(updater: mutable O.IUpdater, fonts: Fonts): void {
+    this.basic.set(updater, fonts.basic);
+    this.action.set(updater, fonts.action);
+    this.helper.set(updater, fonts.helper);
+    this.tooltip.set(updater, fonts.tooltip);
+    this.title.set(updater, fonts.title);
+    this.discriminant.set(updater, fonts.discriminant);
+    this.shortcut.set(updater, fonts.shortcut);
+    this.label.set(updater, fonts.label);
+    this.badge.set(updater, fonts.badge);
+    this.placeholder.set(updater, fonts.placeholder);
+    this.tree.set(updater, fonts.tree);
+    this.table.set(updater, fonts.table);
+    this.header.set(updater, fonts.header);
+    this.monospace.set(updater, fonts.monospace);
+  }
+
+  fun getFont(
+    dependencies: mutable O.Dependencies,
+    color: TFont,
+    optReader: ?O.Reader = None(),
+  ): SKUIFont.Font {
+    color match {
+    | TFBasic() -> this.basic.get(dependencies, optReader)
+    | TFAction() -> this.action.get(dependencies, optReader)
+    | TFHelper() -> this.helper.get(dependencies, optReader)
+    | TFTooltip() -> this.tooltip.get(dependencies, optReader)
+    | TFTitle() -> this.title.get(dependencies, optReader)
+    | TFDiscriminant() -> this.discriminant.get(dependencies, optReader)
+    | TFShortcut() -> this.shortcut.get(dependencies, optReader)
+    | TFLabel() -> this.label.get(dependencies, optReader)
+    | TFBadge() -> this.badge.get(dependencies, optReader)
+    | TFPlaceHolder() -> this.placeholder.get(dependencies, optReader)
+    | TFTree() -> this.tree.get(dependencies, optReader)
+    | TFTable() -> this.table.get(dependencies, optReader)
+    | TFHeader() -> this.header.get(dependencies, optReader)
+    | TFMonospace() -> this.monospace.get(dependencies, optReader)
+    }
+  }
+
+  fun delete(scope: mutable O.IScope): void {
+    scope.remove(this.properties);
+  }
+}
+
+module end;

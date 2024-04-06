@@ -368,6 +368,10 @@ base class Dim final (
 base class FixedSize extends Dim {
   fun pixels(): Float;
 
+  fun scale(scale: Float): this {
+    static(this.value * scale)
+  }
+
   overridable fun points(): Float {
     9.0 * this.pixels() / 12.0;
   }

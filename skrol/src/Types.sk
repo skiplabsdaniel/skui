@@ -104,7 +104,7 @@ trait ObjectToTyped {
   }
 }
 
-trait KeyToTyped {
+trait ModifierToTyped {
   macro static fun ktype(obj: IModifier): this {
     obj match {
     | x @ #ThisClass _ -> x

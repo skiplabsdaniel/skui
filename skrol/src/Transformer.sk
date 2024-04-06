@@ -1,6 +1,6 @@
 module SKROL;
 
-class Steps(steps: Array<Step>) extends IModifier uses KeyToTyped
+class Steps(steps: Array<Step>) extends IModifier uses ModifierToTyped
 
 class REagerCollect() extends EagerTransformer {
   //
