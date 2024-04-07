@@ -4,6 +4,7 @@ base class Categorized
 
 base class Key uses Orderable
 base class Category uses Orderable
+base class Error(optCause: ?Exception) extends Exception
 
 trait CategorizedToType {
   macro static fun cat(obj: Categorized): this {
@@ -13,6 +14,21 @@ trait CategorizedToType {
   }
 }
 
+/**
+ * Notion to add input
+ * - Stream eager / lazy
+ * - Input / Output
+ *   - Subsription
+ *   - Synchronization
+ *   - Watermark
+ *   - Delete
+ * - Transaction
+ *   - Save context
+ *   - Rollback (Restore context)
+ *   - Register errors
+ *   - Commit (Synch or Restore context)
+ * - Multiple context ??
+ */
 mutable class Context private (
   scope: mutable Scope,
   logger: mutable ILogger,
@@ -21,6 +37,7 @@ mutable class Context private (
   mutable streams: SortedMap<IStreamID, IStreamManager> = SortedMap[],
   mutable watchedObjects: SortedMap<Path, List<IWatch>> = SortedMap[],
   mutable outputs: SortedMap<Path, List<Watch>> = SortedMap[],
+  transaction: ?Context = None(),
 ) {
   //
 
@@ -43,32 +60,38 @@ mutable class Context private (
     static::create(mutable BufferedLogger(Logger.Config{minLevel}))
   }
 
-  mutable fun update(): void {
+  mutable fun update(): Result<Bool, Error> {
     this.!tick = this.tick.next();
     tick = this.tick;
     #log (this.logger.debug, () ~> `Enter Context.update n°${tick}`);
-    watched = this.scope.update(this.tick);
-    watched.each((path, timed) ->
-      this.watchedObjects.maybeGet(path).each(elements ->
-        elements.each(watch ->
-          watch match {
-          | w @ Watch _ -> w.apply(this.getObject(path))
-          | wc @ WatchChanges _ ->
-            scope = this.getObjectScope(path);
-            this.getObject(path) match {
-            | sf @ StatefullObject _ ->
-              wc.apply(sf.changes(timed, scope.getMappable()))
-            | sl @ StatelessObject _ -> wc.apply(Change(sl))
+    res = this.scope.update(this.tick) match {
+    | Success(watched) ->
+      watched.each((path, timed) ->
+        this.watchedObjects.maybeGet(path).each(elements ->
+          elements.each(watch ->
+            watch match {
+            | w @ Watch _ -> w.apply(this.getObject(path))
+            | wc @ WatchChanges _ ->
+              scope = this.getObjectScope(path);
+              this.getObject(path) match {
+              | sf @ StatefullObject _ ->
+                wc.apply(sf.changes(timed, scope.getMappable()))
+              | sl @ StatelessObject _ -> wc.apply(Change(sl))
+              }
             }
-          }
+          )
         )
-      )
-    );
-    this.outputs.each((path, elements) ->
-      elements.each(w -> w.apply(this.getObject(path)))
-    );
+      );
+      this.outputs.each((path, elements) ->
+        elements.each(w -> w.apply(this.getObject(path)))
+      );
+      // check next presence
+      Success(false)
+    | Failure(error) -> Failure(error)
+    };
     #log (this.logger.debug, () ~> `Exit Context.update n°${tick}`);
     this.logger.flush();
+    res
   }
 
   mutable fun input(supplier: Object): IInputProperty {
@@ -211,7 +234,11 @@ mutable class Context private (
 
   mutable fun read(id: IStreamID, manager: IStreamManager): void {
     this.!streams = this.streams.set(id, manager);
-    readStream(id.toJSON(), manageNextChunck);
+    manager match {
+    | IBytesStreamManager _ -> runBytesStream(id.toJSON(), manageNextChunck)
+    | ITextStreamManager _ -> runTextStream(id.toJSON(), manageNextText)
+    | IJSONStreamManager _ -> runJSONStream(id.toJSON(), manageNextJSON)
+    }
   }
 
   mutable fun manageNextChunck(
@@ -227,12 +254,16 @@ mutable class Context private (
         manager.error(this, e);
         false
       | _ ->
-        manager.manage(this, chunk, progress) match {
-        | Some(nm) ->
-          this.!streams = this.streams.set(id, nm);
-          true
+        (manager match {
+        | bss @ IBytesStreamManager _ ->
+          bss.manage(this, chunk, progress) match {
+          | Some(nm) ->
+            this.!streams = this.streams.set(id, nm);
+            true
+          | _ -> false
+          }
         | _ -> false
-        }
+        })
       }
     | _ -> false
     }

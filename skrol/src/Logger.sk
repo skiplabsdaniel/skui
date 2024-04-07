@@ -1,5 +1,7 @@
 module SKROL;
 
+// Manage cause
+
 const errorConfig: Logger.Config = Logger.Config{minLevel => Logger.Error()};
 const traceConfig: Logger.Config = Logger.Config{minLevel => Logger.Trace()};
 const debugConfig: Logger.Config = Logger.Config{minLevel => Logger.Debug()};
@@ -33,7 +35,6 @@ mutable base class ILoggerBase {
 
 mutable base class ILogger extends ILoggerBase {
   //
-
   mutable fun flush(): void;
 
   readonly fun chill(): this;

@@ -514,7 +514,7 @@ mutable class Scope(
     );
   }
 
-  mutable fun update(tick: Tick): SortedMap<Path, TimedObject> {
+  mutable fun update(tick: Tick): Result<SortedMap<Path, TimedObject>, Error> {
     this.!tick = tick;
     path = this.path;
     #log (this.debug, () ~> `Enter Scope.update '${path}' on tick ${tick}`);
@@ -536,27 +536,36 @@ mutable class Scope(
         this.!updating = invalidated;
         this.properties[invalidated] match {
         | IInputProperty _ ->
-          this.scopes.maybeGet(invalidated).each(scope -> {
-            ws = scope.update(tick);
-            !watched = watched.merge(ws);
-          })
+          this.scopes.maybeGet(invalidated) match {
+          | Some(scope) ->
+            scope.update(tick) match {
+            | Success(ws) -> !watched = watched.merge(ws)
+            | Failure(error) -> return Failure(error)
+            }
+          | _ -> void
+          }
         | eager @ IEagerProperty _ ->
           function = this.combines[invalidated];
           current = this.values[invalidated].value;
           scope = this.scopes[invalidated];
           scope.!tick = this.tick;
-          (value, optKeys, !function) = function.update(
+          function.update(
             this,
             scope,
             current,
             invaliders,
             Some(EagerReader(eager.getPath())),
-          );
-          this.!combines = this.combines.set(invalidated, function);
-          if (native_eq(current.getReference(), value.getReference()) != 0) {
-            this.setIn(invalidated, value, optKeys, true);
+          ) match {
+          | Success((value, optKeys, fn)) ->
+            !function = fn;
+            this.!combines = this.combines.set(invalidated, function);
+            if (native_eq(current.getReference(), value.getReference()) != 0) {
+              this.setIn(invalidated, value, optKeys, true);
+            }
+          | Failure(error) -> return Failure(error)
           }
         | ILazyProperty _ ->
+          // Manage lazy startegy recompute / propagate
           // Lazy value is computed only on need.
           void
         };
@@ -577,7 +586,7 @@ mutable class Scope(
     this.!updated = SortedMap[];
     this.!updating = -1;
     #log (this.debug, () ~> `Exit Scope.update '${path}' on tick ${tick}`);
-    watched
+    Success(watched)
   }
 
   mutable fun initObject(object: Object): Object {

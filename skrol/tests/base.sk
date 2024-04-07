@@ -3,6 +3,27 @@ module alias O = SKROL;
 
 module SKROLTest;
 
+fun update(context: mutable O.Context): void {
+  context.update() match {
+  | Success(withUpdate) -> T.expectFalse(withUpdate)
+  | Failure(error) -> throw error
+  }
+}
+
+fun expectEqOnUpdate<U: frozen>(
+  context: mutable O.Context,
+  actual: () -> U,
+  expected: U,
+): void {
+  context.update() match {
+  | Success(withUpdate) ->
+    T.expectFalse(withUpdate);
+    got = actual();
+    T.expectEq(got, expected)
+  | Failure(error) -> throw error
+  }
+}
+
 @test
 fun eager(): void {
   context = O.Context::createForLevel(Logger.Error());
@@ -18,23 +39,14 @@ fun eager(): void {
     ),
   );
   get = prop -> context.get(prop, O.toint);
-  got = Array[i1, i2, i3].map(get);
-  expect = Array[0, 0, 0];
-  T.expectEq(got, expect);
+  actual = () -> Array[i1, i2, i3].map(get);
+  T.expectEq(actual(), Array[0, 0, 0]);
   context.set(i1, O.int(1));
-  context.update();
-  !got = Array[i1, i2, i3].map(get);
-  !expect = Array[1, 0, 1];
-  T.expectEq(got, expect);
+  expectEqOnUpdate(context, actual, Array[1, 0, 1]);
   context.set(i2, O.int(2));
-  context.update();
-  !got = Array[i1, i2, i3].map(get);
-  !expect = Array[1, 2, 3];
-  T.expectEq(got, expect);
+  expectEqOnUpdate(context, actual, Array[1, 2, 3]);
   getTime = (prop: O.IEagerProperty) -> context.getTime(prop).value;
-  !got = Array[i1, i2, i3].map(getTime);
-  !expect = Array[1, 2, 2];
-  T.expectEq(got, expect);
+  T.expectEq(Array[i1, i2, i3].map(getTime), Array[1, 2, 2]);
 }
 
 fun lazyFunction(
@@ -62,18 +74,14 @@ fun lazy(): void {
   );
   get = (prop: O.IEagerProperty) -> context.get(prop, O.toint);
   lget = prop -> context.getLazy(prop, param, O.toint);
-  got = Array[Some(get(i1)), lget(i2), Some(get(i3))];
-  expect = Array[Some(0), Some(2), Some(2)];
-  T.expectEq(got, expect);
+  actual = () -> Array[Some(get(i1)), lget(i2), Some(get(i3))];
+  T.expectEq(actual(), Array[Some(0), Some(2), Some(2)]);
   context.set(i1, O.int(1));
-  context.update();
-  !got = Array[Some(get(i1)), lget(i2), Some(get(i3))];
-  !expect = Array[Some(1), Some(2), Some(3)];
-  T.expectEq(got, expect);
+  expectEqOnUpdate(context, actual, Array[Some(1), Some(2), Some(3)]);
   getTime = (prop: O.IEagerProperty) -> context.getTime(prop).value;
   lgetTime = prop -> context.getLazyTime(prop, param).map(v -> v.value);
-  !got = Array[Some(getTime(i1)), lgetTime(i2), Some(getTime(i3))];
-  !expect = Array[Some(1), Some(0), Some(1)];
+  got = Array[Some(getTime(i1)), lgetTime(i2), Some(getTime(i3))];
+  expect = Array[Some(1), Some(0), Some(1)];
   T.expectEq(got, expect);
 }
 
@@ -129,30 +137,20 @@ fun statefull(): void {
   i3 = context.input(obj3);
   watched = O.EagerProperty(O.Path(0, Some(i3.getPath())));
   get = prop -> context.get(prop, O.toint);
+  actual = () -> Array[i1, i2, watched].map(get);
   got = Array[i1, i2, watched].map(get);
-  expect = Array[0, 0, 1];
-  T.expectEq(got, expect);
+  T.expectEq(actual(), Array[0, 0, 1]);
   context.set(i1, O.int(1));
-  context.update();
-  !got = Array[i1, i2, watched].map(get);
-  !expect = Array[1, 0, 2];
-  T.expectEq(got, expect);
+  expectEqOnUpdate(context, actual, Array[1, 0, 2]);
   context.set(i2, O.int(2));
-  context.update();
-  !got = Array[i1, i2, watched].map(get);
-  !expect = Array[1, 2, 4];
-  T.expectEq(got, expect);
+  expectEqOnUpdate(context, actual, Array[1, 2, 4]);
   getTime = (prop: O.IEagerProperty) -> context.getTime(prop).value;
   !got = Array[i1, i2, watched].map(getTime);
-  !expect = Array[1, 2, 2];
-  T.expectEq(got, expect);
+  T.expectEq(got, Array[1, 2, 2]);
   for (i in Range(0, 1000)) {
     context.set(i1, O.int(i));
-    context.update();
-    !got = Array[i1, i2, watched].map(get);
-    !expect = Array[i, 2, i + 3];
-    T.expectEq(got, expect);
-  };
+    expectEqOnUpdate(context, actual, Array[i, 2, i + 3]);
+  }
 }
 
 @test
@@ -160,39 +158,42 @@ fun sfarray(): void {
   context = O.Context::createForLevel(Logger.Error());
   v1 = Array["a", "b", "c", "d"].map(v -> O.StringObject(v));
   i1 = context.input(O.SFArray(v1));
-  check = (expect, size) -> {
-    v = context.get(i1, O.SFArray::type);
-    got = v.list(context.getScope).map(array ->
-      array.map(t -> (SKROL.StringObject::type(t.value).value, t.tick.value))
-    );
-    T.expectEq(got, Some(expect));
-    T.expectEq(v.size(context.getScope), Some(size));
+  check = (context, expect, size) -> {
+    context.update() match {
+    | Success(withUpdate) ->
+      T.expectFalse(withUpdate);
+      v = context.get(i1, O.SFArray::type);
+      got = v.list(context.getScope).map(array ->
+        array.map(t -> (SKROL.StringObject::type(t.value).value, t.tick.value))
+      );
+      T.expectEq(got, Some(expect));
+      T.expectEq(v.size(context.getScope), Some(size))
+    | Failure(error) -> throw error
+    }
   };
-  context.update();
-  check(Array[("a", 0), ("b", 0), ("c", 0), ("d", 0)], (4, O.Tick(0)));
+  check(context, Array[("a", 0), ("b", 0), ("c", 0), ("d", 0)], (4, O.Tick(0)));
   v2 = Array["a", "b", "c", "d", "e"].map(v -> O.StringObject(v));
   context.set(i1, O.SFArray(v2));
-  context.update();
   check(
+    context,
     Array[("a", 0), ("b", 0), ("c", 0), ("d", 0), ("e", 2)],
     (5, O.Tick(2)),
   );
   v3 = Array["e", "a", "b", "c", "d"].map(v -> O.StringObject(v));
   context.set(i1, O.SFArray(v3));
-  context.update();
   check(
+    context,
     Array[("e", 2), ("a", 0), ("b", 0), ("c", 0), ("d", 0)],
     (5, O.Tick(2)),
   );
   v4 = Array["e", "a", "c", "d"].map(v -> O.StringObject(v));
   context.set(i1, O.SFArray(v4));
-  context.update();
-  check(Array[("e", 2), ("a", 0), ("c", 0), ("d", 0)], (4, O.Tick(4)));
+  check(context, Array[("e", 2), ("a", 0), ("c", 0), ("d", 0)], (4, O.Tick(4)));
 
   v5 = Array["d", "e", "a", "f", "c"].map(v -> O.StringObject(v));
   context.set(i1, O.SFArray(v5));
-  context.update();
   check(
+    context,
     Array[("d", 0), ("e", 2), ("a", 0), ("f", 5), ("c", 0)],
     (5, O.Tick(5)),
   );
@@ -250,13 +251,13 @@ fun mapReduce(): void {
     check2(18);
     v2 = Array[0, 1, 2, 3, 4].map(v -> O.IntObject(v));
     context.set(i1, O.ObjectArray(v2));
-    context.update();
+    update(context);
     check(c1, Array[1, 2, 3, 4, 5]);
     check(c2, Array[3, 4, 5, 6, 7]);
     check2(25);
     v3 = Array[0, 2, 3, 4].map(v -> O.IntObject(v));
     context.set(i1, O.ObjectArray(v3));
-    context.update();
+    update(context);
     check(c1, Array[1, 3, 4, 5]);
     check(c2, Array[3, 5, 6, 7]);
     check2(21);

@@ -2,11 +2,30 @@ module SKROL;
 
 @debug
 @cpp_extern
-native fun readStream(
+native fun runBytesStream(
   id: JSON.Value,
   (
     id: JSON.Value,
     chunk: Array<UInt8>,
+    progress: Float,
+    error: ?JSON.Value,
+  ) ~> Bool,
+): void;
+
+@debug
+@cpp_extern
+native fun runTextStream(
+  id: JSON.Value,
+  (id: JSON.Value, chunk: String, progress: Float, error: ?JSON.Value) ~> Bool,
+): void;
+
+@debug
+@cpp_extern
+native fun runJSONStream(
+  id: JSON.Value,
+  (
+    id: JSON.Value,
+    chunk: JSON.Value,
     progress: Float,
     error: ?JSON.Value,
   ) ~> Bool,
@@ -21,17 +40,101 @@ fun manageNextChunck(
   false
 }
 
+fun manageNextText(
+  _id: JSON.Value,
+  _chunk: String,
+  _progress: Float,
+  _error: ?JSON.Value,
+): Bool {
+  false
+}
+
+fun manageNextJSON(
+  _id: JSON.Value,
+  _chunk: JSON.Value,
+  _progress: Float,
+  _error: ?JSON.Value,
+): Bool {
+  false
+}
+
 base class IStreamID uses Orderable {
   fun toJSON(): JSON.Value;
 }
 
+// manage restart
+
 base class IStreamManager {
+  fun error(ctx: mutable Context, error: JSON.Value): void;
+}
+
+base class IBytesStreamManager extends IStreamManager {
   fun manage(
     ctx: mutable Context,
     chunk: Array<UInt8>,
     progress: Float,
   ): ?IStreamManager;
-  fun error(ctx: mutable Context, error: JSON.Value): void;
+}
+
+base class ITextStreamManager extends IStreamManager {
+  fun manage(
+    ctx: mutable Context,
+    chunk: Text,
+    progress: Float,
+  ): ?IStreamManager;
+}
+
+base class IJSONStreamManager extends IStreamManager {
+  fun manage(
+    ctx: mutable Context,
+    chunk: JSON.Value,
+    progress: Float,
+  ): ?IStreamManager;
+}
+
+class DummyBytesStreamManager() extends IBytesStreamManager {
+  //
+  fun error(_ctx: mutable Context, _error: JSON.Value): void {
+    dummy()
+  }
+
+  fun manage(
+    _ctx: mutable Context,
+    _chunk: Array<UInt8>,
+    _progress: Float,
+  ): ?IStreamManager {
+    dummy()
+  }
+}
+
+class DummyTextStreamManager() extends ITextStreamManager {
+  //
+  fun error(_ctx: mutable Context, _error: JSON.Value): void {
+    dummy()
+  }
+
+  fun manage(
+    _ctx: mutable Context,
+    _chunk: Text,
+    _progress: Float,
+  ): ?IStreamManager {
+    dummy()
+  }
+}
+
+class DummyJSONStreamManager() extends IJSONStreamManager {
+  //
+  fun error(_ctx: mutable Context, _error: JSON.Value): void {
+    dummy()
+  }
+
+  fun manage(
+    _ctx: mutable Context,
+    _chunk: JSON.Value,
+    _progress: Float,
+  ): ?IStreamManager {
+    dummy()
+  }
 }
 
 module end;
