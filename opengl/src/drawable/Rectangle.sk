@@ -144,7 +144,10 @@ class RoundedRectangle(
   }
 }
 
-class BoxShadow(sigma: Float, color: .Color) extends GLRectangleDrawable {
+class BoxShadow(
+  color: .Color,
+  position: Geometry.Offset,
+) extends GLRectangleDrawable {
   fun prepare(initializer: mutable GLProgram.Initializer): GLProgram.Used {
     initializer.boxShadow();
   }
@@ -159,7 +162,7 @@ class BoxShadow(sigma: Float, color: .Color) extends GLRectangleDrawable {
       Ui.LambdaHandle((shift, window, _height, ratio, _frame) ~> {
         box = this.bounds.shift(shift.toOffset()).scale(ratio);
         drawer.run(
-          GLProgram.ShadowParameters(box, this.color, this.sigma * ratio),
+          GLProgram.ShadowParameters(box, this.color, this.position),
           GLProgram.RectangleParameters(box, buffer),
           window.size() * ratio,
         )
@@ -364,14 +367,17 @@ fun strokeRectangle(
 fun pushBoxShadow(
   offset: Geometry.Offset,
   size: Geometry.Size,
-  sigma: Float,
   paint: Ui.Paint,
   drawables: mutable Vector<Ui.Drawable>,
 ): void {
   paint match {
   | color @ .Color _ ->
     drawables.push(
-      BoxShadow(sigma, color, Geometry.Rect::fromOffsetSize(offset, size)),
+      BoxShadow(
+        color,
+        Geometry.Offset(0.0, 0.0),
+        Geometry.Rect::fromOffsetSize(offset, size),
+      ),
     )
   | _ -> invariant_violation("Not implemented; only Color Fill managed")
   }

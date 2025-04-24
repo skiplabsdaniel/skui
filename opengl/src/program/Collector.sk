@@ -216,7 +216,7 @@ mutable class Initializer(
   mutable fun boxShadow(): Used {
     id = "FWK.BoxShadowDrawer";
     if (this.programs.maybeGet(id).isNone()) {
-      vShader = ShadowVertexShader();
+      vShader = RectangleShader();
       fn = gl ~> triangleProgram(gl, ShadowShader(), vShader);
       this.programs.set(id, fn);
     };

@@ -432,7 +432,6 @@ class Dropdown protected {
         support,
         absolute,
         node.size(),
-        radius,
       );
       themeShadow.concat(
         Array[

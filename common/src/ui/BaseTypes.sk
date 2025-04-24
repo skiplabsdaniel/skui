@@ -441,7 +441,6 @@ base class DrawableSupport {
   fun boxShadow(
     offset: Geometry.Offset,
     size: Geometry.Size,
-    sigma: Float,
     paint: Ui.Paint,
   ): Ui.Drawable;
 
@@ -729,7 +728,6 @@ class DummyDrawableSupport() extends DrawableSupport {
   fun boxShadow(
     _offset: Geometry.Offset,
     _size: Geometry.Size,
-    _sigma: Float,
     _paint: Ui.Paint,
   ): Ui.Drawable {
     dummy()

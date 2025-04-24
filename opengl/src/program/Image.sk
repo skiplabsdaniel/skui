@@ -115,6 +115,93 @@ const msdfFramentShader: String = source(
   ],
 );
 
+/* Shadow
+#version 100
+precision mediump float;
+
+uniform sampler2D u_msdf;
+uniform vec4 u_text_color;
+uniform vec4 u_shadow_color;
+uniform float u_time; // temps en secondes
+uniform float u_px_range;
+uniform float u_amplitude; // ex: 0.01
+uniform float u_speed;     // ex: 1.5
+
+varying vec2 v_uv;
+
+float median(vec3 v) {
+    return max(min(v.r, v.g), min(max(v.r, v.g), v.b));
+}
+
+void main() {
+    // --- Animation du décalage ---
+    float offset_x = sin(u_time * u_speed) * u_amplitude;
+    float offset_y = cos(u_time * u_speed * 0.8) * u_amplitude;
+    vec2 shadow_offset = vec2(offset_x, offset_y);
+
+    // --- Ombre ---
+    vec2 shadow_uv = v_uv + shadow_offset;
+    vec3 shadow_sample = texture2D(u_msdf, shadow_uv).rgb;
+    float shadow_dist = median(shadow_sample) - 0.5;
+    float shadow_alpha = smoothstep(-u_px_range, u_px_range, -shadow_dist);
+
+    vec4 shadow = vec4(u_shadow_color.rgb, u_shadow_color.a * shadow_alpha);
+
+    // --- Texte ---
+    vec3 msdf_sample = texture2D(u_msdf, v_uv).rgb;
+    float sd = median(msdf_sample) - 0.5;
+    float text_alpha = clamp(smoothstep(-u_px_range, u_px_range, -sd), 0.0, 1.0);
+
+    vec4 text = vec4(u_text_color.rgb, u_text_color.a * text_alpha);
+
+    // --- Combine texte et ombre ---
+    gl_FragColor = mix(shadow, text, text.a);
+}
+
+// Light + shadow
+
+#version 100
+precision mediump float;
+
+uniform sampler2D u_msdf;
+uniform vec4 u_text_color;
+uniform vec3 u_light_dir;  // direction normalisée de la lumière (ex: vec3(0.5, 0.5, 1.0))
+uniform float u_px_range;
+
+varying vec2 v_uv;
+
+float median(vec3 v) {
+    return max(min(v.r, v.g), min(max(v.r, v.g), v.b));
+}
+
+vec2 gradient(sampler2D tex, vec2 uv, float offset) {
+    float left  = median(texture2D(tex, uv - vec2(offset, 0.0)).rgb);
+    float right = median(texture2D(tex, uv + vec2(offset, 0.0)).rgb);
+    float down  = median(texture2D(tex, uv - vec2(0.0, offset)).rgb);
+    float up    = median(texture2D(tex, uv + vec2(0.0, offset)).rgb);
+    return vec2(right - left, up - down);
+}
+
+void main() {
+    vec3 sample = texture2D(u_msdf, v_uv).rgb;
+    float dist = median(sample) - 0.5;
+
+    float alpha = smoothstep(-u_px_range, u_px_range, -dist);
+
+    // Approximation de la normale 2D
+    vec2 grad = gradient(u_msdf, v_uv, 1.0 / 128.0);
+    vec3 normal = normalize(vec3(grad, 1.0));
+
+    // Lumière directionnelle
+    float light = max(dot(normal, normalize(u_light_dir)), 0.0);
+
+    vec3 lit_color = mix(vec3(0.0), u_text_color.rgb, light); // ombre -> couleur
+
+    gl_FragColor = vec4(lit_color, u_text_color.a * alpha);
+}
+
+ */
+
 class FlippedShader() extends RectangleBaseShader {
   fun source(): String {
     flippedVertexShader

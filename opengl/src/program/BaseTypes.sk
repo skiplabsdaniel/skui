@@ -277,6 +277,10 @@ const uSize2: UInt32 = UInt32::truncate(21);
 const uBColor: UInt32 = UInt32::truncate(22);
 const uSize: UInt32 = UInt32::truncate(23);
 const uPxRange: UInt32 = UInt32::truncate(24);
+const uPosition: UInt32 = UInt32::truncate(25);
+const uAspect: UInt32 = UInt32::truncate(26);
+const uOffset: UInt32 = UInt32::truncate(27);
+const uBlur: UInt32 = UInt32::truncate(28);
 
 const aPosition: UInt32 = UInt32::truncate(0);
 

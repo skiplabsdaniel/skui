@@ -122,10 +122,9 @@ class RatioDrawableSupport(
   fun boxShadow(
     offset: Geometry.Offset,
     size: Geometry.Size,
-    sigma: Float,
     paint: Ui.Paint,
   ): Ui.Drawable {
-    this.support.boxShadow(offset, size, sigma, paint)
+    this.support.boxShadow(offset, size, paint)
   }
 }
 

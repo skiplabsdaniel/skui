@@ -12,10 +12,6 @@ class ShadowData(scales: Array<Float>) extends SKStore.File {
 
 class Shadow{
   /**
-   * The standard deviation of the Gaussian to convolve with the shadow's shape.
-   */
-  radius: Int = 0,
-  /**
    * Color that the shadow will be drawn with.
    */
   shadow: .Color = Colors.black(),
@@ -35,42 +31,14 @@ class Shadow{
     drawables: mutable Vector<Ui.Drawable>,
   ): void {
     drawables.push(
-      support.boxShadow(offset, size, this.radius.toFloat() / 3.0, this.shadow),
+      support.boxShadow(offset, size, this.shadow),
     );
     this.optFill.each(fill ->
       drawables.push(
-        support.boxShadow(offset, size, this.radius.toFloat() / 30.0, fill),
+        support.boxShadow(offset, size, fill),
       )
     )
   }
-}
-
-fun shadow(
-  x: Int,
-  y: Int,
-  width: Int,
-  height: Int,
-  scalesX: Array<Float>,
-  scalesY: Array<Float>,
-  radius: Int,
-): Float {
-  midX = width / 2;
-  midY = height / 2;
-  radiusX = Math.min(midX, radius);
-  radiusY = Math.min(midY, radius);
-  (strX, strY) = if (x <= midX && y <= midY) {
-    (scalesX[midX - radiusX + x], scalesY[midY - radiusY + y])
-  } else if (x <= midX && y > midY) {
-    (scalesX[midX - radiusX + x], scalesY[midY - radiusY + (height - y)])
-  } else if (x > midX && y <= midY) {
-    (scalesX[midX - radiusX + (width - x)], scalesY[midY - radiusY + y])
-  } else {
-    (
-      scalesX[midX - radiusX + (width - x)],
-      scalesY[midY - radiusY + (height - y)],
-    )
-  };
-  Math.clamp(strX * strY, 0.0, 1.0);
 }
 
 module end;

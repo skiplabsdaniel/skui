@@ -388,14 +388,13 @@ class DrawableSupport(
   fun boxShadow(
     offset: Geometry.Offset,
     size: Geometry.Size,
-    sigma: Float,
     paint: Ui.Paint,
   ): Ui.Drawable {
     paint match {
     | color @ .Color _ ->
       GLDrawable.BoxShadow(
-        sigma,
         color,
+        Geometry.Offset(0.0, 0.0),
         Geometry.Rect::fromOffsetSize(offset, size),
       )
     | _ -> invariant_violation("Not implemented; only Color Fill managed")

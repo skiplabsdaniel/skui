@@ -206,8 +206,7 @@ class Button protected {
       | UiButton.Icon _ ->
         None()
       | UiButton.Raised() ->
-        radius = mode.getRadius(size);
-        Ui.themeShadow(context, support, absolute, size, radius).each(
+        Ui.themeShadow(context, support, absolute, size).each(
           drawables.push,
         );
         this.controller.getKind(context) match {

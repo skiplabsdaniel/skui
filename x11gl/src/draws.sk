@@ -59,6 +59,22 @@ fun rectangle(ctx: GL.Ctx, width: Int, height: Int): Context {
   )
 }
 
+fun shadow(ctx: GL.Ctx, width: Int, height: Int): Context {
+  initDrawables(
+    ctx,
+    Vector[
+      GLDrawable.BoxShadow(
+        .Colors.firebrick(),
+        Geometry.Offset(0.0, 0.0),
+        Geometry.Rect::fromOffsetSize(
+          Geometry.Offset(10.0, 10.0),
+          Geometry.Size(width.toFloat() - 20.0, height.toFloat() - 20.0),
+        ),
+      ),
+    ],
+  )
+}
+
 fun program(
   ctx: GL.Ctx,
   width: Int,

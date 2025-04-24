@@ -8,6 +8,7 @@ fun main(): void {
   available = mutable Vector[
     ("rounded", SkuiX11gl.rounded),
     ("rectangle", SkuiX11gl.rectangle),
+    ("shadow", SkuiX11gl.shadow),
     ("ellipsoide", SkuiX11gl.ellipsoide),
     ("button1", SkuiX11gl.button1),
     ("tex_button1", SkuiX11gl.tex_button1),

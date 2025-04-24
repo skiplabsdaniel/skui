@@ -42,6 +42,10 @@ const uniforms = [
   "u_bColor",
   "u_size",
   "u_pxRange",
+  "u_position",
+  "u_aspect",
+  "u_offset",
+  "u_blur",
 ];
 
 const attributes = ["a_position"];
@@ -58,7 +62,7 @@ class State {
     color: number[],
     texture: boolean,
     blend: boolean,
-    blending: () => void,
+    blending: () => void
   ) {
     this.viewport = viewport;
     this.color = color;
@@ -73,7 +77,7 @@ class State {
       this.color,
       this.texture,
       this.blend,
-      this.blending,
+      this.blending
     );
   }
 }
@@ -118,7 +122,7 @@ export class Factory {
         canvas,
         gl,
         (handler: TimerHandler, timeout: int) =>
-          env.window().setInterval(handler, timeout),
+          env.window().setInterval(handler, timeout)
       );
       factory.loading.start();
       factory.env = env;
@@ -152,7 +156,7 @@ export class Factory {
         this.render,
         this.setGlContext
           ? (cId: int) => this.setGlContext!(wId, cId)
-          : undefined,
+          : undefined
       );
       this.contexts.set(id, context);
       context.start(this.onRestore.bind(this));
@@ -166,7 +170,7 @@ export class Factory {
     }
     this.createContext(this.wId).catch((err: unknown) =>
       // eslint-disable-next-line @typescript-eslint/restrict-plus-operands
-      this.env.window().alert("Context cannot be restored: " + err),
+      this.env.window().alert("Context cannot be restored: " + err)
     );
   }
 
@@ -192,7 +196,7 @@ export class Factory {
 
   activateTextureAt(texture: int, location: int, index: int, ctxId: int) {
     this.doOnContext(ctxId, (ctx) =>
-      ctx.activateTextureAt(texture, location, index),
+      ctx.activateTextureAt(texture, location, index)
     );
   }
 
@@ -314,10 +318,10 @@ export class Factory {
     size: int,
     normalized: boolean,
     offset: int,
-    ctxId: int,
+    ctxId: int
   ) {
     this.doOnContext(ctxId, (ctx) =>
-      ctx.vertexFloatAttributePointer(location, size, normalized, offset),
+      ctx.vertexFloatAttributePointer(location, size, normalized, offset)
     );
   }
 
@@ -342,7 +346,7 @@ export class Factory {
     v14: float,
     v15: float,
     v16: float,
-    ctxId: int,
+    ctxId: int
   ) {
     this.doOnContext(ctxId, (ctx) =>
       ctx.uniformMatrix4fv(
@@ -363,8 +367,8 @@ export class Factory {
         v13,
         v14,
         v15,
-        v16,
-      ),
+        v16
+      )
     );
   }
 
@@ -386,7 +390,7 @@ export class Factory {
     v1: number,
     v2: number,
     v3: number,
-    ctxId: int,
+    ctxId: int
   ) {
     this.doOnContext(ctxId, (ctx) => ctx.uniform4f(location, v0, v1, v2, v3));
   }
@@ -405,25 +409,25 @@ export class Factory {
 
   getIdxAttributeLocation(program: int, index: int, ctxId: int) {
     return this.doOnContext(ctxId, (ctx) =>
-      ctx.getIdxAttributeLocation(program, index),
+      ctx.getIdxAttributeLocation(program, index)
     );
   }
 
   getAttributeLocation(program: int, name: ptr<Internal.String>, ctxId: int) {
     return this.doOnContext(ctxId, (ctx, utils) =>
-      ctx.getAttributeLocation(utils, program, name),
+      ctx.getAttributeLocation(utils, program, name)
     );
   }
 
   getIdxUniformLocation(program: int, index: int, ctxId: int) {
     return this.doOnContext(ctxId, (ctx) =>
-      ctx.getIdxUniformLocation(program, index),
+      ctx.getIdxUniformLocation(program, index)
     );
   }
 
   getUniformLocation(program: int, name: ptr<Internal.String>, ctxId: int) {
     return this.doOnContext(ctxId, (ctx, utils) =>
-      ctx.getUniformLocation(utils, program, name),
+      ctx.getUniformLocation(utils, program, name)
     );
   }
   /////////////////////////// FRAME BUFFERS //////////////////////////////
@@ -438,7 +442,7 @@ export class Factory {
 
   framebufferTexture2DColor(texture: int, level: int, ctxId: int) {
     this.doOnContext(ctxId, (ctx) =>
-      ctx.framebufferTexture2DColor(texture, level),
+      ctx.framebufferTexture2DColor(texture, level)
     );
   }
 
@@ -510,7 +514,7 @@ export class Factory {
     width: int,
     height: int,
     reverted: boolean,
-    ctxId: int,
+    ctxId: int
   ) {
     this.doOnContext(ctxId, (ctx) =>
       ctx.copyTexture(
@@ -524,8 +528,8 @@ export class Factory {
         dstY,
         width,
         height,
-        reverted,
-      ),
+        reverted
+      )
     );
   }
 
@@ -533,7 +537,7 @@ export class Factory {
     location: int,
     _count: int,
     valuesPtr: ptr<Internal.Array<Internal.Float>>,
-    ctxId: int,
+    ctxId: int
   ) {
     this.doOnContext(ctxId, (ctx) => {
       const values = this.utils!.importFloats(valuesPtr);
@@ -545,11 +549,11 @@ export class Factory {
     location: int,
     _count: int,
     valuesPtr: ptr<Internal.Array<Internal.Float>>,
-    ctxId: int,
+    ctxId: int
   ) {
     const values = this.utils!.importFloats(valuesPtr);
     this.doOnContext(ctxId, (ctx) =>
-      ctx.uniform3fv(location, Float32Array.from(values)),
+      ctx.uniform3fv(location, Float32Array.from(values))
     );
   }
 
@@ -557,11 +561,11 @@ export class Factory {
     location: int,
     _count: int,
     valuesPtr: ptr<Internal.Array<Internal.Float>>,
-    ctxId: int,
+    ctxId: int
   ) {
     const values = this.utils!.importFloats(valuesPtr);
     this.doOnContext(ctxId, (ctx) =>
-      ctx.uniform2fv(location, Float32Array.from(values)),
+      ctx.uniform2fv(location, Float32Array.from(values))
     );
   }
 
@@ -569,11 +573,11 @@ export class Factory {
     location: int,
     _count: int,
     valuesPtr: ptr<Internal.Array<Internal.Float>>,
-    ctxId: int,
+    ctxId: int
   ) {
     const values = this.utils!.importFloats(valuesPtr);
     this.doOnContext(ctxId, (ctx) =>
-      ctx.uniform1fv(location, Float32Array.from(values)),
+      ctx.uniform1fv(location, Float32Array.from(values))
     );
   }
 
@@ -584,7 +588,7 @@ export class Factory {
     width: int,
     height: int,
     dataPtr: Nullable<ptr<Internal.Array<Internal.Byte>>>,
-    ctxId: int,
+    ctxId: int
   ) {
     this.doOnContext(ctxId, (ctx) => {
       let pixels: Uint8ClampedArray | null = null;
@@ -600,7 +604,7 @@ export class Factory {
     width: int,
     height: int,
     dataPtr: Nullable<ptr<Internal.Array<Internal.Byte>>>,
-    ctxId: int,
+    ctxId: int
   ) {
     this.doOnContext(ctxId, (ctx) => {
       let pixels: Uint8ClampedArray | null = null;
@@ -613,7 +617,7 @@ export class Factory {
 
   shaderSource(shader: int, source: ptr<Internal.String>, ctxId: int) {
     this.doOnContext(ctxId, (ctx) =>
-      ctx.shaderSource(shader, this.utils!.importString(source)),
+      ctx.shaderSource(shader, this.utils!.importString(source))
     );
   }
 
@@ -627,7 +631,7 @@ export class Factory {
   staticDrawData(
     dataPtr: ptr<Internal.Array<Internal.Float>>,
     _len: int,
-    ctxId: int,
+    ctxId: int
   ) {
     this.doOnContext(ctxId, (ctx) => {
       const values = this.utils!.importFloats(dataPtr);
@@ -675,7 +679,7 @@ export class Context {
     lostCall: (context: Context, ev?: Event) => void,
     onMainBinding: () => void,
     render?: (id: int, width: int, height: int, ratio: int) => void,
-    setGlContext?: (id: int) => void,
+    setGlContext?: (id: int) => void
   ) {
     this.id = id;
     this.canvas = canvas;
@@ -692,7 +696,7 @@ export class Context {
       [1, 1, 1, 1],
       true,
       false,
-      nothing,
+      nothing
     );
     this.render = render;
     this.setGlContext = setGlContext;
@@ -705,7 +709,7 @@ export class Context {
       this.setGlContext(this.id);
     }
     this.animationFrameRequest = this.env.requestAnimationFrame(
-      this.onAnimationFrame.bind(this),
+      this.onAnimationFrame.bind(this)
     );
   }
 
@@ -728,11 +732,11 @@ export class Context {
           this.id,
           Math.trunc(this.canvas.width / devRatio),
           Math.trunc(this.canvas.height / devRatio),
-          ratio,
+          ratio
         );
       }
       this.animationFrameRequest = this.env.requestAnimationFrame(
-        this.onAnimationFrame.bind(this),
+        this.onAnimationFrame.bind(this)
       );
     }
   }
@@ -819,7 +823,7 @@ export class Context {
     this.gl.texParameteri(
       this.gl.TEXTURE_2D,
       this.gl.TEXTURE_MIN_FILTER,
-      this.glValue(value),
+      this.glValue(value)
     );
   }
 
@@ -827,7 +831,7 @@ export class Context {
     this.gl.texParameteri(
       this.gl.TEXTURE_2D,
       this.gl.TEXTURE_MAG_FILTER,
-      this.glValue(value),
+      this.glValue(value)
     );
   }
 
@@ -835,7 +839,7 @@ export class Context {
     this.gl.texParameteri(
       this.gl.TEXTURE_2D,
       this.gl.TEXTURE_WRAP_S,
-      this.glValue(value),
+      this.glValue(value)
     );
   }
 
@@ -843,7 +847,7 @@ export class Context {
     this.gl.texParameteri(
       this.gl.TEXTURE_2D,
       this.gl.TEXTURE_WRAP_T,
-      this.glValue(value),
+      this.glValue(value)
     );
   }
 
@@ -853,7 +857,7 @@ export class Context {
     y: int,
     width: int,
     height: int,
-    pixels: Uint8ClampedArray | null,
+    pixels: Uint8ClampedArray | null
   ) {
     this.gl.texSubImage2D(
       this.gl.TEXTURE_2D,
@@ -864,7 +868,7 @@ export class Context {
       height,
       this.gl.RGBA,
       this.gl.UNSIGNED_BYTE,
-      pixels,
+      pixels
     );
   }
 
@@ -872,7 +876,7 @@ export class Context {
     level: int,
     width: int,
     height: int,
-    pixels: Uint8ClampedArray | null,
+    pixels: Uint8ClampedArray | null
   ) {
     this.gl.texImage2D(
       this.gl.TEXTURE_2D,
@@ -883,7 +887,7 @@ export class Context {
       0,
       this.gl.RGBA,
       this.gl.UNSIGNED_BYTE,
-      pixels,
+      pixels
     );
   }
 
@@ -908,7 +912,7 @@ export class Context {
   isCompiled(shader: int) {
     return this.gl.getShaderParameter(
       this.getGlObject(shader),
-      this.gl.COMPILE_STATUS,
+      this.gl.COMPILE_STATUS
     )
       ? true
       : false;
@@ -951,7 +955,7 @@ export class Context {
   isLinked(program: int) {
     return this.gl.getProgramParameter(
       this.getGlObject(program),
-      this.gl.LINK_STATUS,
+      this.gl.LINK_STATUS
     ) as boolean;
   }
 
@@ -997,7 +1001,7 @@ export class Context {
     location: int,
     size: int,
     normalized: boolean,
-    offset: int,
+    offset: int
   ) {
     this.gl.vertexAttribPointer(
       this.getGlObject(location),
@@ -1005,7 +1009,7 @@ export class Context {
       this.gl.FLOAT,
       normalized,
       0,
-      offset,
+      offset
     );
   }
 
@@ -1028,7 +1032,7 @@ export class Context {
     v13: float,
     v14: float,
     v15: float,
-    v16: float,
+    v16: float
   ) {
     const f32s = new Float32Array([
       v1,
@@ -1096,25 +1100,25 @@ export class Context {
   /////////////////////////// LOCATIONS ///////////////////////////
   getAttributeLocation(utils: Utils, program: int, name: ptr<Internal.String>) {
     return this.create((gl) =>
-      gl.getAttribLocation(this.getGlObject(program), utils.importString(name)),
+      gl.getAttribLocation(this.getGlObject(program), utils.importString(name))
     );
   }
 
   getIdxAttributeLocation(program: int, index: int) {
     return this.create((gl) =>
-      gl.getAttribLocation(this.getGlObject(program), attributes[index]!),
+      gl.getAttribLocation(this.getGlObject(program), attributes[index]!)
     );
   }
 
   getIdxUniformLocation(program: int, index: int) {
     return this.create((gl) =>
-      gl.getUniformLocation(this.getGlObject(program), uniforms[index]!),
+      gl.getUniformLocation(this.getGlObject(program), uniforms[index]!)
     );
   }
 
   getUniformLocation(utils: Utils, program: int, name: ptr<Internal.String>) {
     return this.create((gl) =>
-      gl.getAttribLocation(this.getGlObject(program), utils.importString(name)),
+      gl.getAttribLocation(this.getGlObject(program), utils.importString(name))
     );
   }
 
@@ -1141,7 +1145,7 @@ export class Context {
       this.gl.COLOR_ATTACHMENT0,
       this.gl.TEXTURE_2D,
       this.getGlObject(texture),
-      level,
+      level
     );
   }
 
@@ -1182,7 +1186,7 @@ export class Context {
       this.gl.SRC_ALPHA,
       this.gl.ONE_MINUS_SRC_ALPHA,
       this.gl.ONE,
-      this.gl.ONE_MINUS_SRC_ALPHA,
+      this.gl.ONE_MINUS_SRC_ALPHA
     );
   }
 
@@ -1213,13 +1217,13 @@ export class Context {
       this.gState.viewport[0]!,
       this.gState.viewport[1]!,
       this.gState.viewport[2]!,
-      this.gState.viewport[3]!,
+      this.gState.viewport[3]!
     );
     this.gl.clearColor(
       this.gState.color[0]!,
       this.gState.color[1]!,
       this.gState.color[2]!,
-      this.gState.color[3]!,
+      this.gState.color[3]!
     );
   }
 
@@ -1249,7 +1253,7 @@ export class Context {
     dstY: int,
     width: int,
     height: int,
-    reverted: boolean,
+    reverted: boolean
   ) {
     const pixels = this.readPixels(toPaste, srcX, srcY, width, height);
     if (reverted) {
@@ -1283,7 +1287,7 @@ export class Context {
       this.gl.COLOR_ATTACHMENT0,
       this.gl.TEXTURE_2D,
       this.getGlObject(texture),
-      0,
+      0
     );
     this.gl.readPixels(
       x,
@@ -1292,7 +1296,7 @@ export class Context {
       height,
       this.gl.RGBA,
       this.gl.UNSIGNED_BYTE,
-      pixels,
+      pixels
     );
     // Unbind the framebuffer
     this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, this.frameBuffer);
@@ -1318,22 +1322,22 @@ export class Context {
     this.gl.texParameteri(
       this.gl.TEXTURE_2D,
       this.gl.TEXTURE_WRAP_S,
-      this.gl.CLAMP_TO_EDGE,
+      this.gl.CLAMP_TO_EDGE
     );
     this.gl.texParameteri(
       this.gl.TEXTURE_2D,
       this.gl.TEXTURE_WRAP_T,
-      this.gl.CLAMP_TO_EDGE,
+      this.gl.CLAMP_TO_EDGE
     );
     this.gl.texParameteri(
       this.gl.TEXTURE_2D,
       this.gl.TEXTURE_MIN_FILTER,
-      this.gl.LINEAR,
+      this.gl.LINEAR
     );
     this.gl.texParameteri(
       this.gl.TEXTURE_2D,
       this.gl.TEXTURE_MAG_FILTER,
-      this.gl.LINEAR,
+      this.gl.LINEAR
     );
     this.gl.texImage2D(
       this.gl.TEXTURE_2D,
@@ -1341,7 +1345,7 @@ export class Context {
       this.gl.RGBA,
       this.gl.RGBA,
       this.gl.UNSIGNED_BYTE,
-      image,
+      image
     );
     this.gl.bindTexture(this.gl.TEXTURE_2D, null);
     return tex;

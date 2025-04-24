@@ -48,7 +48,8 @@ const GLchar *uniforms[] = {
     "u_texture",     "u_texture1",     "u_texture2", "u_thickness",
     "u_stop_colors", "u_stop_offsets", "u_progress", "u_precision",
     "u_size1",       "u_size2",        "u_bColor",   "u_size",
-    "u_pxRange"};
+    "u_pxRange",     "u_position",     "u_aspect",   "u_offset",
+    "u_blur"};
 
 const GLchar *attributes[] = {"a_position"};
 

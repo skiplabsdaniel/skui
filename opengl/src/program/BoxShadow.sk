@@ -3,85 +3,33 @@ module GLProgram;
 const shadowFramentShader: String = source(
   Array[
     "precision highp float;",
-    "uniform vec4 u_box;",
+    "varying vec2 v_position;",
     "uniform vec4 u_color;",
-    "uniform float u_sigma;",
-    "varying vec2 vertex;",
-    "// This approximates the error function, needed for the gaussian integral",
-    "vec4 erf(vec4 x) {",
-    "  vec4 s = sign(x), a = abs(x);",
-    "  x = 1.0 + (0.278393 + (0.230389 + 0.078108 * (a * a)) * a) * a;",
-    "  x *= x;",
-    "  return s - s / (x * x);",
-    "}",
-    "// Return the mask for the shadow of a box from lower to upper",
-    "float boxShadow(vec2 lower, vec2 upper, vec2 point, float sigma) {",
-    "  vec4 query = vec4(point - lower, point - upper);",
-    "  vec4 integral = 0.5 + 0.5 * erf(query * (sqrt(0.5) / sigma));",
-    "  return (integral.z - integral.x) * (integral.w - integral.y);",
-    "}",
-    "void main() {",
-    "  gl_FragColor = u_color;",
-    //"  gl_FragColor.a *= 0.25;",
-    "  gl_FragColor.a *= boxShadow(u_box.xy, u_box.zw, vertex, u_sigma);",
+    "uniform vec2 u_offset;",
+    "uniform float u_blur;",
+    "",
+    "float sdBox(vec2 p, vec2 b) {",
+    "  vec2 d = abs(p) - b;",
+    "  return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);",
     "}",
     "",
-  ],
-);
-
-const shadowVertexShader: String = source(
-  Array[
-    "precision highp float;",
-    "uniform vec4 u_box;",
-    "uniform float u_sigma;",
-    "uniform mat4 u_matrix;",
-    "attribute vec2 a_position;",
-    "varying vec2 vertex;",
     "void main() {",
-    "  float padding = 3.0 * u_sigma;",
-    "  vertex = mix(u_box.xy - padding, u_box.zw + padding, a_position);",
-    "  gl_Position = u_matrix * vec4(vertex, 0.0, 1.0);",
-    "}",
+    "  vec2 centered = (v_position - u_offset) * 2.0 - 1.0;  // Move origin",
+    "  float dist = sdBox(centered, vec2(1.0 - u_blur));",
     "",
+    "  // Radial blur",
+    "  float alpha = smoothstep(u_blur, 0.0, dist);",
+    "",
+    "  gl_FragColor = vec4(u_color.rgb, u_color.a * alpha);",
+    "}",
   ],
 );
-
-class ShadowVertexShader() extends VertexShaderBuilder {
-  fun source(): String {
-    shadowVertexShader
-  }
-
-  fun build(program: GL.Prepared): VertexShader {
-    positionLocation = program.getIdxAttributeLocation(aPosition);
-    // lookup uniforms
-    matrixLocation = program.getIdxUniformLocation(uMatrix);
-    boxShadowBox = program.getIdxUniformLocation(uBox);
-    LambdaVertexShader(
-      (parameters, window) ~> {
-        ctx = program.context();
-        box = RectangleParameters::fromParams(parameters).rect;
-        matrix = GL.Matrix4::orthographic(
-          0.0,
-          window.width,
-          window.height,
-          0.0,
-          -1.0,
-          1.0,
-        );
-        ctx.uniformMatrix4(matrixLocation, false, matrix);
-        ctx.uniform4f(boxShadowBox, box.left, box.top, box.right, box.bottom);
-        6
-      },
-      () ~> void,
-      positionLocation,
-    )
-  }
-}
 
 class ShadowParameters(
   box: Geometry.Rect,
   color: .Color,
-  sigma: Float,
+  offset: Geometry.Offset,
+  blur: Float = 40.0,
 ) extends Parameters {
   static fun fromParams(obj: Parameters): this {
     obj match {
@@ -97,20 +45,13 @@ class ShadowShader() extends FragmentShaderBuilder {
   }
 
   fun build(program: GL.Prepared): FragmentShader {
-    boxShadowBox = program.getIdxUniformLocation(uBox);
     boxShadowColor = program.getIdxUniformLocation(uColor);
-    boxShadowSigma = program.getIdxUniformLocation(uSigma);
+    boxShadowOffset = program.getIdxUniformLocation(uOffset);
+    boxShadowBlur = program.getIdxUniformLocation(uBlur);
 
     LambdaFragmentShader((parameters, _) ~> {
       ctx = program.context();
       sps = ShadowParameters::fromParams(parameters);
-      ctx.uniform4f(
-        boxShadowBox,
-        sps.box.left,
-        sps.box.top,
-        sps.box.right,
-        sps.box.bottom,
-      );
       ctx.uniform4f(
         boxShadowColor,
         sps.color.red,
@@ -118,7 +59,11 @@ class ShadowShader() extends FragmentShaderBuilder {
         sps.color.blue,
         sps.color.alpha,
       );
-      ctx.uniform1f(boxShadowSigma, sps.sigma);
+      ctx.uniform2f(boxShadowOffset, sps.offset.dx, sps.offset.dy);
+      ctx.uniform1f(
+        boxShadowBlur,
+        sps.blur / Math.min(sps.box.width(), sps.box.height()),
+      );
     })
   }
 }

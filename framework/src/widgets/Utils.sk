@@ -70,22 +70,17 @@ fun drawConstrainedText(
 }
 
 fun themeShadow(
-  context: mutable SKStore.Context,
+  _context: mutable SKStore.Context,
   support: DrawableSupport,
   offset: Geometry.Offset,
   size: Geometry.Size,
-  radius: Float,
 ): Array<Ui.Drawable> {
-  color = context.getThemeColor(UiTheme.Shadow());
-  smooth = context.getThemeThickness(UiTheme.Shadow());
-  shift = (smooth * 3 / 4).toFloat();
+  //color = context.getThemeColor(UiTheme.Shadow());
   Array[
-    support.roundedRectangle(
-      offset.translate(-shift, -shift),
-      size + Geometry.Size::square(2.0 * shift),
-      color,
-      radius + shift,
-      smooth.toFloat(),
+    support.boxShadow(
+      offset.translate(5.0, 10.0),
+      size,
+      Colors.black(),
     ),
   ]
 }
