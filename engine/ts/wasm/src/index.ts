@@ -24,6 +24,7 @@ export type {
   Links,
   ToWasmManager,
   Environment,
+  ModuleInit,
 } from "../skipwasm-std/index.js";
 
 const modules: ModuleInit[] = [
@@ -44,14 +45,14 @@ const extensions: EnvInit[] = [openglComplete];
 export async function launch(
   name: string,
   wasmurl: URL,
-  additional: ModuleInit[],
+  additional: ModuleInit[]
 ) {
   const data = await run(
     wasmurl,
     modules.concat(additional),
     extensions,
     createEnvironment,
-    name,
+    name
   );
   const window = (data.environment as GLEnv).window();
   let args: string[] = [];

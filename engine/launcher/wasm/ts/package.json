@@ -1,0 +1,22 @@
+{
+  "name": "@skui/engine-launcher",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "prebuild": "node ../../../../prebuild.mjs skiplang-std skipwasm-std skui-base skui-common skui-opengl skui-fwk skui-js skui-engine",
+    "prelint": "npm run prebuild",
+    "prebundle": "npm run prebuild",
+    "build": "tsc && skargo build -r --target wasm32 --lib --out-dir=./dist/src",
+    "clean": "rm -rf dist bun skiplang-std skipwasm-std skui-base skui-common skui-opengl skui-fwk skui-js skui-engine && skargo clean",
+    "lint": "eslint",
+    "bundle": "bun build src/index.ts --outdir bundle && skargo build -r --target wasm32 --lib --out-dir=./bundle",
+    "generate-dts": "tsc && dts-bundle-generator -o bundle/index.d.ts src/index.ts"
+  },
+  "devDependencies": {
+    "bun": "^1.2.10",
+    "dts-bundle-generator": "^9.5.1"
+  }
+}

@@ -1,0 +1,44 @@
+module alias H = UiEngineHandle;
+
+module SkuiEng;
+
+const rootPath: SKStore.DirName = SKStore.DirName::create("/ui/js_engine/");
+
+@cpp_extern("SKUI_UiEngineJS_getRenderer")
+native fun getRenderer(): ?JSON.Value;
+
+@cpp_extern("SKUI_UiEngineJS_getTitle")
+native fun getTitle(): String;
+
+@export("skuieng_launch")
+fun perform(): void {
+  wId = 0;
+  _ = SKStore.gContextInit(SKStore.Context::create{});
+  SKStore.Context::withoutGc(context ~> {
+    initEngineWidget(context, wId);
+    context.initPre()
+  });
+  SKUIJS.init(uint32(wId), getTitle());
+}
+
+fun initEngineWidget(context: mutable SKStore.Context, wId: Int): void {
+  context.setGlobal("Ui.Properties.Root", SKStore.DirNameFile(rootPath));
+  UiEnginePicture.init(context);
+  support = SKUIGL.DrawableSupport(UiEnginePicture.pictureToTexturable);
+  optPath: ?String = None();
+  H.init(context, optPath);
+  optRenderable = getRenderer();
+  builder = (ctx, root) ~> {
+    UiSerializableProp.Property::initValues(
+      ctx,
+      optPath,
+      Array[(SKStore.StrID("root"), optRenderable.map(UiEngine.fromJSON))],
+    );
+    property = UiSerializableProp.Property::forName(ctx, optPath, "root");
+    hdl = UiEngine.widgetPipeline(ctx, property, root);
+    (ctx, _root) ~> hdl.get(ctx).widget
+  };
+  SKUI.init(context, wId, builder, support);
+}
+
+module end;

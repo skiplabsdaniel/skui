@@ -31,9 +31,13 @@ skui-common
 skui-opengl
 skui-fwk
 skui-js
+skui-engine
+skui-engine-launcher
 !skui-base/*
 !skui-common/*
 !skui-opengl/*
 !skui-fwk/*
 !skui-js/*
+!skui-engine/*
+!skui-engine-launcher/*
 node_modules

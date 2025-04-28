@@ -12,6 +12,8 @@ skip
 !**/*.mjs
 !**/*.ts
 !**/*.tsx
+**/bun/
+**/bundle/
 
 # args files must be on a single line without spaces between braces
 *_args.json

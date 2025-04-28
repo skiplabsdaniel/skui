@@ -14,6 +14,7 @@ const symlinks = {
   "skui-opengl": "./opengl/ts/wasm/src",
   "skui-fwk": "./framework/ts/src",
   "skui-js": "./framework_js/ts/src",
+  "skui-engine": "./engine/ts/wasm/src",
 };
 
 const filename = fileURLToPath(import.meta.url);
