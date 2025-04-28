@@ -25,14 +25,14 @@ type MouseEventManager = (
   ctrlKey: boolean,
   shiftKey: boolean,
   altKey: boolean,
-  metaKey: boolean,
+  metaKey: boolean
 ) => void;
 
 type KeyboardEventManager = (
   wId: int,
   evtType: int,
-  strCodePtr: ptr<Internal.String>,
-  strKeyPtr: ptr<Internal.String>,
+  strCodePtr: ptr<Internal.SKString>,
+  strKeyPtr: ptr<Internal.SKString>,
   repeat: boolean,
   capsLock: boolean,
   numLock: boolean,
@@ -40,7 +40,7 @@ type KeyboardEventManager = (
   ctrlKey: boolean,
   shiftKey: boolean,
   altKey: boolean,
-  metaKey: boolean,
+  metaKey: boolean
 ) => void;
 
 type WheelEventManager = (
@@ -51,7 +51,7 @@ type WheelEventManager = (
   ctrlKey: boolean,
   shiftKey: boolean,
   altKey: boolean,
-  metaKey: boolean,
+  metaKey: boolean
 ) => void;
 
 interface Env extends Environment {
@@ -73,34 +73,37 @@ export interface Exported {
     wId: int,
     width: int,
     height: int,
-    ratio: int,
+    ratio: int
   ) => void;
   SKIP_SKUIJS_performPaste: (
     wId: int,
-    mimeType: ptr<Internal.String>,
-    data: ptr<Internal.String>,
+    mimeType: ptr<Internal.SKString>,
+    data: ptr<Internal.SKString>
   ) => void;
-  SKIP_SKUIMessage_manage: (skMsg: ptr<Internal.String>) => void;
+  SKIP_SKUIMessage_manage: (skMsg: ptr<Internal.SKString>) => void;
 }
 
 interface ToWasm {
   SKIP_SKUIJS_sendMessage(
     wId: int,
-    message: ptr<Internal.String>,
+    message: ptr<Internal.SKString>,
     async: boolean,
-    delay: int,
+    delay: int
   ): void;
-  SKIP_SKUIJS_requestClipboard(wId: int, mimeType: ptr<Internal.String>): void;
+  SKIP_SKUIJS_requestClipboard(
+    wId: int,
+    mimeType: ptr<Internal.SKString>
+  ): void;
   SKIP_SKUIJS_updateClipboard(
     wId: int,
-    mimeType: ptr<Internal.String>,
-    data: ptr<Internal.String>,
+    mimeType: ptr<Internal.SKString>,
+    data: ptr<Internal.SKString>
   ): void;
-  SKIP_SKUIJS_init(wId: int, skTitle: ptr<Internal.String>): void;
+  SKIP_SKUIJS_init(wId: int, skTitle: ptr<Internal.SKString>): void;
   SKIP_SKUIJS_display(
-    skOutput: Nullable<ptr<Internal.String>>,
-    skError: Nullable<ptr<Internal.String>>,
-    html: boolean,
+    skOutput: Nullable<ptr<Internal.SKString>>,
+    skError: Nullable<ptr<Internal.SKString>>,
+    html: boolean
   ): void;
 }
 
@@ -121,15 +124,15 @@ class LinksImpl implements Links, ToWasm {
 
   SKIP_SKUIJS_sendMessage(
     _wId: int,
-    message: ptr<Internal.String>,
+    message: ptr<Internal.SKString>,
     _async: boolean,
-    delay: int,
+    delay: int
   ) {
     const strMessage = this.utils.importString(message);
     // TODO manage async
     const manageMessage = (message: string) => {
       this.utils.runWithGc(() =>
-        this.exported.SKIP_SKUIMessage_manage(this.utils.exportString(message)),
+        this.exported.SKIP_SKUIMessage_manage(this.utils.exportString(message))
       );
     };
     if (this.env) {
@@ -139,7 +142,7 @@ class LinksImpl implements Links, ToWasm {
     }
   }
 
-  SKIP_SKUIJS_requestClipboard(wId: int, mimeType: ptr<Internal.String>) {
+  SKIP_SKUIJS_requestClipboard(wId: int, mimeType: ptr<Internal.SKString>) {
     const clipboard = this.env?.clipboard();
     const strMimeType = this.utils.importString(mimeType);
     if (strMimeType.startsWith("text/plain") && clipboard) {
@@ -151,8 +154,8 @@ class LinksImpl implements Links, ToWasm {
             0,
             wId,
             strMimeType,
-            clipText,
-          ),
+            clipText
+          )
         )
         .catch((reason: unknown) => console.log(reason));
     } else {
@@ -165,8 +168,8 @@ class LinksImpl implements Links, ToWasm {
 
   SKIP_SKUIJS_updateClipboard(
     _wId: int,
-    mimeType: ptr<Internal.String>,
-    data: ptr<Internal.String>,
+    mimeType: ptr<Internal.SKString>,
+    data: ptr<Internal.SKString>
   ) {
     const clipboard = this.env ? this.env.clipboard() : null;
     const strMimeType = this.utils.importString(mimeType);
@@ -184,13 +187,13 @@ class LinksImpl implements Links, ToWasm {
     }
   }
 
-  SKIP_SKUIJS_init(wId: int, title: ptr<Internal.String>) {
+  SKIP_SKUIJS_init(wId: int, title: ptr<Internal.SKString>) {
     if (this.env) {
       const strTitle = this.utils.importString(title);
       this.env.window().document.title = strTitle;
       this.manageEvents(wId);
       this.synchronizeWindowSize((width: int, height: int, ratio: int) =>
-        this.exported.SKIP_SKUIJS_manageResize(wId, width, height, ratio),
+        this.exported.SKIP_SKUIJS_manageResize(wId, width, height, ratio)
       );
       this.env
         .start(wId)
@@ -200,9 +203,9 @@ class LinksImpl implements Links, ToWasm {
   }
 
   SKIP_SKUIJS_display(
-    skOutput: Nullable<ptr<Internal.String>>,
-    skError: Nullable<ptr<Internal.String>>,
-    html: boolean,
+    skOutput: Nullable<ptr<Internal.SKString>>,
+    skError: Nullable<ptr<Internal.SKString>>,
+    html: boolean
   ) {
     if (this.env) {
       const strOutput = skOutput ? this.utils.importString(skOutput) : null;
@@ -242,7 +245,7 @@ class LinksImpl implements Links, ToWasm {
       this.exported.SKIP_SKUIJS_performPaste(
         wId,
         this.utils.exportString(strMimeType),
-        this.utils.exportString(strData),
+        this.utils.exportString(strData)
       );
     });
   }
@@ -255,32 +258,32 @@ class LinksImpl implements Links, ToWasm {
         // TODO Manage correctly text area focus
         texthook.focus();
         texthook.addEventListener("input", (evt: Event) =>
-          this.manageInputEvent(wId, evt as InputEvent),
+          this.manageInputEvent(wId, evt as InputEvent)
         );
       }
       //
       window.addEventListener("keydown", (evt: KeyboardEvent) =>
-        this.manageKeyboardEvent(wId, evt),
+        this.manageKeyboardEvent(wId, evt)
       );
       window.addEventListener("keyup", (evt: KeyboardEvent) =>
-        this.manageKeyboardEvent(wId, evt),
+        this.manageKeyboardEvent(wId, evt)
       );
       window.addEventListener("contextmenu", this.stopEvent.bind(this));
       //
       window.addEventListener("mousedown", (evt: MouseEvent) =>
-        this.manageMouseEvent(wId, evt),
+        this.manageMouseEvent(wId, evt)
       );
       window.addEventListener("mousemove", (evt: MouseEvent) =>
-        this.manageMouseEvent(wId, evt),
+        this.manageMouseEvent(wId, evt)
       );
       window.addEventListener("mouseup", (evt: MouseEvent) =>
-        this.manageMouseEvent(wId, evt),
+        this.manageMouseEvent(wId, evt)
       );
       //
       window.addEventListener(
         "wheel",
         (evt: WheelEvent) => this.manageWheelEvent(wId, evt),
-        { passive: false },
+        { passive: false }
       );
       window.onfocus = () => this.exported.SKIP_SKUIJS_clearKeyboardEvent(wId);
     }
@@ -306,7 +309,7 @@ class LinksImpl implements Links, ToWasm {
             false,
             false,
             false,
-            false,
+            false
           );
         });
       };
@@ -360,7 +363,7 @@ class LinksImpl implements Links, ToWasm {
         evt.ctrlKey,
         evt.shiftKey,
         evt.altKey,
-        evt.metaKey,
+        evt.metaKey
       );
     });
   }
@@ -384,7 +387,7 @@ class LinksImpl implements Links, ToWasm {
       evt.ctrlKey,
       evt.shiftKey,
       evt.altKey,
-      evt.metaKey,
+      evt.metaKey
     );
   }
 
@@ -424,7 +427,7 @@ class LinksImpl implements Links, ToWasm {
         evt.ctrlKey,
         evt.shiftKey,
         evt.altKey,
-        evt.metaKey,
+        evt.metaKey
       );
     }
   }
@@ -437,13 +440,13 @@ class LinksImpl implements Links, ToWasm {
   }
 
   private synchronizeWindowSize(
-    resize: (width: int, height: int, ratio: int) => void,
+    resize: (width: int, height: int, ratio: int) => void
   ) {
     const window = this.env !== undefined ? this.env.window() : null;
     if (window !== null) {
       const fWindow = window;
       const canvas = window.document.getElementById(
-        "skui_canvas",
+        "skui_canvas"
       ) as HTMLCanvasElement;
       const resizeFn = () => {
         const ratio = fWindow.devicePixelRatio || 1;

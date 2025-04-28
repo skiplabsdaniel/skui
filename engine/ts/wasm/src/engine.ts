@@ -18,66 +18,66 @@ import type {
   JsonArray,
   Combine,
   RenderableElement,
-  Function,
+  JSONFunction,
 } from "./types.js";
 import { EngShared, State, SkuiEngUtils } from "./types.js";
-import { SkuiUtils, type Text } from "../skui-base/skui_types.js";
+import { SkuiUtils, type UiText } from "../skui-base/skui_types.js";
 import type * as Internal from "./internal.js";
 
 interface Exported {
   SKIP_UiEngineJS_register: (
     id: int,
-    path: Nullable<ptr<Internal.String>>,
-    type_: ptr<Internal.String>,
+    path: Nullable<ptr<Internal.SKString>>,
+    type_: ptr<Internal.SKString>
   ) => void;
   SKIP_UiEngineJS_unregister: (
     id: int,
-    path: Nullable<ptr<Internal.String>>,
+    path: Nullable<ptr<Internal.SKString>>
   ) => void;
   SKIP_UiEngineJS_getValue: (
-    path: Nullable<ptr<Internal.String>>,
-    name: ptr<Internal.String>,
-  ) => ptr<Internal.Json>;
+    path: Nullable<ptr<Internal.SKString>>,
+    name: ptr<Internal.SKString>
+  ) => ptr<Internal.IJson>;
   SKIP_UiEngineJS_setValue: (
-    path: Nullable<ptr<Internal.String>>,
-    name: ptr<Internal.String>,
-    value: Nullable<ptr<Internal.Json>>,
+    path: Nullable<ptr<Internal.SKString>>,
+    name: ptr<Internal.SKString>,
+    value: Nullable<ptr<Internal.IJson>>
   ) => void;
   SKIP_UiEngineJS_create: (
-    path: Nullable<ptr<Internal.String>>,
-    value: Nullable<ptr<Internal.Json>>,
-  ) => ptr<Internal.String>;
+    path: Nullable<ptr<Internal.SKString>>,
+    value: Nullable<ptr<Internal.IJson>>
+  ) => ptr<Internal.SKString>;
   SKIP_UiEngineJS_combine: (
-    path: Nullable<ptr<Internal.String>>,
-    combineFn: ptr<Internal.Json>,
-    writeFn: Nullable<ptr<Internal.Json>>,
-  ) => ptr<Internal.String>;
+    path: Nullable<ptr<Internal.SKString>>,
+    combineFn: ptr<Internal.IJson>,
+    writeFn: Nullable<ptr<Internal.IJson>>
+  ) => ptr<Internal.SKString>;
   SKIP_UiEngineJS_alert: (
     text: ptr<Internal.I18NText>,
-    title: Nullable<ptr<Internal.I18NText>>,
+    title: Nullable<ptr<Internal.I18NText>>
   ) => void;
-  SKIP_UiEngineJS_dialog: (dialog: ptr<Internal.Json>) => void;
+  SKIP_UiEngineJS_dialog: (dialog: ptr<Internal.IJson>) => void;
 }
 
 interface ToWasm {
   SKIP_UiEngineJS_createObject(): Handle<JsonObject>;
   SKIP_UiEngineJS_addToObject(
     obj: Handle<JsonObject>,
-    name: ptr<Internal.String>,
-    value: Handle<Json>,
+    name: ptr<Internal.SKString>,
+    value: Handle<Json>
   ): void;
   SKIP_UiEngineJS_createArray(): Handle<JsonArray>;
   SKIP_UiEngineJS_addToArray(arr: Handle<JsonArray>, value: Handle<Json>): void;
   SKIP_UiEngineJS_createNull(): Handle<null>;
   SKIP_UiEngineJS_createNumber(value: number): Handle<Json>;
-  SKIP_UiEngineJS_createString(value: ptr<Internal.String>): Handle<Json>;
+  SKIP_UiEngineJS_createString(value: ptr<Internal.SKString>): Handle<Json>;
   SKIP_UiEngineJS_createBool(value: boolean): Handle<Json>;
   SKIP_UiEngineJS_delete(id: Handle<Json>): void;
   SKIP_UiEngineJS_apply(
-    id: Handle<Function>,
-    type_: ptr<Internal.String>,
-    paremeter: ptr<Internal.JSArray>,
-  ): Nullable<ptr<Internal.Json>>;
+    id: Handle<JSONFunction>,
+    type_: ptr<Internal.SKString>,
+    paremeter: ptr<Internal.IJSArray>
+  ): Nullable<ptr<Internal.IJson>>;
 }
 
 interface Env extends Environment {
@@ -96,7 +96,7 @@ class JSONProperty implements Property {
     name: string,
     combined: boolean,
     getter: (path: Nullable<string>, name: string) => Nullable<Json>,
-    setter: (path: Nullable<string>, name: string, v: Json) => void,
+    setter: (path: Nullable<string>, name: string, v: Json) => void
   ) {
     this.path = path;
     this.name = name;
@@ -122,16 +122,16 @@ class JSONProperty implements Property {
 }
 
 class ScopeImpl implements Scope {
-  alert: (text: string | Text, title: Nullable<string | Text>) => void;
+  alert: (text: string | UiText, title: Nullable<string | UiText>) => void;
   dialog: (dialog: DialogElement) => void;
   create: (value?: any) => Property;
   combine: Combine;
 
   constructor(
-    alert: (text: string | Text, title: Nullable<string | Text>) => void,
+    alert: (text: string | UiText, title: Nullable<string | UiText>) => void,
     dialog: (dialog: DialogElement) => void,
     create: (value?: Json) => Property,
-    combine: Combine,
+    combine: Combine
   ) {
     this.create = create;
     this.combine = combine;
@@ -159,21 +159,21 @@ class LinksImpl implements Links, ToWasm {
     this.exported = exports as Exported;
     const createScope = (strScope: string) =>
       new ScopeImpl(
-        (text: string | Text, title: Nullable<string | Text>) =>
+        (text: string | UiText, title: Nullable<string | UiText>) =>
           this.alert(text, title),
         (dialog: DialogElement) => this.dialog(strScope, dialog),
         (value?: Json) => this.create(strScope, value),
         (
           combine: (values: JsonArray) => Json,
           combinables: Readable[],
-          write?: (value: Json) => void,
-        ) => this.combine(strScope, combine, combinables, write),
+          write?: (value: Json) => void
+        ) => this.combine(strScope, combine, combinables, write)
       );
     this.skuiEngUtils = new SkuiEngUtils(
       utils,
       exports,
       createScope,
-      this.state,
+      this.state
     );
     if (this.env) {
       this.env.shared.set("skuieng", new EngShared(createScope));
@@ -201,22 +201,22 @@ class LinksImpl implements Links, ToWasm {
   registerCombine(
     path: Nullable<string>,
     combine: () => Json,
-    write?: (values: JsonArray) => void,
+    write?: (values: JsonArray) => void
   ) {
     return this.utils.runWithGc(() => {
       const skPath = path != null ? this.utils.exportString(path) : null;
       const combineFn = this.skuiEngUtils.exportValue(
         path,
         skPath,
-        combine as Function,
+        combine as JSONFunction
       );
       const writeFn = write
-        ? this.skuiEngUtils.exportValue(path, skPath, write as Function)
+        ? this.skuiEngUtils.exportValue(path, skPath, write as JSONFunction)
         : null;
       const skName = this.exported.SKIP_UiEngineJS_combine(
         skPath,
         combineFn,
-        writeFn,
+        writeFn
       );
       return this.utils.importString(skName);
     });
@@ -224,7 +224,7 @@ class LinksImpl implements Links, ToWasm {
 
   registerProperty(
     path: Nullable<string>,
-    value: Nullable<Json | RenderableElement>,
+    value: Nullable<Json | RenderableElement>
   ) {
     return this.utils.runWithGc(() => {
       const skPath = path != null ? this.utils.exportString(path) : null;
@@ -241,7 +241,7 @@ class LinksImpl implements Links, ToWasm {
     path: string,
     combine: (values: JsonArray) => Json,
     combinables: Readable[],
-    write?: (value: Json) => void,
+    write?: (value: Json) => void
   ) {
     const fn = () => {
       const values = combinables.map((c) => c.get());
@@ -256,7 +256,7 @@ class LinksImpl implements Links, ToWasm {
       true,
       this.getter.bind(this),
       (path: Nullable<string>, name: string, value: Json) =>
-        this.setter(path, name, value),
+        this.setter(path, name, value)
     );
   }
 
@@ -268,11 +268,11 @@ class LinksImpl implements Links, ToWasm {
       false,
       (path: Nullable<string>, name: string) => this.getter(path, name),
       (path: Nullable<string>, name: string, value: Json) =>
-        this.setter(path, name, value),
+        this.setter(path, name, value)
     );
   }
 
-  private alert(text: string | Text, title: Nullable<string | Text>) {
+  private alert(text: string | UiText, title: Nullable<string | UiText>) {
     this.utils.runWithGc(() => {
       const skText = this.skuiUtils.exportLocale(text);
       const skTitle = title ? this.skuiUtils.exportLocale(text) : null;
@@ -294,8 +294,8 @@ class LinksImpl implements Links, ToWasm {
 
   SKIP_UiEngineJS_addToObject(
     obj: Handle<JsonObject>,
-    skName: ptr<Internal.String>,
-    value: Handle<Json>,
+    skName: ptr<Internal.SKString>,
+    value: Handle<Json>
   ) {
     const name = this.utils.importString(skName);
     this.state.get(obj)[name] = this.state.delete(value);
@@ -317,7 +317,7 @@ class LinksImpl implements Links, ToWasm {
     return this.state.register(value);
   }
 
-  SKIP_UiEngineJS_createString(value: ptr<Internal.String>) {
+  SKIP_UiEngineJS_createString(value: ptr<Internal.SKString>) {
     return this.state.register(this.utils.importString(value));
   }
 
@@ -326,9 +326,9 @@ class LinksImpl implements Links, ToWasm {
   }
 
   SKIP_UiEngineJS_apply(
-    id: Handle<Function>,
-    skType: ptr<Internal.String>,
-    skParemeters: ptr<Internal.JSArray>,
+    id: Handle<JSONFunction>,
+    skType: ptr<Internal.SKString>,
+    skParemeters: ptr<Internal.IJSArray>
   ) {
     const type = this.utils.importString(skType);
     const parameters = this.skuiEngUtils.importValue(skParemeters);

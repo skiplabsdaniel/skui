@@ -14,18 +14,18 @@ import {
   commonInit,
   type EnvCreator,
 } from "@skui/common";
-import type { Array as IArray, Byte } from "@skui/common/internal.js";
+import type { SKArray, Byte } from "@skui/common/internal.js";
 
 let modules: ModuleInit[];
 
 interface ToWasm {
-  SKIP_resources_tests_luximr_bin: () => ptr<IArray<Byte>>;
-  SKIP_resources_tests_luxirr_bin: () => ptr<IArray<Byte>>;
-  SKIP_resources_tests_luxisr_bin: () => ptr<IArray<Byte>>;
-  SKIP_resources_tests_xab_bin: () => ptr<IArray<Byte>>;
-  SKIP_resources_tests_xdsff_bin: () => ptr<IArray<Byte>>;
-  SKIP_resources_tests_xdvso_bin: () => ptr<IArray<Byte>>;
-  SKIP_resources_tests_xtnr_bin: () => ptr<IArray<Byte>>;
+  SKIP_resources_tests_luximr_bin: () => ptr<SKArray<Byte>>;
+  SKIP_resources_tests_luxirr_bin: () => ptr<SKArray<Byte>>;
+  SKIP_resources_tests_luxisr_bin: () => ptr<SKArray<Byte>>;
+  SKIP_resources_tests_xab_bin: () => ptr<SKArray<Byte>>;
+  SKIP_resources_tests_xdsff_bin: () => ptr<SKArray<Byte>>;
+  SKIP_resources_tests_xdvso_bin: () => ptr<SKArray<Byte>>;
+  SKIP_resources_tests_xtnr_bin: () => ptr<SKArray<Byte>>;
 }
 
 type Resources = {
@@ -51,19 +51,19 @@ class LinksImpl implements Links {
 
   SKIP_resources_tests_luximr_bin() {
     return this.utils.exportBytes(
-      this.resources.SKIP_resources_tests_luximr_bin,
+      this.resources.SKIP_resources_tests_luximr_bin
     );
   }
 
   SKIP_resources_tests_luxirr_bin() {
     return this.utils.exportBytes(
-      this.resources.SKIP_resources_tests_luxirr_bin,
+      this.resources.SKIP_resources_tests_luxirr_bin
     );
   }
 
   SKIP_resources_tests_luxisr_bin() {
     return this.utils.exportBytes(
-      this.resources.SKIP_resources_tests_luxisr_bin,
+      this.resources.SKIP_resources_tests_luxisr_bin
     );
   }
 
@@ -73,13 +73,13 @@ class LinksImpl implements Links {
 
   SKIP_resources_tests_xdsff_bin() {
     return this.utils.exportBytes(
-      this.resources.SKIP_resources_tests_xdsff_bin,
+      this.resources.SKIP_resources_tests_xdsff_bin
     );
   }
 
   SKIP_resources_tests_xdvso_bin() {
     return this.utils.exportBytes(
-      this.resources.SKIP_resources_tests_xdvso_bin,
+      this.resources.SKIP_resources_tests_xdvso_bin
     );
   }
 
@@ -150,7 +150,7 @@ export class Loader {
             SKIP_resources_tests_xdsff_bin,
             SKIP_resources_tests_xdvso_bin,
             SKIP_resources_tests_xtnr_bin,
-          }),
+          })
         ),
     ];
 

@@ -164,10 +164,10 @@ const buttons = (scope: eng.Scope) => {
 };
 
 interface ToWasm {
-  SKUI_UiEngineJS_examples: () => Nullable<ptr<Internal.JSArray>>;
+  SKUI_UiEngineJS_examples: () => Nullable<ptr<Internal.IJSArray>>;
   SKUI_UiEngineJS_getExample: (
-    name: ptr<Internal.String>
-  ) => Nullable<ptr<Internal.JSArray>>;
+    name: ptr<Internal.SKString>
+  ) => Nullable<ptr<Internal.IJSArray>>;
 }
 
 class LinksImpl implements Links, ToWasm {
@@ -184,7 +184,7 @@ class LinksImpl implements Links, ToWasm {
     this.exports = exports;
   }
 
-  SKUI_UiEngineJS_getExample(skName: ptr<Internal.String>) {
+  SKUI_UiEngineJS_getExample(skName: ptr<Internal.SKString>) {
     const name = this.utils.importString(skName);
     let renderable: Nullable<eng.Renderable> = null;
     switch (name) {

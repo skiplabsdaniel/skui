@@ -10,8 +10,8 @@ import * as eng from "../skui-engine/types.js";
 import type * as Internal from "../skui-engine/internal.js";
 
 interface ToWasm {
-  SKUI_UiEngineJS_getTitle: () => ptr<Internal.String>;
-  SKUI_UiEngineJS_getRenderer: () => Nullable<ptr<Internal.Json>>;
+  SKUI_UiEngineJS_getTitle: () => ptr<Internal.SKString>;
+  SKUI_UiEngineJS_getRenderer: () => Nullable<ptr<Internal.IJson>>;
 }
 
 class LinksImpl implements Links, ToWasm {

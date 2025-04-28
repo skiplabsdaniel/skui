@@ -7,7 +7,7 @@ import type {
   Shared,
 } from "../skipwasm-std/index.js";
 
-import type { Text } from "../skui-base/skui_types.js";
+import type { UiText } from "../skui-base/skui_types.js";
 
 import type * as Internal from "./internal.js";
 
@@ -27,7 +27,7 @@ export type JsonArray = (Json | null)[];
 export type Combine = (
   combine: (values: JsonArray) => Json,
   combinables: Readable[],
-  write?: (value: Json) => void,
+  write?: (value: Json) => void
 ) => Property;
 
 export interface Readable {
@@ -93,7 +93,7 @@ export enum IconType {
 }
 
 export enum InputType {
-  Text,
+  UiText,
   Password,
   ASCII,
   Integer,
@@ -327,9 +327,9 @@ export type Button = {
   "on-fire": (count: int) => void;
   kind?: ButtonKind;
   mode?: ButtonMode;
-  text?: Value<string | Text>;
+  text?: Value<string | UiText>;
   icon?: Value<IconElement>;
-  tooltip?: Value<string | Text>;
+  tooltip?: Value<string | UiText>;
   disabled?: Value<boolean>;
   configuration?: Value<Configuration>;
 };
@@ -367,12 +367,12 @@ export type Input = {
   "visible-chars"?: int;
   "on-action"?: (text: string) => void;
   "on-focus-lost"?: (text: string) => void;
-  label?: Value<string | Text>;
+  label?: Value<string | UiText>;
   icon?: Value<IconElement>;
-  prefix?: Value<string | Text>;
-  suffix?: Value<string | Text>;
-  placeholder?: Value<string | Text>;
-  tooltip?: Value<string | Text>;
+  prefix?: Value<string | UiText>;
+  suffix?: Value<string | UiText>;
+  placeholder?: Value<string | UiText>;
+  tooltip?: Value<string | UiText>;
   "action-icon"?: Value<IconElement>;
   disabled?: Value<boolean>;
   editable?: Value<boolean>;
@@ -383,7 +383,7 @@ export type Input = {
   "align-right"?: Value<boolean>;
   "placeholder-as-label"?: Value<boolean>;
   //
-  text?: Value<string | Text>;
+  text?: Value<string | UiText>;
   position?: Value<int>;
   selection?: Value<RangeElement>;
   status?: Value<StatusElement>;
@@ -406,9 +406,9 @@ export type Split = {
 export type Toggle = {
   selected: Readable;
   kind?: Value<ToggleKind>;
-  text?: Value<string | Text>;
+  text?: Value<string | UiText>;
   icon?: Value<IconElement>;
-  tooltip?: Value<string | Text>;
+  tooltip?: Value<string | UiText>;
   disabled?: Value<boolean>;
   indeterminate?: Readable;
   configuration?: Value<Configuration>;
@@ -461,9 +461,9 @@ export type Constraints = {
 };
 
 export type Label = {
-  text?: Value<string | Text>;
+  text?: Value<string | UiText>;
   icon?: Value<IconElement>;
-  tooltip?: Value<string | Text>;
+  tooltip?: Value<string | UiText>;
   configuration?: Value<Configuration>;
 };
 
@@ -500,7 +500,7 @@ export type TextStyle = {
 };
 
 export type TextView = {
-  text: Value<string | Text>;
+  text: Value<string | UiText>;
   style: Value<TextStyleElement>;
   configuration?: Value<Configuration>;
 };
@@ -509,7 +509,7 @@ export type IconedAction = {
   id: string;
   icon: Value<IconElement>;
   "on-fire": () => void;
-  tooltip?: Value<string | Text>;
+  tooltip?: Value<string | UiText>;
   disabled?: Value<boolean>;
 };
 
@@ -517,11 +517,11 @@ export type Tab = {
   id: string;
   widget: Value<Widget>;
   icon?: Value<IconElement>;
-  text?: Value<string | Text>;
-  discriminant?: Value<string | Text>;
-  tooltip?: Value<string | Text>;
+  text?: Value<string | UiText>;
+  discriminant?: Value<string | UiText>;
+  tooltip?: Value<string | UiText>;
   disabled?: Value<boolean>;
-  badge?: Value<string | Text>;
+  badge?: Value<string | UiText>;
   progress?: Value<int>;
   closable?: Value<boolean>;
 };
@@ -533,7 +533,7 @@ export type Tabs = {
   kind?: Value<TabsKind>;
   mode?: Value<TabsMode>;
   side?: Value<Side>;
-  placeholder?: Value<string | Text>;
+  placeholder?: Value<string | UiText>;
   "icon-on-top"?: Value<boolean>;
   "min-width"?: Value<int> | int;
   "max-width"?: Value<int> | int;
@@ -587,7 +587,7 @@ export type Tree = {
   "on-tree-drop"?: (from: string[][], to: string[], drop: Drop) => void;
   "get-context-menu"?: (
     current: string[],
-    selection: string[][],
+    selection: string[][]
   ) => DropdownElement[];
   "allow-multiple-selection"?: Value<boolean>;
   "badge-max-char"?: Value<int>;
@@ -668,46 +668,48 @@ export const renderable = (renderable: Renderable) =>
   new RenderableElement(renderable);
 
 export interface Scope {
-  alert(text: string | Text, title: Nullable<string | Text>): void;
+  alert(text: string | UiText, title: Nullable<string | UiText>): void;
   dialog(dialog: JSObject): void;
   create(value?: Json): Property;
   combine(
     combine: (values: JsonArray) => Json,
     combinables: Readable[],
-    write?: (value: Json) => void,
+    write?: (value: Json) => void
   ): Property;
 }
 
 interface Exports {
   SKIP_UiEngineJS_register(
     id: int,
-    path: Nullable<ptr<Internal.String>>,
-    type_: ptr<Internal.String>,
+    path: Nullable<ptr<Internal.SKString>>,
+    type_: ptr<Internal.SKString>
   ): void;
-  SKIP_UiEngineJS_toJS(json: ptr<Internal.Json>): Handle<Json>;
-  SKIP_JSON_startObject(): ptr<Internal.PartialJSObj>;
+  SKIP_UiEngineJS_toJS(json: ptr<Internal.IJson>): Handle<Json>;
+  SKIP_JSON_startObject(): ptr<Internal.IPartialJSObj>;
   SKIP_JSON_addToObject(
-    obj: ptr<Internal.PartialJSObj>,
-    name: ptr<Internal.String>,
-    value: ptr<Internal.Json>,
+    obj: ptr<Internal.IPartialJSObj>,
+    name: ptr<Internal.SKString>,
+    value: ptr<Internal.IJson>
   ): void;
-  SKIP_JSON_endObject(obj: ptr<Internal.PartialJSObj>): ptr<Internal.JSObject>;
-  SKIP_JSON_startArray(): ptr<Internal.PartialJSArray<Internal.Json>>;
+  SKIP_JSON_endObject(
+    obj: ptr<Internal.IPartialJSObj>
+  ): ptr<Internal.IJSObject>;
+  SKIP_JSON_startArray(): ptr<Internal.PartialJSArray<Internal.IJson>>;
   SKIP_JSON_addToArray(
-    arr: ptr<Internal.PartialJSArray<Internal.Json>>,
-    value: ptr<Internal.Json>,
+    arr: ptr<Internal.PartialJSArray<Internal.IJson>>,
+    value: ptr<Internal.IJson>
   ): void;
   SKIP_JSON_endArray(
-    arr: ptr<Internal.PartialJSArray<Internal.Json>>,
-  ): ptr<Internal.JSArray<Internal.Json>>;
-  SKIP_JSON_createNull(): ptr<Internal.Json>;
-  SKIP_JSON_createIntNumber(v: int): ptr<Internal.Json>;
-  SKIP_JSON_createFloatNumber(v: float): ptr<Internal.Json>;
-  SKIP_JSON_createString(str: ptr<Internal.String>): ptr<Internal.Json>;
-  SKIP_JSON_createBool(v: boolean): ptr<Internal.Json>;
+    arr: ptr<Internal.PartialJSArray<Internal.IJson>>
+  ): ptr<Internal.IJSArray<Internal.IJson>>;
+  SKIP_JSON_createNull(): ptr<Internal.IJson>;
+  SKIP_JSON_createIntNumber(v: int): ptr<Internal.IJson>;
+  SKIP_JSON_createFloatNumber(v: float): ptr<Internal.IJson>;
+  SKIP_JSON_createString(str: ptr<Internal.SKString>): ptr<Internal.IJson>;
+  SKIP_JSON_createBool(v: boolean): ptr<Internal.IJson>;
 }
 
-export type Function = <T extends Json, P extends JsonArray>(..._: P) => T;
+export type JSONFunction = <T extends Json, P extends JsonArray>(..._: P) => T;
 
 export class State {
   private nextID: number = 1;
@@ -757,7 +759,7 @@ export class SkuiEngUtils {
     utils: Utils,
     exports: any,
     createScope: (name: string) => Scope,
-    state?: State,
+    state?: State
   ) {
     this.state = state ?? new State();
     this.utils = utils;
@@ -765,28 +767,28 @@ export class SkuiEngUtils {
     this.createScope = createScope;
   }
 
-  importValue(value: ptr<Internal.Json>) {
+  importValue(value: ptr<Internal.IJson>) {
     return this.state.delete(this.exports.SKIP_UiEngineJS_toJS(value));
   }
 
   register<R, P extends any[]>(
-    skPath: Nullable<ptr<Internal.String>>,
-    value: (..._: P) => R,
+    skPath: Nullable<ptr<Internal.SKString>>,
+    value: (..._: P) => R
   ) {
     const id = this.state.register(value);
     this.exports.SKIP_UiEngineJS_register(
       id,
       skPath,
-      this.utils.exportString(typeof value),
+      this.utils.exportString(typeof value)
     );
     return id;
   }
 
   exportValue(
     path: Nullable<string>,
-    skPath: Nullable<ptr<Internal.String>>,
-    value: Json | Function | null,
-  ): ptr<Internal.Json> {
+    skPath: Nullable<ptr<Internal.SKString>>,
+    value: Json | JSONFunction | null
+  ): ptr<Internal.IJson> {
     const type = typeof value;
     if (value == null) {
       return this.exports.SKIP_JSON_createNull();
@@ -796,15 +798,15 @@ export class SkuiEngUtils {
       return this.exports.SKIP_JSON_createBool(value as boolean);
     } else if (type == "string") {
       return this.exports.SKIP_JSON_createString(
-        this.utils.exportString(value as string),
+        this.utils.exportString(value as string)
       );
     } else if (Array.isArray(value)) {
       const arr = this.exports.SKIP_JSON_startArray();
       value.forEach((v) =>
         this.exports.SKIP_JSON_addToArray(
           arr,
-          this.exportValue(path, skPath, v),
-        ),
+          this.exportValue(path, skPath, v)
+        )
       );
       return this.exports.SKIP_JSON_endArray(arr);
     } else if (value instanceof RenderableElement) {
@@ -827,12 +829,12 @@ export class SkuiEngUtils {
         this.exports.SKIP_JSON_addToObject(
           obj,
           this.utils.exportString(key),
-          this.exportValue(path, skPath, jso[key]!),
+          this.exportValue(path, skPath, jso[key]!)
         );
       }
       return this.exports.SKIP_JSON_endObject(obj);
     } else if (type == "function") {
-      const id = this.register(skPath, value as Function);
+      const id = this.register(skPath, value as JSONFunction);
       return this.exportValue(path, skPath, {
         type: "function",
         fields: {

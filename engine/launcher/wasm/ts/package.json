@@ -13,7 +13,7 @@
     "clean": "rm -rf dist bun skiplang-std skipwasm-std skui-base skui-common skui-opengl skui-fwk skui-js skui-engine && skargo clean",
     "lint": "eslint",
     "bundle": "bun build src/index.ts --outdir bundle && skargo build -r --target wasm32 --lib --out-dir=./bundle",
-    "generate-dts": "tsc && dts-bundle-generator -o bundle/index.d.ts src/index.ts"
+    "postbundle": "tsc && dts-bundle-generator -o bundle/index.d.ts src/index.ts"
   },
   "devDependencies": {
     "bun": "^1.2.10",

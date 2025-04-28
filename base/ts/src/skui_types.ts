@@ -3,18 +3,18 @@ import type * as Internal from "./internal.js";
 
 interface Exports {
   SKIP_I18N_text: (
-    txtPtr: ptr<Internal.String>,
-    optCat: Nullable<ptr<Internal.String>>,
+    txtPtr: ptr<Internal.SKString>,
+    optCat: Nullable<ptr<Internal.SKString>>
   ) => ptr<Internal.I18NText>;
-  SKIP_I18N_raw: (txtPtr: ptr<Internal.String>) => ptr<Internal.I18NText>;
+  SKIP_I18N_raw: (txtPtr: ptr<Internal.SKString>) => ptr<Internal.I18NText>;
   SKIP_I18N_format: (
     formatPtr: ptr<Internal.I18NText>,
-    parameters: ptr<Internal.Vector<Internal.I18NText>>,
+    parameters: ptr<Internal.SKVector<Internal.I18NText>>
   ) => ptr<Internal.I18NText>;
-  SKIP_I18N_textVector: () => ptr<Internal.Vector<Internal.I18NText>>;
+  SKIP_I18N_textVector: () => ptr<Internal.SKVector<Internal.I18NText>>;
   SKIP_I18N_pushText: (
-    vector: ptr<Internal.Vector<Internal.I18NText>>,
-    txtPtr: ptr<Internal.I18NText>,
+    vector: ptr<Internal.SKVector<Internal.I18NText>>,
+    txtPtr: ptr<Internal.I18NText>
   ) => void;
 }
 
@@ -24,11 +24,11 @@ enum I18N {
   FORMAT,
 }
 
-export interface Text {
+export interface UiText {
   toJSON: () => object;
 }
 
-export class Raw implements Text {
+export class Raw implements UiText {
   text: string;
 
   constructor(text: string, _category?: string) {
@@ -46,7 +46,7 @@ export class Raw implements Text {
   };
 }
 
-export class Locale implements Text {
+export class Locale implements UiText {
   text: string;
   category: Nullable<string>;
 
@@ -71,23 +71,23 @@ export const l = (text: string, category?: string) => {
   return new Locale(text, category);
 };
 
-export const f = (format: Text | string, parameters: (Text | string)[]) => {
+export const f = (format: UiText | string, parameters: (UiText | string)[]) => {
   return new Format(format, parameters);
 };
 
-export const check: (value: Text | string) => Text = (value: Text | string) => {
-  if (value instanceof Text) {
-    return value as Text;
+export const check = (value: UiText | string) => {
+  if (typeof value == "string") {
+    return new Raw(value);
   } else {
-    return new Raw(value as string);
+    return value;
   }
 };
 
-export class Format implements Text {
-  format: Text | string;
-  parameters: (Text | string)[];
+export class Format implements UiText {
+  format: UiText | string;
+  parameters: (UiText | string)[];
 
-  constructor(format: Text | string, parameters: (Text | string)[]) {
+  constructor(format: UiText | string, parameters: (UiText | string)[]) {
     this.format = format;
     this.parameters = parameters;
   }
@@ -124,13 +124,13 @@ export class SkuiUtils {
   };
   format = (
     format: ptr<Internal.I18NText>,
-    params: ptr<Internal.I18NText>[],
+    params: ptr<Internal.I18NText>[]
   ) => {
     const vector = this.exports.SKIP_I18N_textVector();
     params.forEach((ptr) => this.exports.SKIP_I18N_pushText(vector, ptr));
     return this.exports.SKIP_I18N_format(format, vector);
   };
-  exportLocale = (text: string | Text): ptr<Internal.I18NText> => {
+  exportLocale = (text: string | UiText): ptr<Internal.I18NText> => {
     const verified = check(text);
     if (verified instanceof Raw) {
       return this.raw(verified.text);
@@ -140,7 +140,7 @@ export class SkuiUtils {
       const f = verified as Format;
       return this.format(
         this.exportLocale(f.format),
-        f.parameters.map(this.exportLocale),
+        f.parameters.map(this.exportLocale)
       );
     }
   };
