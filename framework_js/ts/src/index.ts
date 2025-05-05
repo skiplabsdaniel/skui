@@ -1,6 +1,7 @@
 import type {
   int,
   ptr,
+  Shared,
   Environment,
   Links,
   ToWasmManager,
@@ -10,6 +11,8 @@ import type {
 import { Utils } from "../skipwasm-std/index.js";
 
 import type * as Internal from "../skiplang-std/internal.js";
+
+class SkuiError extends Error {}
 
 type MouseEventManager = (
   wId: int,
@@ -99,7 +102,10 @@ interface ToWasm {
     mimeType: ptr<Internal.SKString>,
     data: ptr<Internal.SKString>
   ): void;
-  SKIP_SKUIJS_init(wId: int, skTitle: ptr<Internal.SKString>): void;
+  SKIP_SKUIJS_init(
+    wId: int,
+    skTitle: ptr<Internal.SKString>
+  ): Handle<Promise<void>>;
   SKIP_SKUIJS_display(
     skOutput: Nullable<ptr<Internal.SKString>>,
     skError: Nullable<ptr<Internal.SKString>>,
@@ -107,11 +113,60 @@ interface ToWasm {
   ): void;
 }
 
+export type Handle<T> = Internal.Opaque<bigint, { handle_for: T }>;
+
+class Handles {
+  private nextID: number = 1;
+  private readonly objects: any[] = [];
+  private readonly freeIDs: number[] = [];
+
+  register<T>(v: T): Handle<T> {
+    const freeID = this.freeIDs.pop();
+    const id = freeID ?? this.nextID++;
+    this.objects[id] = v;
+    return BigInt(id) as Handle<T>;
+  }
+
+  get<T>(id: Handle<T>): T {
+    return this.objects[Number(id)] as T;
+  }
+
+  unregister<T>(id: Handle<T>): T {
+    const current = this.get<T>(id);
+    const nid = Number(id);
+    this.objects[nid] = null;
+    this.freeIDs.push(nid);
+    return current;
+  }
+}
+
+export class FwkShared implements Shared {
+  constructor(private handles: Handles) {}
+
+  getName() {
+    return "SKUIFramework";
+  }
+
+  async check(res: string) {
+    const promises = res
+      .split("\n")
+      .filter((e) => e.startsWith("promise:"))
+      .map((e) =>
+        this.handles.get(BigInt(e.substring(8)) as Handle<Promise<void>>)
+      );
+    await Promise.all(promises);
+  }
+}
+
 class LinksImpl implements Links, ToWasm {
   private utils!: Utils;
   private exported!: Exported;
 
-  constructor(private env?: Env) {}
+  private readonly handles: Handles;
+
+  constructor(private env?: Env) {
+    this.handles = new Handles();
+  }
 
   complete(utils: Utils, exports: object) {
     this.utils = utils;
@@ -119,6 +174,7 @@ class LinksImpl implements Links, ToWasm {
 
     if (this.env) {
       this.env.update = this.update.bind(this);
+      this.env.shared.set("SKUIFramework", new FwkShared(this.handles));
     }
   }
 
@@ -187,19 +243,26 @@ class LinksImpl implements Links, ToWasm {
     }
   }
 
-  SKIP_SKUIJS_init(wId: int, title: ptr<Internal.SKString>) {
+  SKIP_SKUIJS_init(
+    wId: int,
+    title: ptr<Internal.SKString>
+  ): Handle<Promise<void>> {
     if (this.env) {
       const strTitle = this.utils.importString(title);
       this.env.window().document.title = strTitle;
       this.manageEvents(wId);
-      this.synchronizeWindowSize((width: int, height: int, ratio: int) =>
-        this.exported.SKIP_SKUIJS_manageResize(wId, width, height, ratio)
-      );
-      this.env
+      this.synchronizeWindowSize((width: int, height: int, ratio: int) => {
+        this.exported.SKIP_SKUIJS_manageResize(wId, width, height, ratio);
+      });
+      const promise = this.env
         .start(wId)
-        .then((_cId) => this.exported.SKIP_SKUIJS_windowInitialized(wId))
-        .catch((e: unknown) => console.error(e));
+        .then((_cId) => this.exported.SKIP_SKUIJS_windowInitialized(wId));
+      const handle = this.handles.register(promise);
+      return handle;
     }
+    return this.handles.register(
+      Promise.reject(new SkuiError("No environment defined"))
+    );
   }
 
   SKIP_SKUIJS_display(

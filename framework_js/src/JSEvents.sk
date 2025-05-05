@@ -209,7 +209,7 @@ native fun requestClipboard(wid: UInt32, mimeType: String): void;
 native fun updateClipboard(wid: UInt32, mimeType: String, data: String): void;
 
 @cpp_extern("SKIP_SKUIJS_init")
-native fun init(wid: UInt32, title: String): void;
+native fun init(wid: UInt32, title: String): Int;
 
 @cpp_extern("SKIP_SKUIJS_display")
 native fun display(optOutput: ?String, optError: ?String, html: Bool): void;

@@ -8,7 +8,7 @@ import { init as regexpInit } from "../skui-common/skui_regexp.js";
 import { init as commonInit } from "../skui-common/skui_common.js";
 import { init as openglInit } from "../skui-opengl/skui_webgl.js";
 import { init as fwkInit } from "../skui-fwk/skui_framework.js";
-import { init as jsInit } from "../skui-js/index.js";
+import { FwkShared, init as jsInit } from "../skui-js/index.js";
 import { init as engineInit } from "./engine.js";
 import { init as pictureInit } from "./picture.js";
 import {
@@ -62,5 +62,7 @@ export async function launch(
     const search = window.location.search.trim().substring(1);
     args = search.split("/").map((t) => decodeURIComponent(t));
   }
-  data.main(args, "");
+  const res = data.main(args, "");
+  const shared = data.environment.shared.get("SKUIFramework") as FwkShared;
+  await shared.check(res);
 }

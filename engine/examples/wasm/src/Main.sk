@@ -28,13 +28,14 @@ fun examples(): void {
   perform(
     unsafe_chill_trust_me(renderers),
     Environ.args().drop(1).collect(Vector),
-  );
+  ).each(v -> print_string(`promise:${v}`));
   SKStore.destroyObstack(pos);
 }
 
-fun perform(examples: Vector<Renderer>, args: Vector<String>): void {
+fun perform(examples: Vector<Renderer>, args: Vector<String>): ?Int {
   if (examples.isEmpty()) {
-    SKUIMain.display(None(), Some("No renderer available"), false)
+    SKUIMain.display(None(), Some("No renderer available"), false);
+    None()
   } else {
     available = Set::createFromItems(examples.map(e -> e.name));
     filtered = args.filter(a -> available.contains(a));
@@ -48,20 +49,18 @@ fun perform(examples: Vector<Renderer>, args: Vector<String>): void {
           )}', the available renderers are:\n${dExamples.join("\n")}`,
         ),
         false,
-      )
+      );
+      None()
     } else {
-      examples
-        .filter(e -> e.name == filtered[0])
-        .each(example -> {
-          wId = 0;
-          title = example.optDescription.default("SKUI's JS Engine");
-          _ = SKStore.gContextInit(SKStore.Context::create{});
-          SKStore.Context::withoutGc(context ~> {
-            initEngineWidget(context, wId, example.name);
-            context.initPre()
-          });
-          SKUIJS.init(uint32(wId), title);
-        })
+      example = examples.filter(e -> e.name == filtered[0]).get(0);
+      wId = 0;
+      title = example.optDescription.default("SKUI's JS Engine");
+      _ = SKStore.gContextInit(SKStore.Context::create{});
+      SKStore.Context::withoutGc(context ~> {
+        initEngineWidget(context, wId, example.name);
+        context.initPre();
+      });
+      Some(SKUIJS.init(uint32(wId), title))
     }
   }
 }
