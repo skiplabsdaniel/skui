@@ -7,6 +7,10 @@ SKARGO_TARGETS := $(shell find . -path ./skip -prune -o -name 'Skargo.toml' ! -p
 # Directory containing engine documentation
 ENG_DOCUMENTS_DIR=engine/docs
 
+GIT_COMMIT_HASH := $(shell git rev-parse --short HEAD)
+
+export GIT_COMMIT_HASH
+
 # List of engine documentation files
 ENG_DOCUMENTS=\
 	index.md \
@@ -59,8 +63,8 @@ setup:
 
 # Build the Skip language components
 .PHONY: skip
-skip:
-	npm i && npm run build -w @skiplang/std -w @skip-wasm/std
+skip: npm-install
+	npm run build -w @skiplang/std -w @skip-wasm/std
 
 # Build common components
 .PHONY: common
@@ -181,6 +185,7 @@ enginetex:
 # Clean build artifacts
 .PHONY: clean
 clean:
+	make -C skip clean
 	echo $(SKARGO_TARGETS) | sed 's|Skargo.toml|target|g' | xargs -0 rm -rf
 	npm run clean
 
@@ -239,3 +244,23 @@ build-native:
 		echo "Building $$target..."; \
 		skargo build --profile $(SKARGO_PROFILE) --manifest-path="$$target"; \
 	done
+
+
+.PHONY: npm-build
+npm-build:
+	npm run build
+
+.PHONY: npm-install
+npm-install:
+	make -C skip npm-install
+	npm install
+
+# Build engine launcher
+.PHONY: engine-launcher
+engine-launcher: fwk
+	npm run build -w @skui/engine -w  @skui/engine-launcher
+
+.PHONY: bundle-engine
+bundle-engine: engine-launcher
+	npm run bundle -w  @skui/engine-launcher
+

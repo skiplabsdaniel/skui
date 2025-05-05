@@ -1,8 +1,10 @@
 import { launch as runEngine, type ModuleInit } from "../skui-engine/index.js";
 import { init as initLauncher } from "./launcher.js";
+import * as icons from "../skui-engine/icons.js";
 
 import type { Renderable } from "../skui-engine/types.js";
 export * from "../skui-engine/types.js";
+export { icons };
 
 const wasmurl = new URL("./libskuieng_launcher.wasm", import.meta.url);
 
