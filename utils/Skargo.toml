@@ -1,0 +1,9 @@
+[package]
+name = "skip_utils"
+version = "0.0.1"
+
+[build-dependencies]
+skui_build = { path = "../builder" }
+
+[dev-dependencies]
+sktest = { path = "../skip/skiplang/sktest" }

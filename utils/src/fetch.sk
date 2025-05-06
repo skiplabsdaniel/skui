@@ -1,0 +1,98 @@
+module SKUtils;
+
+class FetchException(message: String) extends .Exception
+
+base class Method uses Show {
+  children =
+  | Get()
+  | Post()
+  | Put()
+  | Delete()
+  | Head()
+  | Options()
+  | Connect()
+  | Trace()
+  | Patch()
+
+  fun toString(): String
+  | Get() -> "GET"
+  | Post() -> "POST"
+  | Put() -> "PUT"
+  | Delete() -> "DELETE"
+  | Head() -> "HEAD"
+  | Options() -> "OPTIONS"
+  | Connect() -> "CONNECT"
+  | Trace() -> "TRACE"
+  | Patch() -> "PATCH"
+}
+
+class FetchOption{
+  method: Method = Get(),
+  headers: Map<String, String> = Map[],
+  body: ?String = None(),
+  timeout_s: Int = 5,
+}
+
+class FetchResult(status: Int, headers: Map<String, String>, text: ?String) {
+  fun json(): Result<JSON.Value, .Exception> {
+    this.text match {
+    | Some(text) -> Result::guard(() -> JSON.decode(text))
+    | _ -> Failure(FetchException("No data available"))
+    }
+  }
+}
+
+fun fetch(
+  url: String,
+  options: FetchOption = FetchOption{},
+): Result<FetchResult, FetchException> {
+  sk_fetch(
+    url,
+    options.method.toString(),
+    JSON.Object(options.headers.map((_k, v) -> JSON.String(v))).toString(),
+    options.body,
+    options.timeout_s,
+  )
+}
+
+@export("sk_create_result")
+fun createResult(
+  status: Int,
+  headers: ?String,
+  payload: ?String,
+  error: ?String,
+): Result<FetchResult, FetchException> {
+  error match {
+  | Some(e) -> Failure(FetchException(e))
+  | _ ->
+    payload match {
+    | Some(data) ->
+      Success(
+        FetchResult(
+          status.toInt(),
+          headers
+            .map(h ->
+              JSON.decode(h).expectObject().value.map((_, v) ->
+                v.expectString()
+              )
+            )
+            .default(Map[]),
+          Some(data),
+        ),
+      )
+    | _ -> Success(FetchResult(status.toInt(), Map[], None()))
+    }
+  };
+}
+
+@debug
+@cpp_extern("sk_fetch")
+native fun sk_fetch(
+  url: String,
+  method: String,
+  headers: String,
+  body: ?String,
+  timeout_s: Int,
+): Result<FetchResult, FetchException>;
+
+module end;

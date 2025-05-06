@@ -1,0 +1,23 @@
+@skui_build__source_dirs
+fun source_dirs(env: SkuiBuild.Env): Array<String> {
+  // If the environment is not targeting WebAssembly, include the native source directory
+  if (!env.isWasm32()) Array["./cc"] else Array[]
+}
+
+@debug
+fun main(): void {
+  SkuiBuild.build("skdebugger") match {
+  | Failure(err) ->
+    skipExit(err.code) ///< Exit with error code on failure
+  | Success(env) if (!env.isWasm32()) ->
+    try {
+      SkuiBuild.cargo_lib(env, "skip_utils", "./rust/Cargo.toml");
+    } catch {
+    | SkuiBuild.RuntimeException(code) -> skipExit(code)
+    | e ->
+      print_error(e.getMessage());
+      skipExit(2)
+    }
+  | _ -> void
+  }
+}

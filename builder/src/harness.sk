@@ -81,6 +81,24 @@ class Env(
   }
 
   /**
+   * @brief Constructs an build path for a given file.
+   * @param path The file path relative to the build directory.
+   * @return The full build path.
+   */
+  fun buildpath(path: String): String {
+    target = if (this.isWasm32()) {
+      this.optTarget.default("host")
+    } else {
+      "host"
+    };
+    s = Path.separator;
+    Path.join(
+      Path.join(this.refDir, `target${s}${target}${s}${this.profile}`),
+      path,
+    )
+  }
+
+  /**
    * @brief Constructs a resource path for a file with a specific extension.
    * @param path The file path.
    * @param ext The desired file extension.
@@ -161,6 +179,15 @@ fun build(name: String): Result<Env, IO.Error> {
     skipExit(1)
   };
   print_string(`skargo:skc-env=GIT_COMMIT_HASH=${git_hash}`);
+  git_commit_info = System.subprocess(
+    Array["git", "log", "-1", "--format=%h %ad", "--date=format:(%Y %m)"],
+  ) match {
+  | Success(p) -> p.stdout
+  | Failure(err) ->
+    print_string(`Error getting git commit info: ${err}`);
+    skipExit(1)
+  };
+  print_string(`skargo:skc-env=GIT_COMMIT_INFO=${git_commit_info}`);
   env = Env::create();
   includeDirs = Array[];
   #forEachFunction (@skui_build__include_dirs, #function, #functionName) {
@@ -665,6 +692,41 @@ fun print_preamble(preamble: String): void {
  */
 fun print_link(link: String): void {
   print_string(`skargo:skc-link-arg=${link}`);
+}
+
+/**
+ * @brief Builds a Rust library using Cargo and emits linker arguments for Skc.
+ *
+ * This function runs `cargo build` on the specified Cargo project using the given
+ * build profile from the environment. It sets the target directory for the build
+ * output and prints the appropriate linker flags for the Skc toolchain.
+ *
+ * @param env     The build environment, containing profile and output path info.
+ * @param name    The name of the Rust library to link against (used in -l flag).
+ * @param manifest The path to the Cargo.toml file of the Rust crate.
+ */
+fun cargo_lib(env: Env, name: String, manifest: String): void {
+  run(
+    Array[
+      "cargo",
+      "build",
+      "--profile",
+      env.profile,
+      "--manifest-path",
+      manifest,
+      "--target-dir",
+      env.outpath("rust"),
+    ],
+    env.verbose,
+  );
+  rprofile = if (env.profile == "release") "release" else "debug";
+  outpath = env.outpath(`rust/${rprofile}/lib${name}.so`);
+  buildpath = Path.join(env.outpath("../../.."), `lib${name}.so`);
+  run(Array["cp", outpath, buildpath], env.verbose);
+  dirname = Path.dirname(buildpath);
+  print_string(`skargo:skc-link-arg=-l${name}`);
+  print_string(`skargo:skc-link-arg=-L${dirname}`);
+  print_string(`skargo:skc-link-arg=-Wl,-rpath,${dirname}`);
 }
 
 module end;
