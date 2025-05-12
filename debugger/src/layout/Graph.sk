@@ -1,0 +1,679 @@
+module alias G = Geometry;
+
+module JSON;
+
+extension base class Value uses Hashable
+
+module end;
+
+module SkDebugger;
+
+mutable base class Ctx
+
+class Extremity<T: frozen>(
+  id: T,
+  index: Int,
+) uses Equality[T: Equality], Hashable[T: Hashable] {
+  //
+  fun convert<T1: frozen>(c: T -> T1): Extremity<T1> {
+    Extremity(c(this.id), this.index)
+  }
+}
+
+base class Node {
+  fun getSize(mutable Ctx): G.Size;
+  fun getInputOffset(Int): G.Offset;
+  fun getOutputOffset(Int): G.Offset;
+  fun getParamOffset(Int): G.Offset;
+}
+
+base class TNode uses Hashable, Equality {
+  children =
+  | TInput(name: Name)
+  | TOutput(name: Name)
+  | TOperator(entity: Entity)
+  | TConst(value: JSON.Value)
+
+  fun getId(): String
+  | TInput(name)
+  | TOutput(name) ->
+    name.name
+  | TOperator(entity) -> entity.name
+  | TConst(value) -> base64(value.toString())
+
+  fun getName(): String
+  | TInput(name)
+  | TOutput(name) ->
+    name.alias.default(name.name)
+  | TOperator(entity) -> entity.getName()
+  | TConst(value) -> base64(value.toString())
+}
+
+fun base64<T: Show>(toEncode: T): String {
+  b64 = Base64.encodeString(toEncode.toString(), true);
+  encoded = `b64_${b64}`;
+  encoded.replace("=", ".")
+}
+
+fun get(vec: readonly Vector<String>, index: Int): String {
+  vec[index]
+}
+
+fun getReads<T: Hashable & Equality>(
+  entity: Entity,
+  inputs: readonly Map<String, T>,
+  operators: readonly Map<String, T>,
+  factory: Factory<T>,
+): Array<T> {
+  reads = Set::mcreateFromItems(entity.reads.filter(r -> r != entity.name));
+  params = Arrays.mergeAll(
+    entity.getParameters().map(ps ->
+      ps.map(p ->
+        p.type match {
+        | PData() -> factory.constant(p.value)
+        | PCollection() ->
+          name = p.value.expectString();
+          reads.remove(name);
+          inputs.maybeGet(name) match {
+          | Some(n) -> n
+          | _ -> operators.get(name)
+          }
+        }
+      )
+    ),
+  );
+  remaining = reads
+    .map(name ->
+      inputs.maybeGet(name) match {
+      | Some(n) -> n
+      | _ -> operators.get(name)
+      }
+    )
+    .collect(Array);
+  params.concat(remaining)
+}
+
+fun getSources<T: Hashable & Equality>(
+  entity: Entity,
+  inputs: readonly Map<String, T>,
+  operators: readonly Map<String, T>,
+  factory: Factory<T>,
+): (Array<T>, Array<T>) {
+  reads = getReads(entity, inputs, operators, factory);
+  (
+    reads,
+    entity.inputs.map(name ->
+      inputs.maybeGet(name) match {
+      | Some(i) -> i
+      | _ -> operators.get(name)
+      }
+    ),
+  )
+}
+
+base class Factory<T: Hashable & Equality> {
+  //
+  fun input(name: Name): T;
+  fun output(name: Name): T;
+  fun operator(entity: Entity): T;
+  fun constant(value: JSON.Value): T;
+  fun isInput(t: T): Bool;
+  fun isConstant(t: T): Bool;
+  fun getId(t: T): String;
+}
+
+class TNodeFactory() extends Factory<TNode> {
+  //
+  fun input(name: Name): TNode {
+    TInput(name)
+  }
+
+  fun output(name: Name): TNode {
+    TOutput(name)
+  }
+
+  fun operator(entity: Entity): TNode {
+    TOperator(entity)
+  }
+
+  fun constant(value: JSON.Value): TNode {
+    TConst(value)
+  }
+
+  fun isInput(node: TNode): Bool {
+    node match {
+    | TInput _ -> true
+    | _ -> false
+    }
+  }
+
+  fun isConstant(node: TNode): Bool {
+    node match {
+    | TConst _ -> true
+    | _ -> false
+    }
+  }
+
+  fun getId(node: TNode): String {
+    node.getId()
+  }
+}
+
+class GraphMetrics<T: Hashable & Equality>(
+  layers: Array<Array<Int>>,
+  arrowsTo: Map<Extremity<Int>, Extremity<Int>>,
+  edges: Array<(Int, Int)>,
+  idToData: Array<T>,
+  idToLayerRow: Array<(Int, Int)>,
+  sources: Array<?(Array<Int>, Array<Int>)> = Array[],
+  maxReads: Array<Int> = Array[],
+) uses Equality {
+  //
+  static fun compute<T1: Hashable & Equality>(
+    graph: Graph,
+    factory: Factory<T1>,
+  ): GraphMetrics<T1> {
+    maxLayer: Int = 0;
+    entitiesLayer = mutable Map<T1, Int>[];
+    arrowsTo = mutable Map<Extremity<T1>, Extremity<T1>>[];
+    edges = mutable Vector<(T1, T1)>[];
+    inputsByName = mutable Map<String, T1>[];
+    outputsByName = mutable Map<String, T1>[];
+    operatorsByName = mutable Map<String, T1>[];
+    entitiesByName = mutable Map<String, Entity>[];
+    entitySources = mutable Map<T1, (Array<T1>, Array<T1>)>[];
+    graph.inputs.each(i -> {
+      inputsByName.set(i.name, factory.input(i))
+    });
+    graph.entities.each(e -> {
+      operator = factory.operator(e);
+      operatorsByName.set(e.name, operator);
+      entitiesByName.set(e.name, e);
+    });
+
+    layer = mutable Set[];
+    graph.outputs.each(o -> {
+      output = factory.output(o);
+      outputsByName.set(o.name, output);
+      inputsByName.maybeGet(o.name) match {
+      | Some(i) ->
+        edges.push((i, output));
+        entitySources.add(output, (Array[], Array[i]));
+        arrowsTo.add(Extremity(output, 0), Extremity(i, 0))
+      | None() ->
+        operatorsByName.maybeGet(o.name).each(operator -> {
+          edges.push((operator, output));
+          entitySources.add(output, (Array[], Array[operator]));
+          arrowsTo.add(Extremity(output, 0), Extremity(operator, 0));
+          entitiesLayer.set(operator, 0);
+          layer.insert(o.name)
+        })
+      }
+    });
+    done = mutable Set<String>[];
+    loop {
+      if (layer.isEmpty()) {
+        break void;
+      };
+      current = layer.toArray();
+      layer.clear();
+      for (nId in current) {
+        if (done.contains(nId)) continue;
+        entitiesByName.maybeGet(nId).each(e -> {
+          operator = factory.operator(e);
+          depth = entitiesLayer.get(operator);
+          (reads, inputs) = getSources(
+            e,
+            inputsByName,
+            operatorsByName,
+            factory,
+          );
+          entitySources.add(operator, (reads, inputs));
+          reads.reversed().concat(inputs).eachWithIndex((idx, i) -> {
+            edges.push((i, operator));
+            arrowsTo.add(Extremity(operator, idx), Extremity(i, 0));
+            if (!factory.isInput(i)) {
+              !maxLayer = Math.max(maxLayer, depth + 1);
+              entitiesLayer.set(i, depth + 1);
+              if (!factory.isConstant(i)) layer.insert(factory.getId(i));
+            }
+          })
+        });
+        done.add(nId)
+      }
+    };
+    glayers = Array::mfillBy(maxLayer + 1, (_) ~> mutable Vector<T1>[]);
+    for ((k, v) in entitiesLayer.items()) {
+      glayers[maxLayer - v].push(k)
+    };
+    layers = mutable Vector[inputsByName.values().collect(Array)];
+    glayers.each(v -> layers.push(v.toArray()));
+    layers.push(outputsByName.values().collect(Array));
+    layout = static::make(
+      layers.toArray().filter(l -> !l.isEmpty()),
+      edges.toArray().reversed(),
+      arrowsTo.chill(),
+      entitySources.chill(),
+    );
+    layout
+  }
+
+  static fun make<T: Hashable & Equality>(
+    layers: Array<Array<T>>,
+    edges: Array<(T, T)>,
+    arrowsTo: Map<Extremity<T>, Extremity<T>> = Map[],
+    sources: Map<T, (Array<T>, Array<T>)> = Map[],
+  ): GraphMetrics<T> {
+    nameToId = mutable Map<T, Int>[];
+    idToData = mutable Map<Int, T>[];
+    idToLayerRow = mutable Map<Int, (Int, Int)>[];
+    counter = 0;
+
+    encode = (name) -> {
+      if (!nameToId.containsKey(name)) {
+        nameToId.add(name, counter);
+        idToData.add(counter, name);
+        !counter = counter + 1;
+      };
+      nameToId.get(name)
+    };
+    intLayers = layers.mapWithIndex((idx, layer) ->
+      layer.mapWithIndex((row, e) -> {
+        id = encode(e);
+        idToLayerRow.add(id, (idx, row));
+        id
+      })
+    );
+    intEdges = edges.map(v -> (encode(v.i0), encode(v.i1)));
+    intArrowsTo = arrowsTo.mapItems((to, from) ->
+      (to.convert(encode), from.convert(encode))
+    );
+    GraphMetrics(
+      intLayers,
+      intArrowsTo,
+      intEdges,
+      Array::fillBy(idToData.size(), idx -> idToData.get(idx)),
+      Array::fillBy(idToLayerRow.size(), idx -> idToLayerRow.get(idx)),
+      Array::fillBy(idToData.size(), idx -> {
+        sources.maybeGet(idToData.get(idx)).map(v ->
+          (v.i0.map(encode), v.i1.map(encode))
+        )
+      }),
+      layers.map(l ->
+        l.reduce(
+          (acc, idx) ->
+            Math.max(
+              acc,
+              sources.maybeGet(idx).map(v -> v.i0.size()).default(0),
+            ),
+          0,
+        )
+      ),
+    )
+  }
+
+  fun get(): Array<Array<T>> {
+    this.layers.map(layer -> layer.map(id -> this.idToData.get(id)))
+  }
+
+  fun minimizeCrossings(iterations: Int = 4): GraphMetrics<T> {
+    buildMaps = () -> {
+      up = mutable Map<Int, mutable Vector<Int>>[];
+      down = mutable Map<Int, mutable Vector<Int>>[];
+      for ((u, v) in this.edges) {
+        if (!down.containsKey(u)) down.add(u, mutable Vector[]);
+        if (!up.containsKey(v)) up.add(v, mutable Vector[]);
+        down.get(u).push(v);
+        up.get(v).push(u);
+      };
+      (up.map((_, v) -> v.toArray()), down.map((_, v) -> v.toArray()))
+    };
+
+    indexForName = (array) -> {
+      map = mutable Map<Int, Int>[];
+      array.eachWithIndex((idx, v) -> map.add(v, idx));
+      map.chill()
+    };
+
+    mlayers = this.layers.map(a -> a.clone());
+    (up, down) = buildMaps();
+
+    sweep = (direction) -> {
+      isDown = direction == "down";
+      map = if (isDown) up else down;
+      range = if (isDown) Range(0, this.layers.size() - 1) else {
+        Range(1, this.layers.size()).reversed()
+      };
+
+      for (i in range) {
+        current = mlayers[i];
+        next = mlayers[if (isDown) i + 1 else i - 1];
+        pos = indexForName(current);
+
+        barycenter = (n) ~> {
+          neighbors = map.maybeGet(n).default(Array[]);
+          if (neighbors.isEmpty()) return Float::inf;
+          sum = neighbors.reduce(
+            (acc, m) -> acc + (pos.maybeGet(m).default(0)),
+            0,
+          );
+          return sum.toFloat() / neighbors.size().toFloat();
+        };
+
+        next.sortBy(v ~> barycenter(v))
+      }
+    };
+
+    for (_i in Range(0, iterations)) {
+      sweep("down");
+      sweep("up");
+    };
+
+    !this.layers = mlayers.map(a -> a.chill());
+    this
+  }
+
+  fun countCrossings(): Int {
+    pos = mutable Map[];
+    this.layers.eachWithIndex((i, layer) -> {
+      layer.eachWithIndex((j, node) -> {
+        pos.add(node, (i, j));
+      });
+    });
+
+    // Check crossings between edges in same pair of layers
+    crossings = 0;
+    for (i in Range(0, this.edges.size())) {
+      (u1, v1) = this.edges[i];
+      for (j in Range(i + 1, this.edges.size())) {
+        (u2, v2) = this.edges[j];
+        a = pos.get(u1);
+        b = pos.get(v1);
+        c = pos.get(u2);
+        d = pos.get(v2);
+        // Only compare edges between same layers
+        if (a.i0 == c.i0 && b.i0 == d.i0 && a.i0 + 1 == b.i0) {
+          if ((a.i1 - c.i1) * (b.i1 - d.i1) < 0) {
+            !crossings = crossings + 1;
+          }
+        }
+      }
+    };
+    crossings;
+  }
+
+  fun computeSeparators(): (Int, Int) {
+    hSep = 0;
+    vSep = 0;
+    idx = 0;
+    crossing = 0;
+    count = 0;
+    layer = 0;
+    edgesLayer = this.edges.map(e ->
+      (this.idToLayerRow[e.i0].i0, this.idToLayerRow[e.i1].i0)
+    ).sorted();
+    while (idx < edgesLayer.size()) {
+      edge = edgesLayer[idx];
+      if (edge.i1 == layer + 1) {
+        !count = count + 1;
+        if (edge.i0 < layer) {
+          !crossing = crossing + 1;
+        } else {
+          !vSep = Math.max(
+            vSep,
+            crossing + this.maxReads.maybeGet(layer).default(0),
+          )
+        };
+        !idx = idx + 1;
+      } else {
+        !hSep = Math.max(hSep, count);
+        !count = 0;
+        !crossing = 0;
+        !layer = layer + 1;
+      }
+    };
+    if (layer < this.layers.size()) {
+      !hSep = Math.max(hSep, count);
+      !vSep = Math.max(
+        vSep,
+        crossing + this.maxReads.maybeGet(layer).default(0),
+      );
+    };
+    (hSep, vSep)
+  }
+
+  fun buildEdges(
+    getBounds: (Int, Int) -> G.Rect,
+    hSep: Float,
+    vSep: Float,
+  ): Array<Edge> {
+    egdes = mutable Vector[];
+    crossing = 0;
+    for (i in Range(1, this.layers.size())) {
+      lsize = this.layers[i].size();
+      lcrossing = 0;
+      this.layers[i].eachWithIndex((j, e) -> {
+        (reads, inputs) = this.sources.get(e).default((Array[], Array[]));
+        bounds = getBounds(i, j);
+        lHSep = bounds.width() / (reads.size() + 1).toFloat();
+        reads.reversed().eachWithIndex((index, _) -> {
+          elements = mutable Vector<Shape.PathElement>[];
+          dstX = bounds.right - ((index + 1).toFloat() * lHSep);
+          dstYUp = bounds.top - (reads.size() - index).toFloat() * vSep;
+          src = this.arrowsTo.get(Extremity(e, index));
+          (srcl, srcr) = this.idToLayerRow[src.id];
+          srcBounds = getBounds(srcl, srcr);
+          // TODO: Get the good x offset (relative to layer width)
+          srcOffset = srcBounds.centerRight();
+          src2Offset = srcOffset + G.Offset(hSep * (srcr + 1).toFloat(), 0.0);
+          elements.push(Shape.MoveTo(srcOffset));
+          elements.push(Shape.LineTo(src2Offset));
+          (up, to, !crossing, !lcrossing) = this.manageCrossedLayer(
+            elements,
+            getBounds,
+            G.Offset(src2Offset.dx, dstYUp),
+            G.Offset(dstX, dstYUp),
+            i,
+            srcl,
+            crossing,
+            lcrossing,
+            lsize,
+            vSep,
+            hSep,
+          );
+          elements.push(Shape.LineTo(up));
+          elements.push(Shape.LineTo(to));
+          elements.push(Shape.LineTo(G.Offset(dstX, bounds.top)));
+          path = Shape.Path{elements => elements.toArray()}.clean();
+          cleaned = path.clean();
+          //debug(("Read edge", path, cleaned));
+          egdes.push(Edge(src.id, e, cleaned));
+        });
+        offset = reads.size();
+        lVSep = bounds.height() / (inputs.size() + 1).toFloat();
+        inputs.eachWithIndex((ii, _) -> {
+          index = ii + offset;
+          elements = mutable Vector<Shape.PathElement>[];
+          dstY = bounds.top + ((ii + 1).toFloat() * lVSep);
+          src = this.arrowsTo.get(Extremity(e, index));
+          (srcl, srcr) = this.idToLayerRow[src.id];
+          srcBounds = getBounds(srcl, srcr);
+          srcOffset = srcBounds.centerRight();
+          src2Offset = srcOffset + G.Offset(hSep * (srcr + 1).toFloat(), 0.0);
+          elements.push(Shape.MoveTo(srcOffset));
+          elements.push(Shape.LineTo(src2Offset));
+          // TODO: Get the good x offset (relative to layer width)
+          (up, to, !crossing, !lcrossing) = this.manageCrossedLayer(
+            elements,
+            getBounds,
+            G.Offset(src2Offset.dx, dstY),
+            G.Offset(bounds.left, dstY),
+            i,
+            srcl,
+            crossing,
+            lcrossing,
+            lsize,
+            vSep,
+            hSep,
+          );
+          elements.push(Shape.LineTo(up));
+          elements.push(Shape.LineTo(to));
+          path = Shape.Path{elements => elements.toArray()};
+          cleaned = path.clean();
+          //debug(("Input edge", path, cleaned));
+          egdes.push(Edge(src.id, e, cleaned));
+        })
+      })
+    };
+    egdes.toArray()
+  }
+
+  private fun manageCrossedLayer(
+    elements: mutable Vector<Shape.PathElement>,
+    getBounds: (Int, Int) -> G.Rect,
+    up: G.Offset,
+    to: G.Offset,
+    currentLayer: Int,
+    srcLayer: Int,
+    crossing: Int,
+    layerCrossing: Int,
+    layerSize: Int,
+    vSep: Float,
+    hSep: Float,
+  ): (G.Offset, G.Offset, Int, Int) {
+    while (currentLayer - srcLayer > 1) {
+      crossedLayer = this.layers[srcLayer + 1];
+      optCrossed = for (crossedRow in Range(0, crossedLayer.size())) {
+        crossedBounds = getBounds(srcLayer + 1, crossedRow);
+        if (crossedBounds.intersectSegment(up, to)) {
+          break Some(crossedBounds)
+        }
+      } else {
+        None()
+      };
+      optCrossed.each(crossed -> {
+        dy = crossed.bottom + (crossing + 1).toFloat() * vSep;
+        // TODO Get the good x offset (relative to layer width)
+        dx = crossed.right + (layerSize + layerCrossing + 1).toFloat() * hSep;
+        elements.push(Shape.LineTo(G.Offset(up.dx, dy)));
+        elements.push(Shape.LineTo(G.Offset(dx, dy)));
+        !up = G.Offset(dx, to.dy);
+      });
+      !layerCrossing = layerCrossing + 1;
+      !crossing = crossing + 1;
+      !srcLayer = srcLayer + 1;
+    };
+    (up, to, crossing, layerCrossing)
+  }
+}
+
+/**
+ * Computes the layout of a set of nodes, arranging them in layers with specified horizontal and vertical spacing.
+ *
+ * This function calculates the size of the entire layout and positions each node within its respective layer.
+ * The nodes are arranged in layers (represented by a 2D array), with the size and position of each node
+ * determined based on the maximum width and height of the nodes in each layer, as well as the provided spacing.
+ *
+ * @param nodes A 2D array of `G.Size` representing the nodes. Each inner array represents a layer of nodes.
+ * @param hSpace The horizontal space (in units) to be added between the nodes.
+ * @param vSpace The vertical space (in units) to be added between the nodes.
+ *
+ * @return A tuple consisting of:
+ *   - A `G.Size` object representing the total size of the layout (width and height),
+ *   - A 2D array of `G.Rect` objects, where each `G.Rect` represents the position and size of a node
+ *     in the layout, based on the calculated positions and sizes for each layer.
+ *
+ * @note The final size of the layout includes extra space for the specified horizontal and vertical spacing
+ *       between the layers of nodes.
+ */
+fun layout(
+  nodes: Array<Array<G.Size>>,
+  hSpace: Float,
+  vSpace: Float,
+): (G.Size, Array<Array<G.Rect>>) {
+  szero = G.Size(0.0, 0.0);
+  sizes = nodes.map(l ->
+    l.reduce(
+      (acc, s) -> {
+        !acc.width = Math.max(acc.width, s.width);
+        !acc.height = acc.height + s.height;
+        acc
+      },
+      szero,
+    )
+  );
+  size = sizes.reduce(
+    (acc, s) -> {
+      !acc.width = acc.width + s.width;
+      !acc.height = Math.max(acc.height, s.height);
+      acc
+    },
+    szero,
+  );
+  hcount = nodes.size();
+  vcount = nodes.reduce((acc, l) -> Math.max(acc, l.size()), 0);
+  !size.width = size.width + ((hcount + 1).toFloat() * hSpace);
+  !size.height = size.height + ((vcount + 1).toFloat() * vSpace);
+  x = hSpace;
+  (
+    size,
+    nodes.mapWithIndex((layer, lnodes) -> {
+      lsize = sizes[layer];
+      sep = (size.height - lsize.height) / (lnodes.size() + 1).toFloat();
+      y = sep;
+      res = lnodes.map(s -> {
+        offset = if (layer == 0) {
+          G.Offset(x + lsize.width - s.width, y)
+        } else if (layer == nodes.size() - 1) {
+          G.Offset(x, y)
+        } else {
+          G.Offset(x + (lsize.width - s.width) / 2.0, y)
+        };
+        !y = y + s.height + sep;
+        G.Rect::fromOffsetSize(offset, s)
+      });
+      !x = x + lsize.width + hSpace;
+      res
+    }),
+  )
+}
+
+class GraphController(
+  path: Ui.Path,
+  metrics: GraphMetrics<TNode>,
+  separators: (Int, Int),
+  space: Float = 10.0,
+) extends Controller {
+  //
+  fun getLayers(context: mutable SKStore.Context): Array<Array<Ui.Widget>> {
+    this.metrics.layers.map(l ->
+      l.map(id -> {
+        node = this.metrics.idToData[id];
+        path = this.path.makeChild(node.getId());
+        Ui.Label::create(
+          context,
+          path,
+          UiLabel.LamController{text => _ctx ~> Some(!node.getName())},
+          None(),
+        );
+      })
+    )
+  }
+
+  fun buildEdges(
+    _ctx: mutable SKStore.Context,
+    _bounds: Array<Array<G.Rect>>,
+  ): Array<Edge> {
+    invariant_violation("Not Implemented")
+  }
+
+  fun getSpaces(_ctx: mutable SKStore.Context): (Float, Float) {
+    invariant_violation("Not Implemented")
+  }
+
+  fun getEdgeStyle(_ctx: mutable SKStore.Context): EdgeStyle {
+    invariant_violation("Not Implemented")
+  }
+}
+
+module end;

@@ -1,0 +1,95 @@
+module alias H = UiEngineHandle;
+
+module SkDebugger;
+
+class DebuggerException(message: String) extends .Exception {
+  //
+  fun getMessage(): String {
+    this.message
+  }
+}
+
+const kName: String = "skdebugger";
+const kAbout: String = "Skip runtime debugger";
+
+fun error(msg: String, code: Int = 2): void {
+  print_error(msg);
+  skipExit(code)
+}
+
+fun launch(url: String, args: Cli.ParseResults): Result<void, .Exception> {
+  uri = Result::guard(() -> {
+    _ = IO.Url::parse(url);
+    url
+  })?;
+  serviceUrl = Path.join(uri, "v1/service");
+  SKUtils.fetch(serviceUrl)? match {
+  | SKUtils.FetchResult(200, _, Some(text)) ->
+    serviceInfo = Result::guard(() ->
+      serviceFromJSON(JSON.decode(text))
+    ) match {
+    | Failure(e) -> return Failure(e)
+    | Success(si) -> si
+    };
+    sharedUrl = Path.join(uri, "v1/shared");
+    SKUtils.fetch(sharedUrl)? match {
+    | SKUtils.FetchResult(200, _, Some(strGraph)) ->
+      sharedGraph = Result::guard(() ->
+        graphFromJSON(JSON.decode(strGraph))
+      ) match {
+      | Failure(e) -> return Failure(e)
+      | Success(si) -> si
+      };
+      wId = 0;
+      _ = SKStore.gContextInit(SKStore.Context::create{});
+      SKStore.Context::withGc(context ~> {
+        buildWidget(context, wId, serviceInfo, sharedGraph);
+        context.initPre();
+        context.update();
+      });
+      SKUIMain.init(wId, kAbout, args);
+      Success(void)
+    | _ -> Failure(DebuggerException("Unable to retrieve Skip shared Graph"))
+    }
+  | _ -> Failure(DebuggerException("Unable to retrieve Skip service"))
+  };
+}
+
+fun main(): void {
+  command = SKUIMain.complete(
+    Cli.Command(kName)
+      .about(kAbout)
+      .arg(
+        Cli.Arg::bool("version")
+          .short("V")
+          .long("version")
+          .about("Print version info and exit"),
+      )
+      .arg(
+        Cli.Arg::string("url").positional().about("The url of debug server"),
+      ),
+  ).help();
+  args = Cli.parseArgs(command);
+  args.error match {
+  | Some(err) ->
+    error(`ERROR: ${err.getMessage()}\n${Cli.usage(command, false)}`)
+  | _ ->
+    if (args.getBool("version")) {
+      git_commit = #env ("GIT_COMMIT_INFO");
+      print_string(`${kName} [${git_commit}]`)
+    } else if (args.getBool("help")) {
+      print_string(Cli.usage(command, true));
+    } else {
+      args.maybeGetString("url") match {
+      | Some(url) ->
+        launch(url, args) match {
+        | Failure(err) -> error(`ERROR: ${err.getMessage()}}`)
+        | _ -> void
+        }
+      | _ -> error(`ERROR: Url must be specified\n${Cli.usage(command, false)}`)
+      }
+    }
+  }
+}
+
+module end;

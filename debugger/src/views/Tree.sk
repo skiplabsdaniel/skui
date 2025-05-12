@@ -1,0 +1,72 @@
+module alias E = UiEngine;
+
+module SkDebugViews;
+
+fun icon(name: String): UiIcon.Description {
+  UiIcon.Description(UiIcon.KCategory("themify"), name);
+}
+
+class Tree(info: SkDebugger.ServiceInfo) extends E.Renderable {
+  //
+  fun render(_context: mutable SKStore.Context): ?E.Description {
+    items = mutable Vector[
+      this.item(
+        "Inputs",
+        "inputs",
+        this.info.inputs,
+        true,
+        Some(icon("import")),
+      ),
+      this.item(
+        "Resources",
+        "resources",
+        this.info.resources,
+        true,
+        Some(icon("cloud")),
+      ),
+    ];
+    if (!this.info.remotesResources.isEmpty()) {
+      items.push(
+        this.item(
+          "Remotes resources",
+          "remotes",
+          this.info.remotesResources,
+          true,
+        ),
+      )
+    };
+    tree = E.Tree::create{
+      items => E.ARef(items.toArray()),
+      optConfiguration => Some(E.BRef(UiFlex.Configuration{flex => 1})),
+    };
+    name = E.Label::simple(this.info.name);
+    platform = E.Label::simple(this.info.platform);
+    version = E.Label::simple(this.info.version);
+    Some(
+      E.Flex::vertical(
+        Array[name, platform, version, tree],
+        UiFlex.Start(),
+        UiFlex.CrossStretch(),
+      ),
+    )
+  }
+
+  private fun item(
+    name: String,
+    id: String,
+    values: Array<String>,
+    leaf: Bool,
+    icon: ?UiIcon.Description = None(),
+  ): E.TreeItem {
+    items = values.map(i ->
+      E.TreeItem::create(`${id}/${i}`, UiTree.Item{text => !i, leaf, icon})
+    );
+    E.TreeItem::create(
+      id,
+      UiTree.Item{text => !name, leaf => false},
+      Some(E.ARef(items)),
+    );
+  }
+}
+
+module end;

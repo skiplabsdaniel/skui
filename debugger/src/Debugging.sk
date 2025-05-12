@@ -1,0 +1,93 @@
+module alias H = UiEngineHandle;
+module SkDebugger;
+
+const rootPath: SKStore.DirName = SKStore.DirName::create("/debug/");
+
+class Name{name: String, alias: ?String} uses Hashable, Orderable
+
+class Read{collection: String, key: JSON.Value} uses Hashable, Equality
+
+base class PType uses Hashable, Equality {
+  children =
+  | PData()
+  | PCollection()
+}
+
+class Parameter{type: PType, value: JSON.Value} uses Hashable, Equality
+
+class Constructor{
+  name: ?String,
+  parameters: Array<Parameter>,
+} uses Hashable, Equality
+
+class Type{
+  operator: String,
+  constructors: Array<Constructor>,
+} uses Hashable, Equality
+
+class Entity(
+  name: String,
+  inputs: Array<String>,
+  reads: Array<String>,
+  type: Type,
+) uses Hashable, Equality {
+  fun getParameters(): Array<Array<Parameter>> {
+    this.type.constructors.map(c -> c.parameters)
+  }
+
+  fun getName(): String {
+    if (this.type.constructors.isEmpty()) this.type.operator else {
+      `${this.type.operator}(${this.type.constructors.map(c -> c.name).join(
+        ", ",
+      )})`
+    }
+  }
+}
+
+class ServiceInfo{
+  name: String,
+  platform: String,
+  version: String,
+  inputs: Array<String>,
+  resources: Array<String>,
+  remotesResources: Array<String>,
+}
+
+class Graph(
+  inputs: Array<Name>,
+  entities: Array<Entity>,
+  reads: Array<Read>,
+  outputs: Array<Name>,
+)
+
+fun buildWidget(
+  context: mutable SKStore.Context,
+  wId: Int,
+  service: ServiceInfo,
+  shared: Graph,
+): void {
+  debug(shared);
+  context.setGlobal("Ui.Properties.Root", SKStore.DirNameFile(rootPath));
+  support = SKUIGL.DrawableSupport(SKUI.pictureToTexturable);
+  optPath: ?String = None();
+  H.init(context, optPath);
+  builder = (ctx, root) ~> {
+    UiSerializableProp.Property::initValues(
+      ctx,
+      optPath,
+      Array[(SKStore.StrID("root"), Some(SkDebugViews.App(service)))],
+    );
+    property = UiSerializableProp.Property::forName(ctx, optPath, "root");
+    hdl = UiEngine.widgetPipeline(ctx, property, root);
+    (ctx, _root) ~> hdl.get(ctx).widget
+  };
+  SKUI.init(context, wId, builder, support, predefined());
+}
+
+fun predefined(): SortedMap<Font.TypefaceInfo, String> {
+  p = SortedMap<Font.TypefaceInfo, String>::create();
+  !p = Roboto.fill(p);
+  RobotoMono.fill(p)
+}
+
+module end;

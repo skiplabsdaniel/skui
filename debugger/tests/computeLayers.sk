@@ -1,0 +1,663 @@
+module alias T = SKTest;
+module alias D = SkDebugger;
+module alias G = Geometry;
+module alias S = Shape;
+
+module TestComputeLayers;
+
+base class TNode uses Hashable, Equality {
+  children =
+  | TInput(name: String)
+  | TOutput(name: String)
+  | TOperator(name: String)
+  | TConst(value: JSON.Value)
+
+  fun getId(): String
+  | TInput(name)
+  | TOutput(name)
+  | TOperator(name) ->
+    name
+  | TConst(value) -> value.toString()
+}
+
+class TNodeFactory() extends D.Factory<TNode> {
+  //
+  fun input(name: D.Name): TNode {
+    TInput(name.name)
+  }
+
+  fun output(name: D.Name): TNode {
+    TOutput(name.name)
+  }
+
+  fun operator(entity: D.Entity): TNode {
+    TOperator(entity.name)
+  }
+
+  fun constant(value: JSON.Value): TNode {
+    TConst(value)
+  }
+
+  fun isInput(node: TNode): Bool {
+    node match {
+    | TInput _ -> true
+    | _ -> false
+    }
+  }
+
+  fun isConstant(node: TNode): Bool {
+    node match {
+    | TConst _ -> true
+    | _ -> false
+    }
+  }
+
+  fun getId(node: TNode): String {
+    node.getId()
+  }
+}
+
+fun expectLike(
+  actual: Array<D.Edge>,
+  expected: Array<D.Edge>,
+  precision: Float = precisionErrorTolerance,
+  msg: String = "expected like",
+): void {
+  fail = () ->
+    throw T.ExpectationError(
+      msg,
+      inspect(expected).toString(),
+      inspect(actual).toString(),
+    );
+  if (actual.size() != expected.size()) fail();
+  for (i => ae in actual) {
+    ee = expected[i];
+    like =
+      ee.from == ae.from &&
+      ee.to == ae.to &&
+      ae.path.like(ee.path, precision);
+    if (!like) fail();
+  }
+}
+
+fun test(
+  strGraph: String,
+  expected: D.GraphMetrics<TNode>,
+  separators: (Int, Int),
+  size: G.Size,
+  bounds: Array<Array<G.Rect>>,
+  edges: Array<D.Edge>,
+): void {
+  graph = D.graphFromJSON(JSON.decode(strGraph));
+  got = D.GraphMetrics::compute(graph, TNodeFactory());
+  T.expectEq(got, expected);
+  T.expectEq(got.computeSeparators(), separators);
+  nodes = got.layers.map(l -> l.map(_ -> G.Size(100.0, 50.0)));
+  hSpace = ((separators.i0 + 1) * 10).toFloat();
+  vSpace = ((separators.i1 + 1) * 10).toFloat();
+  (aSize, aBounds) = D.layout(nodes, hSpace, vSpace);
+  T.expectEq(aSize, size);
+  T.expectEq(aBounds, bounds);
+  aEdges = got.buildEdges((l, r) -> aBounds[l][r], 10.0, 10.0);
+  expectLike(aEdges, edges, 10e-6);
+}
+
+@test
+fun test_just_input(): void {
+  test(
+    `{"inputs":[{"name":"input"}], "entities":[], "outputs":[{"name":"input"}]}`,
+    D.GraphMetrics(
+      Array[Array[0], Array[1]],
+      Map[D.Extremity(1, 0) => D.Extremity(0, 0)],
+      Array[(0, 1)],
+      Array[TInput("input"), TOutput("input")],
+      Array[(0, 0), (1, 0)],
+      Array[None(), Some((Array[], Array[0]))],
+      Array[0, 0],
+    ),
+    (1, 0),
+    G.Size(260.0, 70.0),
+    Array[
+      Array[G.Rect(20.0, 10.0, 120.0, 60.0)],
+      Array[G.Rect(140.0, 10.0, 240.0, 60.0)],
+    ],
+    Array[
+      D.Edge(
+        0,
+        1,
+        S.Path{
+          elements => Array[
+            S.MoveTo(G.Offset(120.0, 35.0)),
+            S.LineTo(G.Offset(140.0, 35.0)),
+          ],
+        },
+      ),
+    ],
+  )
+}
+
+@test
+fun test_just_tow_inputs(): void {
+  test(
+    `{"inputs":[{"name":"input1"}, {"name":"input2"}], "entities":[],"outputs":[{"name":"input1"}, {"name":"input2"}]}`,
+    D.GraphMetrics(
+      Array[Array[0, 1], Array[2, 3]],
+      Map[
+        D.Extremity(2, 0) => D.Extremity(0, 0),
+        D.Extremity(3, 0) => D.Extremity(1, 0),
+      ],
+      Array[(1, 3), (0, 2)],
+      Array[
+        TInput("input1"),
+        TInput("input2"),
+        TOutput("input1"),
+        TOutput("input2"),
+      ],
+      Array[(0, 0), (0, 1), (1, 0), (1, 1)],
+      Array[
+        None(),
+        None(),
+        Some((Array[], Array[0])),
+        Some((Array[], Array[1])),
+      ],
+      Array[0, 0],
+    ),
+    (2, 0),
+    G.Size(290.0, 130.0),
+    Array[
+      Array[G.Rect(30.0, 10.0, 130.0, 60.0), G.Rect(30.0, 70.0, 130.0, 120.0)],
+      Array[
+        G.Rect(160.0, 10.0, 260.0, 60.0),
+        G.Rect(160.0, 70.0, 260.0, 120.0),
+      ],
+    ],
+    Array[
+      D.Edge(
+        0,
+        2,
+        S.Path{
+          elements => Array[
+            S.MoveTo(G.Offset(130.0, 35.0)),
+            S.LineTo(G.Offset(160.0, 35.0)),
+          ],
+        },
+      ),
+      D.Edge(
+        1,
+        3,
+        S.Path{
+          elements => Array[
+            S.MoveTo(G.Offset(130.0, 95.0)),
+            S.LineTo(G.Offset(160.0, 95.0)),
+          ],
+        },
+      ),
+    ],
+  )
+}
+
+@test
+fun test_simple_map(): void {
+  test(
+    `{
+"inputs":[{"name":"input"}],
+"outputs":[{"name":"output"}],
+"entities":[
+{"inputs":["input"],"name":"output","type":{"constructors":[{"name":"Map1","parameters":[]}],"operator":"map"}}
+]}`,
+    D.GraphMetrics(
+      Array[Array[0], Array[1], Array[2]],
+      Map[
+        D.Extremity(2, 0) => D.Extremity(1, 0),
+        D.Extremity(1, 0) => D.Extremity(0, 0),
+      ],
+      Array[(0, 1), (1, 2)],
+      Array[TInput("input"), TOperator("output"), TOutput("output")],
+      Array[(0, 0), (1, 0), (2, 0)],
+      Array[None(), Some((Array[], Array[0])), Some((Array[], Array[1]))],
+      Array[0, 0, 0],
+    ),
+    (1, 0),
+    G.Size(380.0, 70.0),
+    Array[
+      Array[G.Rect(20.0, 10.0, 120.0, 60.0)],
+      Array[G.Rect(140.0, 10.0, 240.0, 60.0)],
+      Array[G.Rect(260.0, 10.0, 360.0, 60.0)],
+    ],
+    Array[
+      D.Edge(
+        0,
+        1,
+        S.Path{
+          elements => Array[
+            S.MoveTo(G.Offset(120.0, 35.0)),
+            S.LineTo(G.Offset(140.0, 35.0)),
+          ],
+        },
+      ),
+      D.Edge(
+        1,
+        2,
+        S.Path{
+          elements => Array[
+            S.MoveTo(G.Offset(240.0, 35.0)),
+            S.LineTo(G.Offset(260.0, 35.0)),
+          ],
+        },
+      ),
+    ],
+  )
+}
+
+@test
+fun test_map_with_read(): void {
+  test(
+    `{
+"inputs":[{"name":"input1"}, {"name":"input2"}],
+"outputs":[{"name":"size"}],
+"entities":[
+{"inputs":["input1"],"name":"size","reads":["input2"],"type":{"constructors":[{"name":"SizeMapper","parameters":[{"type":"collection","value":"input2"}]}],"operator":"map"}}
+]}`,
+    D.GraphMetrics(
+      Array[Array[0, 1], Array[2], Array[3]],
+      Map[
+        D.Extremity(3, 0) => D.Extremity(2, 0),
+        D.Extremity(2, 0) => D.Extremity(1, 0),
+        D.Extremity(2, 1) => D.Extremity(0, 0),
+      ],
+      Array[(0, 2), (1, 2), (2, 3)],
+      Array[
+        TInput("input1"),
+        TInput("input2"),
+        TOperator("size"),
+        TOutput("size"),
+      ],
+      Array[(0, 0), (0, 1), (1, 0), (2, 0)],
+      Array[
+        None(),
+        None(),
+        Some((Array[1], Array[0])),
+        Some((Array[], Array[2])),
+      ],
+      Array[0, 1, 0],
+    ),
+    (2, 1),
+    G.Size(420.0, 160.0),
+    Array[
+      Array[G.Rect(30.0, 20.0, 130.0, 70.0), G.Rect(30.0, 90.0, 130.0, 140.0)],
+      Array[G.Rect(160.0, 55.0, 260.0, 105.0)],
+      Array[G.Rect(290.0, 55.0, 390.0, 105.0)],
+    ],
+    Array[
+      D.Edge(
+        1,
+        2,
+        S.Path{
+          elements => Array[
+            S.MoveTo(G.Offset(130.0, 115.0)),
+            S.LineTo(G.Offset(150.0, 115.0)),
+            S.LineTo(G.Offset(150.0, 45.0)),
+            S.LineTo(G.Offset(210.0, 45.0)),
+            S.LineTo(G.Offset(210.0, 55.0)),
+          ],
+        },
+      ),
+      D.Edge(
+        0,
+        2,
+        S.Path{
+          elements => Array[
+            S.MoveTo(G.Offset(130.0, 45.0)),
+            S.LineTo(G.Offset(140.0, 45.0)),
+            S.LineTo(G.Offset(140.0, 80.0)),
+            S.LineTo(G.Offset(160.0, 80.0)),
+          ],
+        },
+      ),
+      D.Edge(
+        2,
+        3,
+        S.Path{
+          elements => Array[
+            S.MoveTo(G.Offset(260.0, 80.0)),
+            S.LineTo(G.Offset(290.0, 80.0)),
+          ],
+        },
+      ),
+    ],
+  )
+}
+
+@test
+fun test_multiple_operator(): void {
+  test(
+    `
+{"entities":[
+{"inputs":["slices1"],"name":"slices2","reads":[],"type":{"operator":"slices"}},
+{"inputs":["take_7"],"name":"slices1","reads":[],"type":{"operator":"slices"}},
+{"inputs":["map1"],"name":"take_7","reads":[],"type":{"constructors":[{"parameters":[{"type":"data","value":7}]}],"operator":"take"}},
+{"inputs":["slice3"],"name":"map1","reads":[],"type":{"constructors":[{"name":"SquareValues","parameters":[]}],"operator":"map"}},
+{"inputs":["input"],"name":"slice3","reads":[],"type":{"operator":"slices"}}
+],
+"inputs":[{"alias":"input","name":"input"}],
+"outputs":[{"alias":"slice","name":"slices2"}],"reads":[]
+}
+`,
+    D.GraphMetrics(
+      Array[
+        Array[0],
+        Array[1],
+        Array[2, 3],
+        Array[4],
+        Array[5],
+        Array[6],
+        Array[7],
+      ],
+      Map[
+        D.Extremity(7, 0) => D.Extremity(6, 0),
+        D.Extremity(6, 0) => D.Extremity(5, 0),
+        D.Extremity(5, 0) => D.Extremity(4, 0),
+        D.Extremity(4, 0) => D.Extremity(2, 0),
+        D.Extremity(4, 1) => D.Extremity(3, 0),
+        D.Extremity(3, 0) => D.Extremity(1, 0),
+        D.Extremity(1, 0) => D.Extremity(0, 0),
+      ],
+      Array[(0, 1), (1, 3), (3, 4), (2, 4), (4, 5), (5, 6), (6, 7)],
+      Array[
+        TInput("input"),
+        TOperator("slice3"),
+        TConst(JSON.IntNumber(7)),
+        TOperator("map1"),
+        TOperator("take_7"),
+        TOperator("slices1"),
+        TOperator("slices2"),
+        TOutput("slices2"),
+      ],
+      Array[(0, 0), (1, 0), (2, 0), (2, 1), (3, 0), (4, 0), (5, 0), (6, 0)],
+      Array[
+        None(),
+        Some((Array[], Array[0])),
+        None(),
+        Some((Array[], Array[1])),
+        Some((Array[2], Array[3])),
+        Some((Array[], Array[4])),
+        Some((Array[], Array[5])),
+        Some((Array[], Array[6])),
+      ],
+      Array[0, 0, 0, 1, 0, 0, 0],
+    ),
+    (2, 1),
+    G.Size(940.0, 160.0),
+    Array[
+      Array[G.Rect(30.0, 55.0, 130.0, 105.0)],
+      Array[G.Rect(160.0, 55.0, 260.0, 105.0)],
+      Array[
+        G.Rect(290.0, 20.0, 390.0, 70.0),
+        G.Rect(290.0, 90.0, 390.0, 140.0),
+      ],
+      Array[G.Rect(420.0, 55.0, 520.0, 105.0)],
+      Array[G.Rect(550.0, 55.0, 650.0, 105.0)],
+      Array[G.Rect(680.0, 55.0, 780.0, 105.0)],
+      Array[G.Rect(810.0, 55.0, 910.0, 105.0)],
+    ],
+    Array[
+      D.Edge(
+        0,
+        1,
+        S.Path{
+          elements => Array[
+            S.MoveTo(G.Offset(130.0, 80.0)),
+            S.LineTo(G.Offset(160.0, 80.0)),
+          ],
+        },
+      ),
+      D.Edge(
+        1,
+        3,
+        S.Path{
+          elements => Array[
+            S.MoveTo(G.Offset(260.0, 80.0)),
+            S.LineTo(G.Offset(270.0, 80.0)),
+            S.LineTo(G.Offset(270.0, 115.0)),
+            S.LineTo(G.Offset(290.0, 115.0)),
+          ],
+        },
+      ),
+      D.Edge(
+        2,
+        4,
+        S.Path{
+          elements => Array[
+            S.MoveTo(G.Offset(390.0, 45.0)),
+            S.LineTo(G.Offset(470.0, 45.0)),
+            S.LineTo(G.Offset(470.0, 55.0)),
+          ],
+        },
+      ),
+      D.Edge(
+        3,
+        4,
+        S.Path{
+          elements => Array[
+            S.MoveTo(G.Offset(390.0, 115.0)),
+            S.LineTo(G.Offset(410.0, 115.0)),
+            S.LineTo(G.Offset(410.0, 80.0)),
+            S.LineTo(G.Offset(420.0, 80.0)),
+          ],
+        },
+      ),
+      D.Edge(
+        4,
+        5,
+        S.Path{
+          elements => Array[
+            S.MoveTo(G.Offset(520.0, 80.0)),
+            S.LineTo(G.Offset(550.0, 80.0)),
+          ],
+        },
+      ),
+      D.Edge(
+        5,
+        6,
+        S.Path{
+          elements => Array[
+            S.MoveTo(G.Offset(650.0, 80.0)),
+            S.LineTo(G.Offset(680.0, 80.0)),
+          ],
+        },
+      ),
+      D.Edge(
+        6,
+        7,
+        S.Path{
+          elements => Array[
+            S.MoveTo(G.Offset(780.0, 80.0)),
+            S.LineTo(G.Offset(810.0, 80.0)),
+          ],
+        },
+      ),
+    ],
+  )
+}
+
+@test
+fun test_with_lazy(): void {
+  test(
+    `{
+"entities":[
+{"inputs":["input"],"name":"map1","reads":["lazy1"],"type":{"constructors":[{"name":"MapLazy","parameters":[{"type":"collection","value":"lazy1"}]}],"operator":"map"}},
+{"inputs":[],"name":"lazy1","reads":["input","lazy1"],"type":{"constructors":[{"name":"TestLazyAdd","parameters":[{"type":"collection","value":"input"}]}],"operator":"lazy"}}
+],
+"inputs":[{"alias":"input","name":"input"}],
+"outputs":[{"alias":"lazy","name":"map1"}],
+"reads":[{"collection":"lazy1","key":"#tag"}]}
+`,
+    D.GraphMetrics(
+      Array[Array[0], Array[1], Array[2], Array[3]],
+      Map[
+        D.Extremity(3, 0) => D.Extremity(2, 0),
+        D.Extremity(2, 0) => D.Extremity(1, 0),
+        D.Extremity(2, 1) => D.Extremity(0, 0),
+        D.Extremity(1, 0) => D.Extremity(0, 0),
+      ],
+      Array[(0, 1), (0, 2), (1, 2), (2, 3)],
+      Array[
+        TInput("input"),
+        TOperator("lazy1"),
+        TOperator("map1"),
+        TOutput("map1"),
+      ],
+      Array[(0, 0), (1, 0), (2, 0), (3, 0)],
+      Array[
+        None(),
+        Some((Array[0], Array[])),
+        Some((Array[1], Array[0])),
+        Some((Array[], Array[2])),
+      ],
+      Array[0, 1, 1, 0],
+    ),
+    (2, 2),
+    G.Size(550.0, 110.0),
+    Array[
+      Array[G.Rect(30.0, 30.0, 130.0, 80.0)],
+      Array[G.Rect(160.0, 30.0, 260.0, 80.0)],
+      Array[G.Rect(290.0, 30.0, 390.0, 80.0)],
+      Array[G.Rect(420.0, 30.0, 520.0, 80.0)],
+    ],
+    Array[
+      D.Edge(
+        0,
+        1,
+        S.Path{
+          elements => Array[
+            S.MoveTo(G.Offset(130.0, 55.0)),
+            S.LineTo(G.Offset(140.0, 55.0)),
+            S.LineTo(G.Offset(140.0, 20.0)),
+            S.LineTo(G.Offset(210.0, 20.0)),
+            S.LineTo(G.Offset(210.0, 30.0)),
+          ],
+        },
+      ),
+      D.Edge(
+        1,
+        2,
+        S.Path{
+          elements => Array[
+            S.MoveTo(G.Offset(260.0, 55.0)),
+            S.LineTo(G.Offset(270.0, 55.0)),
+            S.LineTo(G.Offset(270.0, 20.0)),
+            S.LineTo(G.Offset(340.0, 20.0)),
+            S.LineTo(G.Offset(340.0, 30.0)),
+          ],
+        },
+      ),
+      D.Edge(
+        0,
+        2,
+        S.Path{
+          elements => Array[
+            S.MoveTo(G.Offset(130.0, 55.0)),
+            S.LineTo(G.Offset(140.0, 55.0)),
+            S.LineTo(G.Offset(140.0, 90.0)),
+            S.LineTo(G.Offset(280.0, 90.0)),
+            S.LineTo(G.Offset(280.0, 55.0)),
+            S.LineTo(G.Offset(290.0, 55.0)),
+          ],
+        },
+      ),
+      D.Edge(
+        2,
+        3,
+        S.Path{
+          elements => Array[
+            S.MoveTo(G.Offset(390.0, 55.0)),
+            S.LineTo(G.Offset(420.0, 55.0)),
+          ],
+        },
+      ),
+    ],
+  )
+}
+
+@test
+fun test_with_merge(): void {
+  test(
+    `{"entities":[
+{"inputs":["input1","input2"],"name":"merge1","reads":[],"type":{"operator":"merge"}}
+],
+"inputs":[{"alias":"input1","name":"input1"},{"alias":"input2","name":"input2"}],
+"outputs":[{"alias":"merge1","name":"merge1"}],
+"reads":[]
+}`,
+    D.GraphMetrics(
+      Array[Array[0, 1], Array[2], Array[3]],
+      Map[
+        D.Extremity(3, 0) => D.Extremity(2, 0),
+        D.Extremity(2, 0) => D.Extremity(0, 0),
+        D.Extremity(2, 1) => D.Extremity(1, 0),
+      ],
+      Array[(1, 2), (0, 2), (2, 3)],
+      Array[
+        TInput("input1"),
+        TInput("input2"),
+        TOperator("merge1"),
+        TOutput("merge1"),
+      ],
+      Array[(0, 0), (0, 1), (1, 0), (2, 0)],
+      Array[
+        None(),
+        None(),
+        Some((Array[], Array[0, 1])),
+        Some((Array[], Array[2])),
+      ],
+      Array[0, 0, 0],
+    ),
+    (2, 0),
+    G.Size(420.0, 130.0),
+    Array[
+      Array[G.Rect(30.0, 10.0, 130.0, 60.0), G.Rect(30.0, 70.0, 130.0, 120.0)],
+      Array[G.Rect(160.0, 40.0, 260.0, 90.0)],
+      Array[G.Rect(290.0, 40.0, 390.0, 90.0)],
+    ],
+    Array[
+      D.Edge(
+        0,
+        2,
+        S.Path{
+          elements => Array[
+            S.MoveTo(G.Offset(130.0, 35.0)),
+            S.LineTo(G.Offset(140.0, 35.0)),
+            S.LineTo(G.Offset(140.0, 56.666666667)),
+            S.LineTo(G.Offset(160.0, 56.666666667)),
+          ],
+        },
+      ),
+      D.Edge(
+        1,
+        2,
+        S.Path{
+          elements => Array[
+            S.MoveTo(G.Offset(130.0, 95.0)),
+            S.LineTo(G.Offset(150.0, 95.0)),
+            S.LineTo(G.Offset(150.0, 73.333333333)),
+            S.LineTo(G.Offset(160.0, 73.333333333)),
+          ],
+        },
+      ),
+      D.Edge(
+        2,
+        3,
+        S.Path{
+          elements => Array[
+            S.MoveTo(G.Offset(260.0, 65.0)),
+            S.LineTo(G.Offset(290.0, 65.0)),
+          ],
+        },
+      ),
+    ],
+  )
+}
+//
+
+
+module end;

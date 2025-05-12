@@ -1,0 +1,28 @@
+module SkDebugViews;
+
+class ActionPerformer() extends UiEngine.ActionPerformer uses HasClassName {
+  //
+  fun perform(context: mutable SKStore.Context, count: Int): void {
+    debug(`Button clicked[${context.getTick()}]: count ${count}`)
+  }
+
+  fun serialize(): (String, Map<String, UiEngine.Serializable>) {
+    (this.getClassName(), Map[])
+  }
+
+  static fun deserialize(_value: Map<String, UiEngine.Serializable>): this {
+    ActionPerformer()
+  }
+}
+
+class App(info: SkDebugger.ServiceInfo) extends UiEngine.Renderable {
+  fun render(_context: mutable SKStore.Context): ?UiEngine.Description {
+    name = UiEngine.Label::simple(this.info.name);
+    platform = UiEngine.Label::simple(this.info.platform);
+    version = UiEngine.Label::simple(this.info.version);
+    first = UiEngine.Flex::vertical(Array[name, platform, version]);
+    Some(UiEngine.Split::horizontal(Tree(this.info), first, Ui.FromStart(200)))
+  }
+}
+
+module end;

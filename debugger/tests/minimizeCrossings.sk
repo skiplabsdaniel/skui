@@ -1,0 +1,221 @@
+module alias T = SKTest;
+module alias D = SkDebugger;
+
+module TestMinimizeCrossings;
+
+fun test(layers: Array<Array<String>>, edges: Array<(String, String)>): void {
+  l = D.GraphMetrics::make(layers, edges);
+  originalCrossings = l.countCrossings();
+  optimized = l.minimizeCrossings();
+  optimizedCrossings = optimized.countCrossings();
+
+  T.expectCmp(originalCrossings, optimizedCrossings, (v1, v2) -> {
+    cmp = v1.compare(v2);
+    cmp == EQ() || cmp == GT()
+  })
+}
+
+@test
+fun small_example(): void {
+  test(
+    Array[Array["A", "B"], Array["C", "D", "E"], Array["F", "G"]],
+    Array[
+      ("A", "C"),
+      ("A", "D"),
+      ("B", "D"),
+      ("B", "E"),
+      ("D", "F"),
+      ("E", "G"),
+    ],
+  )
+}
+
+@test
+fun no_crossings(): void {
+  test(Array[Array["A", "B"], Array["C", "D"]], Array[("A", "C"), ("B", "D")])
+}
+
+@test
+fun clear_crossings(): void {
+  test(Array[Array["A", "B"], Array["C", "D"]], Array[("A", "D"), ("B", "C")])
+}
+
+@test
+fun deep_hierarchy(): void {
+  test(
+    Array[Array["A"], Array["B", "C"], Array["D", "E"], Array["F"]],
+    Array[
+      ("A", "B"),
+      ("A", "C"),
+      ("B", "D"),
+      ("C", "E"),
+      ("D", "F"),
+      ("E", "F"),
+    ],
+  )
+}
+
+@test
+fun layer_with_no_nodes(): void {
+  test(
+    Array[Array["A", "B"], Array[], Array["C", "D"]],
+    Array[("A", "C"), ("B", "D")],
+  )
+}
+
+@test
+fun stress_large_graph(): void {
+  start = Time.time_ms();
+  test(
+    Array[
+      Array["N0", "N1", "N2", "N3", "N4", "N5", "N6", "N7", "N8", "N9"],
+      Array[
+        "N10",
+        "N11",
+        "N12",
+        "N13",
+        "N14",
+        "N15",
+        "N16",
+        "N17",
+        "N18",
+        "N19",
+      ],
+      Array[
+        "N20",
+        "N21",
+        "N22",
+        "N23",
+        "N24",
+        "N25",
+        "N26",
+        "N27",
+        "N28",
+        "N29",
+      ],
+      Array[
+        "N30",
+        "N31",
+        "N32",
+        "N33",
+        "N34",
+        "N35",
+        "N36",
+        "N37",
+        "N38",
+        "N39",
+      ],
+      Array[
+        "N40",
+        "N41",
+        "N42",
+        "N43",
+        "N44",
+        "N45",
+        "N46",
+        "N47",
+        "N48",
+        "N49",
+      ],
+    ],
+    Array[
+      ("N0", "N10"),
+      ("N1", "N11"),
+      ("N2", "N12"),
+      ("N3", "N13"),
+      ("N4", "N14"),
+      ("N5", "N15"),
+      ("N6", "N16"),
+      ("N7", "N17"),
+      ("N8", "N18"),
+      ("N9", "N19"),
+
+      ("N10", "N20"),
+      ("N11", "N21"),
+      ("N12", "N22"),
+      ("N13", "N23"),
+      ("N14", "N24"),
+      ("N15", "N25"),
+      ("N16", "N26"),
+      ("N17", "N27"),
+      ("N18", "N28"),
+      ("N19", "N29"),
+
+      ("N20", "N30"),
+      ("N21", "N31"),
+      ("N22", "N32"),
+      ("N23", "N33"),
+      ("N24", "N34"),
+      ("N25", "N35"),
+      ("N26", "N36"),
+      ("N27", "N37"),
+      ("N28", "N38"),
+      ("N29", "N39"),
+
+      ("N30", "N40"),
+      ("N31", "N41"),
+      ("N32", "N42"),
+      ("N33", "N43"),
+      ("N34", "N44"),
+      ("N35", "N45"),
+      ("N36", "N46"),
+      ("N37", "N47"),
+      ("N38", "N48"),
+      ("N39", "N49"),
+
+      // Additional random cross-links for complexity
+      ("N0", "N13"),
+      ("N2", "N14"),
+      ("N1", "N17"),
+      ("N4", "N18"),
+      ("N3", "N19"),
+      ("N11", "N24"),
+      ("N10", "N25"),
+      ("N12", "N22"),
+      ("N13", "N27"),
+      ("N14", "N29"),
+      ("N20", "N35"),
+      ("N22", "N34"),
+      ("N21", "N36"),
+      ("N24", "N39"),
+      ("N23", "N38"),
+      ("N30", "N47"),
+      ("N32", "N44"),
+      ("N31", "N46"),
+      ("N34", "N48"),
+      ("N33", "N49"),
+      ("N5", "N16"),
+      ("N6", "N12"),
+      ("N7", "N18"),
+      ("N8", "N11"),
+      ("N9", "N15"),
+      ("N15", "N21"),
+      ("N16", "N28"),
+      ("N17", "N25"),
+      ("N18", "N22"),
+      ("N19", "N27"),
+      ("N25", "N31"),
+      ("N26", "N30"),
+      ("N27", "N32"),
+      ("N28", "N33"),
+      ("N29", "N34"),
+      ("N35", "N40"),
+      ("N36", "N41"),
+      ("N37", "N42"),
+      ("N38", "N43"),
+      ("N39", "N44"),
+      ("N1", "N10"),
+      ("N2", "N10"),
+      ("N3", "N11"),
+      ("N4", "N12"),
+      ("N5", "N13"),
+    ],
+  );
+  end = Time.time_ms();
+  T.expectCmp(end - start, 1, (v1, v2) -> {
+    cmp = v1.compare(v2);
+    cmp == EQ() || cmp == LT()
+  })
+}
+
+module end;

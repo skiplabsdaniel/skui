@@ -1,0 +1,98 @@
+module SkDebugger;
+
+fun serviceFromJSON(jsv: JSON.Value): ServiceInfo {
+  jso = jsv.expectObject();
+  ServiceInfo{
+    name => jso.getString("name"),
+    platform => jso.getString("platform"),
+    version => jso.getString("version"),
+    inputs => jso.getArray("inputs").value.map(v -> v.expectString()).toArray(),
+    resources => jso
+      .getArray("resources")
+      .value.map(v -> v.expectString())
+      .toArray(),
+    remotesResources => jso
+      .getArray("remotesResources")
+      .value.map(v -> v.expectString())
+      .toArray(),
+  }
+}
+
+fun graphFromJSON(jsv: JSON.Value): Graph {
+  jso = jsv.expectObject();
+  Graph(
+    jso.getArray("inputs").value.map(nameFromJSON).toArray(),
+    jso.getArray("entities").value.map(entityFromJSON).toArray(),
+    jso
+      .maybeGetArray("reads")
+      .map(a -> a.value.map(readFromJSON).toArray())
+      .default(Array[]),
+    jso.getArray("outputs").value.map(nameFromJSON).toArray(),
+  )
+}
+
+private fun entityFromJSON(jsv: JSON.Value): Entity {
+  jso = jsv.expectObject();
+  getStringArray = (prop) ~> {
+    jso
+      .maybeGetArray(prop)
+      .map(a -> a.value.map(v ~> v.expectString()).toArray())
+      .default(Array[]);
+  };
+  Entity(
+    jso.getString("name"),
+    getStringArray("inputs"),
+    getStringArray("reads"),
+    typeFromJSON(jso.get("type")),
+  )
+}
+
+private fun readFromJSON(jsv: JSON.Value): Read {
+  jso = jsv.expectObject();
+  Read{collection => jso.getString("collection"), key => jso.get("key")}
+}
+
+private fun nameFromJSON(jsv: JSON.Value): Name {
+  jso = jsv.expectObject();
+  Name{name => jso.getString("name"), alias => jso.maybeGetString("alias")}
+}
+
+private fun typeFromJSON(jsv: JSON.Value): Type {
+  jso = jsv.expectObject();
+  Type{
+    operator => jso.getString("operator"),
+    constructors => jso
+      .maybeGetArray("constructors")
+      .map(a -> a.value.map(constructorFromJSON).toArray())
+      .default(Array[]),
+  }
+}
+
+private fun constructorFromJSON(jsv: JSON.Value): Constructor {
+  jso = jsv.expectObject();
+  Constructor{
+    name => jso.maybeGetString("name"),
+    parameters => jso
+      .maybeGetArray("parameters")
+      .map(a -> a.value.map(parameterFromJSON).toArray())
+      .default(Array[]),
+  }
+}
+
+private fun parameterFromJSON(jsv: JSON.Value): Parameter {
+  jso = jsv.expectObject();
+  Parameter{
+    type => parameterTypeFromJSON(jso.get("type")),
+    value => jso.get("value"),
+  }
+}
+
+private fun parameterTypeFromJSON(jsv: JSON.Value): PType {
+  jsv.expectString().lowercase() match {
+  | "collection" -> PCollection()
+  | "data" -> PData()
+  | v -> invariant_violation(`Unknown parameter type '${v}'`)
+  }
+}
+
+module end;
