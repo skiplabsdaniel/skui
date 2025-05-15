@@ -66,7 +66,6 @@ fun buildWidget(
   service: ServiceInfo,
   shared: Graph,
 ): void {
-  debug(shared);
   context.setGlobal("Ui.Properties.Root", SKStore.DirNameFile(rootPath));
   support = SKUIGL.DrawableSupport(SKUI.pictureToTexturable);
   optPath: ?String = None();
@@ -75,7 +74,7 @@ fun buildWidget(
     UiSerializableProp.Property::initValues(
       ctx,
       optPath,
-      Array[(SKStore.StrID("root"), Some(SkDebugViews.App(service)))],
+      Array[(SKStore.StrID("root"), Some(SkDebugViews.App(service, shared)))],
     );
     property = UiSerializableProp.Property::forName(ctx, optPath, "root");
     hdl = UiEngine.widgetPipeline(ctx, property, root);

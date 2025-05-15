@@ -1,4 +1,5 @@
 module alias G = Geometry;
+module alias SK = SKStore;
 
 module JSON;
 
@@ -35,10 +36,9 @@ base class TNode uses Hashable, Equality {
   | TConst(value: JSON.Value)
 
   fun getId(): String
-  | TInput(name)
-  | TOutput(name) ->
-    name.name
-  | TOperator(entity) -> entity.name
+  | TInput(name) -> `output.${name.name}`
+  | TOutput(name) -> `input.${name.name}`
+  | TOperator(entity) -> `op.${entity.name}`
   | TConst(value) -> base64(value.toString())
 
   fun getName(): String
@@ -645,34 +645,46 @@ class GraphController(
   space: Float = 10.0,
 ) extends Controller {
   //
-  fun getLayers(context: mutable SKStore.Context): Array<Array<Ui.Widget>> {
-    this.metrics.layers.map(l ->
-      l.map(id -> {
-        node = this.metrics.idToData[id];
-        path = this.path.makeChild(node.getId());
-        Ui.Label::create(
-          context,
-          path,
-          UiLabel.LamController{text => _ctx ~> Some(!node.getName())},
-          None(),
-        );
-      })
+  static fun make(
+    path: Ui.Path,
+    metrics: GraphMetrics<TNode>,
+    space: Float = 10.0,
+  ): GraphController {
+    GraphController(path, metrics, metrics.computeSeparators(), space)
+  }
+
+  fun getLayers(_context: mutable SK.Context): Array<Int> {
+    this.metrics.layers.map(l -> l.size())
+  }
+
+  fun getWidget(context: mutable SK.Context, layer: Int, row: Int): Ui.Widget {
+    id = this.metrics.layers[layer][row];
+    node = this.metrics.idToData[id];
+    path = this.path.makeChild(node.getId());
+    Ui.Label::create(
+      context,
+      path,
+      UiLabel.LamController{text => _ctx ~> Some(!node.getName())},
+      None(),
     )
   }
 
   fun buildEdges(
-    _ctx: mutable SKStore.Context,
-    _bounds: Array<Array<G.Rect>>,
+    _ctx: mutable SK.Context,
+    bounds: Array<Array<G.Rect>>,
   ): Array<Edge> {
-    invariant_violation("Not Implemented")
+    this.metrics.buildEdges((i, j) -> bounds[i][j], this.space, this.space)
   }
 
-  fun getSpaces(_ctx: mutable SKStore.Context): (Float, Float) {
-    invariant_violation("Not Implemented")
+  fun getSpaces(_ctx: mutable SK.Context): (Float, Float) {
+    (
+      (this.separators.i0 + 1).toFloat() * this.space,
+      (this.separators.i1 + 1).toFloat() * this.space,
+    )
   }
 
-  fun getEdgeStyle(_ctx: mutable SKStore.Context): EdgeStyle {
-    invariant_violation("Not Implemented")
+  fun getEdgeStyle(_ctx: mutable SK.Context): EdgeStyle {
+    EdgeStyle(3.0)
   }
 }
 

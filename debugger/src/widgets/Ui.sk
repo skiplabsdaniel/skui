@@ -1,5 +1,11 @@
 module alias G = Geometry;
+module alias SK = SKStore;
+
 module SkDebugger;
+
+fun widgetDirName(path: Ui.Path): SK.DirName {
+  path.toDirName("/debug/graph/widget/")
+}
 
 class EdgeStyle(
   thickness: Float,
@@ -27,39 +33,81 @@ class UserData(edges: Array<Edge>) extends Ui.UserData
 class DrawInfo(edges: Array<Edge>) extends Ui.DrawInfo
 
 base class Controller {
-  fun getLayers(mutable SKStore.Context): Array<Array<Ui.Widget>>;
-  fun buildEdges(mutable SKStore.Context, Array<Array<G.Rect>>): Array<Edge>;
-  fun getSpaces(mutable SKStore.Context): (Float, Float);
-  fun getEdgeStyle(mutable SKStore.Context): EdgeStyle;
+  fun getLayers(mutable SK.Context): Array<Int>;
+  fun getWidget(mutable SK.Context, Int, Int): Ui.Widget;
+  fun buildEdges(mutable SK.Context, Array<Array<G.Rect>>): Array<Edge>;
+  fun getSpaces(mutable SK.Context): (Float, Float);
+  fun getEdgeStyle(mutable SK.Context): EdgeStyle;
 }
+
+class LayerRow(layer: Int, row: Int) extends SK.Key
 
 class Parameters{controller: Controller} extends Ui.Parameters {}
 
 class UiGraph protected {
   controller: Controller,
+  layersHdl: SK.EHandle<LayerRow, Ui.WidgetFile>,
+  nodesHdl: SK.EHandle<LayerRow, Ui.Node>,
 } extends Ui.StrictWidget uses Ui.WithNodeCache, Ui.NoViewports {
   //
   type Params = Parameters;
   type Buffer = Ui.NodeCache;
 
   protected static fun make(
-    context: mutable SKStore.Context,
+    context: mutable SK.Context,
     path: Ui.Path,
     params: Parameters,
     cache: Ui.NodeCache,
     optConfiguration: ?Ui.Getter<Ui.Configuration> = None(),
   ): this {
+    noConstraints = Ui.BoxConstraints::new();
+    layersHdl = context
+      .makeDir(
+        SK.UnitID::keyType,
+        SK.IntFile::type,
+        widgetDirName(path.makeChild("source")),
+        Array[(SK.UnitID::singleton, SK.IntFile(0))],
+      )
+      .map(
+        LayerRow::keyType,
+        Ui.WidgetFile::type,
+        context,
+        widgetDirName(path),
+        (context, writer, _, _) ~> {
+          layers = params.controller.getLayers(context);
+          layers.eachWithIndex((lidx, lsize) ->
+            for (ridx in Range(0, lsize)) {
+              writer.set(
+                LayerRow(lidx, ridx),
+                Ui.WidgetFile(params.controller.getWidget(context, lidx, ridx)),
+              )
+            }
+          );
+        },
+      );
+    nodesHdl = layersHdl.map(
+      LayerRow::keyType,
+      Ui.Node::type,
+      context,
+      widgetDirName(path.makeChild("nodes")),
+      (context, writer, key, value) ~> {
+        widget = value.first.widget;
+        writer.set(key, widget.getNode(context, noConstraints))
+      },
+    );
     static{
       path,
       controller => params.controller,
       cache,
       optConfiguration,
       tick => context.getTick(),
+      layersHdl,
+      nodesHdl,
     }
   }
 
   static fun createForController(
-    context: mutable SKStore.Context,
+    context: mutable SK.Context,
     path: Ui.Path,
     controller: Controller,
     optConfiguration: ?Ui.Getter<Ui.Configuration> = None(),
@@ -68,12 +116,16 @@ class UiGraph protected {
   }
 
   fun layout(
-    context: mutable SKStore.Context,
+    context: mutable SK.Context,
     _constraints: Ui.BoxConstraints,
   ): Ui.Node {
     noConstraints = Ui.BoxConstraints::new();
     layers = this.controller.getLayers(context);
-    nodes = layers.map(l -> l.map(e -> e.getNode(context, noConstraints)));
+    nodes = layers.mapWithIndex((lidx, lsize) ->
+      Array::fillBy(lsize, ridx ->
+        this.nodesHdl.get(context, LayerRow(lidx, ridx))
+      )
+    );
     nodeSizes = nodes.map(l -> l.map(n -> n.size));
     (hSpace, vSpace) = this.controller.getSpaces(context);
     (size, nodeBounds) = layout(nodeSizes, hSpace, vSpace);
@@ -92,7 +144,7 @@ class UiGraph protected {
   }
 
   fun computeLayer(
-    _context: mutable SKStore.Context,
+    _context: mutable SK.Context,
     support: Ui.DrawableSupport,
     absolute: G.Offset,
     layer: Ui.LayerId,
@@ -118,7 +170,7 @@ class UiGraph protected {
   }
 
   fun checkFocusHandlers(
-    _context: mutable SKStore.Context,
+    _context: mutable SK.Context,
     _nodeInfo: Ui.Getter<Ui.NodeInfo>,
     handlers: readonly Vector<FWK.FocusHandler>,
   ): Vector<FWK.FocusHandler> {
@@ -127,7 +179,7 @@ class UiGraph protected {
   }
 
   fun computeDrawInfo(
-    context: mutable SKStore.Context,
+    context: mutable SK.Context,
     _support: Ui.DrawableSupport,
     _relative: Geometry.Offset,
     _nodeSum: Ui.NodeSum,

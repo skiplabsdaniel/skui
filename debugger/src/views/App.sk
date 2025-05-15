@@ -1,4 +1,46 @@
+module alias D = SkDebugger;
+module alias E = UiEngine;
+
 module SkDebugViews;
+
+class Graph{graph: D.Graph, space: Float = 10.0} extends E.Description {
+  //
+  fun collect(_collector: E.Renderable -> void): void {
+    void
+  }
+
+  fun build(
+    context: mutable SKStore.Context,
+    name: String,
+    _root: UiRoot.Storage,
+    _prebuilt: (mutable SKStore.Context, String) ~> ?Ui.Widget,
+  ): Ui.Widget {
+    path = Ui.Path::create(`#debug#${static::identifier}#${name}`);
+    metrics = D.GraphMetrics::compute(this.graph, D.TNodeFactory());
+    controller = D.GraphController::make(path, metrics, this.space);
+    D.UiGraph::createForController(context, path, controller)
+  }
+
+  const identifier: String = "graph";
+
+  fun serialize(): (String, Map<String, E.Serializable>) {
+    (
+      static::identifier,
+      Map[
+        "graph" => invariant_violation("Not Implemented"),
+        "space" => E.SFloat(this.space),
+      ],
+    )
+  }
+
+  static fun deserialize(value: Map<String, E.Serializable>): this {
+    Graph{
+      graph => invariant_violation("Not Implemented"),
+      space => E.getFloat(value, "space"),
+      //optConfiguration => E.maybeGet(value, "configuration"),
+    }
+  }
+}
 
 class ActionPerformer() extends UiEngine.ActionPerformer uses HasClassName {
   //
@@ -15,13 +57,16 @@ class ActionPerformer() extends UiEngine.ActionPerformer uses HasClassName {
   }
 }
 
-class App(info: SkDebugger.ServiceInfo) extends UiEngine.Renderable {
+class App(info: D.ServiceInfo, shared: D.Graph) extends UiEngine.Renderable {
+  //
   fun render(_context: mutable SKStore.Context): ?UiEngine.Description {
-    name = UiEngine.Label::simple(this.info.name);
-    platform = UiEngine.Label::simple(this.info.platform);
-    version = UiEngine.Label::simple(this.info.version);
-    first = UiEngine.Flex::vertical(Array[name, platform, version]);
-    Some(UiEngine.Split::horizontal(Tree(this.info), first, Ui.FromStart(200)))
+    Some(
+      UiEngine.Split::horizontal(
+        Tree(this.info),
+        Graph{graph => this.shared},
+        Ui.FromStart(200),
+      ),
+    )
   }
 }
 
