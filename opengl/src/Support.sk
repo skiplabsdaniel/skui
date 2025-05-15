@@ -275,10 +275,6 @@ class DrawableSupport(
     );
   }
 
-  fun shape(_path: Shape.Path, _paint: Ui.Paint): Ui.Drawable {
-    invariant_violation("Not implemented")
-  }
-
   fun ellipse(
     offset: Geometry.Offset,
     size: Geometry.Size,
