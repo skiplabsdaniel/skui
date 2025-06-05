@@ -63,7 +63,8 @@ fun getItems(
         result = future.get().value;
         if (result.status == 200) {
           toResourceList(result) match {
-          | Success(list) -> Some(list)
+          | Success(list) if (!list.isEmpty()) -> Some(list)
+          | Success _ -> Some(Array["noinstances"])
           | Failure(e) -> Some(Array[`error:${e.getMessage()}`])
           }
         } else {
@@ -100,8 +101,12 @@ fun getItem(
     instanceStr,
     Some(Ui.Path(_, Some(Ui.Path("resources", None())))),
   ) ->
-    instance = D.instanceFromJSON(SKJSON.decode(instanceStr));
-    UiTree.Item{text => !instance.params.prettyPrint(), leaf => true}
+    if (instanceStr == "noinstances") {
+      UiTree.Item{text => !"No resource instances", leaf => true}
+    } else {
+      instance = D.instanceFromJSON(SKJSON.decode(instanceStr));
+      UiTree.Item{text => !instance.params.prettyPrint(), leaf => true}
+    }
   | _ -> UiTree.Item{text => !"TODO", leaf => true}
   }
 }
@@ -112,8 +117,12 @@ fun getBadge(_context: mutable SKStore.Context, path: Ui.Path): ?Text {
     instanceStr,
     Some(Ui.Path(_, Some(Ui.Path("resources", None())))),
   ) ->
-    instance = D.instanceFromJSON(SKJSON.decode(instanceStr));
-    Some(Raw(instance.clients.size().toString()))
+    if (instanceStr != "noinstances") {
+      instance = D.instanceFromJSON(SKJSON.decode(instanceStr));
+      Some(Raw(instance.clients.size().toString()))
+    } else {
+      None()
+    }
   | _ -> None()
   }
 }
@@ -131,7 +140,7 @@ fun fire(
       instanceStr,
       Some(Ui.Path(resource, Some(Ui.Path("resources", None())))),
     ),
-  ) ->
+  ) if (instanceStr != "noinstances") ->
     instance = D.instanceFromJSON(SKJSON.decode(instanceStr));
     env.openGraph(context, D.ResourceKey(resource, instance.params))
   | _ -> void
