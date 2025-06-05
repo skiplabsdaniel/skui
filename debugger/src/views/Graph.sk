@@ -1,0 +1,101 @@
+module alias SK = SKStore;
+module alias D = SkDebugger;
+
+module SkDebugViews;
+
+fun buildGraphView(
+  context: mutable SKStore.Context,
+  path: Ui.Path,
+  env: D.Environment,
+): Ui.Widget {
+  fill = Ui.webColor("#d62f0d").default(Colors.black());
+  titlePath = path.makeChild("title");
+  decoration = Ui.Background(
+    Ui.webColor("#feeee0").default(Colors.white()),
+    Geometry.Insets::all(6.0),
+  );
+  text = Ui.VText::createForController(
+    context,
+    titlePath.makeChild("text"),
+    UiText.LamController{
+      text => env.getGraphTitle,
+      style => Ui.default(
+        Text.Style{
+          faceId => UiTheme.bigFace,
+          fill,
+          hAlignment => Text.Center(),
+        },
+      ),
+    },
+  );
+  decorated = Ui.Decorated::create(
+    context,
+    titlePath,
+    UiDecorated.LamController{
+      decoration => Ui.default(decoration),
+      widget => Ui.default(Some(text)),
+    },
+  );
+  indicator = D.indicator(context, path.makeChild("indicator"));
+  error = Ui.VText::createForController(
+    context,
+    titlePath.makeChild("error"),
+    UiText.LamController{
+      text => ctx ~>
+        env.getGraphWidget(ctx) match {
+        | Some(future) ->
+          if (future.isLoading()) {
+            Raw("")
+          } else {
+            future.error() match {
+            | Some(failure) -> failure.optError.default(!"Uknown")
+            | _ -> Raw("")
+            }
+          }
+        | None() -> Raw("")
+        },
+      style => Ui.default(
+        Text.Style{
+          faceId => UiTheme.bigFace,
+          fill,
+          hAlignment => Text.Center(),
+        },
+      ),
+    },
+  );
+  other = Ui.AspectRatio::create(
+    context,
+    path.makeChild("centered"),
+    UiAspectRatio.LamController{
+      widget => ctx ~> {
+        env.getGraphWidget(ctx) match {
+        | Some(future) ->
+          if (future.isLoading()) {
+            indicator
+          } else {
+            future.error() match {
+            | Some _ -> error
+            | _ -> future.get()
+            }
+          }
+        | None() -> indicator
+        }
+      },
+      centered => Ui.default(true),
+      aspectRatio => Ui.default(0.0),
+    },
+    Some(Ui.default(UiFlex.Configuration{flex => 1})),
+  );
+  Ui.Flex::createForController(
+    context,
+    path,
+    UiFlex.LamController{
+      widgets => Ui.WidgetsArray(Array[decorated, other]),
+      direction => Ui.default(Ui.VerticalAxis()),
+      mainAxisAlignment => Ui.default(UiFlex.Start()),
+      crossAxisAlignment => Ui.default(UiFlex.CrossStretch()),
+    },
+  )
+}
+
+module end;

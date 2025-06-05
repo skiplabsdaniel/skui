@@ -1,73 +1,66 @@
 module alias D = SkDebugger;
-module alias E = UiEngine;
 
 module SkDebugViews;
 
-class Graph{graph: D.Graph, space: Float = 10.0} extends E.Description {
-  //
-  fun collect(_collector: E.Renderable -> void): void {
-    void
-  }
-
-  fun build(
-    context: mutable SKStore.Context,
-    name: String,
-    _root: UiRoot.Storage,
-    _prebuilt: (mutable SKStore.Context, String) ~> ?Ui.Widget,
-  ): Ui.Widget {
-    path = Ui.Path::create(`#debug#${static::identifier}#${name}`);
-    metrics = D.GraphMetrics::compute(this.graph, D.TNodeFactory());
-    controller = D.GraphController::make(path, metrics, this.space);
-    D.UiGraph::createForController(context, path, controller)
-  }
-
-  const identifier: String = "graph";
-
-  fun serialize(): (String, Map<String, E.Serializable>) {
-    (
-      static::identifier,
-      Map[
-        "graph" => invariant_violation("Not Implemented"),
-        "space" => E.SFloat(this.space),
-      ],
-    )
-  }
-
-  static fun deserialize(value: Map<String, E.Serializable>): this {
-    Graph{
-      graph => invariant_violation("Not Implemented"),
-      space => E.getFloat(value, "space"),
-      //optConfiguration => E.maybeGet(value, "configuration"),
-    }
-  }
+fun buildSplit(
+  context: mutable SKStore.Context,
+  path: Ui.Path,
+  env: D.Environment,
+  info: D.ServiceInfo,
+  conf: Ui.Configuration,
+): Ui.Widget {
+  graphView = buildGraphView(context, path.makeChild("graph"), env);
+  treeView = buildTreeView(context, path.makeChild("tree"), env, info);
+  time = context.timeStamp();
+  prop = time.toString();
+  UiSeparationProp.Property::initValues(
+    context,
+    Some(prop),
+    Array[(SKStore.StrID("app-split"), Some(Ui.FromStart(200)))],
+  );
+  appSplitProp = UiSeparationProp.Property::forName(
+    context,
+    Some(prop),
+    "app-split",
+  );
+  Ui.Split::create(
+    context,
+    path,
+    UiSplit.LamController{
+      first => Ui.default(treeView),
+      second => Ui.default(graphView),
+      axis => Ui.defaultOne(Ui.HorizontalAxis()),
+      separation => Ui.defaultOne(appSplitProp),
+    },
+    Some(_ ~> conf),
+  )
 }
 
-class ActionPerformer() extends UiEngine.ActionPerformer uses HasClassName {
-  //
-  fun perform(context: mutable SKStore.Context, count: Int): void {
-    debug(`Button clicked[${context.getTick()}]: count ${count}`)
-  }
-
-  fun serialize(): (String, Map<String, UiEngine.Serializable>) {
-    (this.getClassName(), Map[])
-  }
-
-  static fun deserialize(_value: Map<String, UiEngine.Serializable>): this {
-    ActionPerformer()
-  }
-}
-
-class App(info: D.ServiceInfo, shared: D.Graph) extends UiEngine.Renderable {
-  //
-  fun render(_context: mutable SKStore.Context): ?UiEngine.Description {
-    Some(
-      UiEngine.Split::horizontal(
-        Tree(this.info),
-        Graph{graph => this.shared},
-        Ui.FromStart(200),
-      ),
-    )
-  }
+fun buildApp(
+  context: mutable SKStore.Context,
+  path: Ui.Path,
+  env: D.Environment,
+  info: D.ServiceInfo,
+): Ui.Widget {
+  bar = buildActionsBar(context, path.makeChild("actions-bar"), env);
+  split = buildSplit(
+    context,
+    path.makeChild("split"),
+    env,
+    info,
+    UiFlex.Configuration{flex => 1},
+  );
+  Ui.Flex::createForController(
+    context,
+    path,
+    UiFlex.LamController{
+      widgets => Ui.WidgetsArray(Array[bar, split]),
+      direction => Ui.default(Ui.VerticalAxis()),
+      mainAxisAlignment => Ui.default(UiFlex.Start()),
+      crossAxisAlignment => Ui.default(UiFlex.CrossStretch()),
+      mainAxisSize => Ui.default(UiFlex.Max()),
+    },
+  )
 }
 
 module end;

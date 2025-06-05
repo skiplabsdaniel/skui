@@ -1,0 +1,67 @@
+module alias D = SkDebugger;
+module alias E = UiEngine;
+module alias SK = SKStore;
+
+module SkDebugViews;
+
+fun buildAction(
+  context: mutable SKStore.Context,
+  path: Ui.Path,
+  icon: Ui.IconBuilder,
+  onFire: (mutable SKStore.Context, ?Int) ~> void,
+): Ui.Widget {
+  state = UiButton.init(context, path);
+  Ui.Button::create(
+    context,
+    path,
+    UiButton.Parameters(
+      UiButton.LamController{
+        kind => _ctx ~> UiButton.Regular(),
+        mode => _ctx ~> UiButton.Stroked(),
+        icon => (ctx, size) ~> icon.buildIcon(ctx, size),
+        onFire,
+      },
+      state,
+    ),
+  )
+}
+
+fun buildActionsBar(
+  context: mutable SKStore.Context,
+  path: Ui.Path,
+  _env: D.Environment,
+): Ui.Widget {
+  up = buildAction(
+    context,
+    path.makeChild("up"),
+    Ui.FromIconSupport(UiIcon.ArrowUp()),
+    (_ctx, _count) ~> debug("Goes Up"),
+  );
+  update = buildAction(
+    context,
+    path.makeChild("update"),
+    Ui.FromIconSupport(UiIcon.Reload()),
+    (_ctx, _count) ~> debug("Update"),
+  );
+  home = buildAction(
+    context,
+    path.makeChild("home"),
+    Ui.FromIconSupport(UiIcon.Home()),
+    (_ctx, _count) ~> debug("Home"),
+  );
+  actions = Ui.Flex::createForController(
+    context,
+    path.makeChild("actions"),
+    UiFlex.LamController{widgets => Ui.WidgetsArray(Array[up, update, home])},
+  );
+  Ui.Decorated::create(
+    context,
+    path,
+    UiDecorated.LamController{
+      decoration => Ui.default(Ui.Padding(Geometry.Insets::all(5.0))),
+      widget => Ui.default(Some(actions)),
+    },
+  )
+}
+
+module end;

@@ -1,4 +1,4 @@
-module alias H = UiEngineHandle;
+module alias SK = SKStore;
 
 module SkDebugger;
 
@@ -31,26 +31,23 @@ fun launch(url: String, args: Cli.ParseResults): Result<void, .Exception> {
     | Failure(e) -> return Failure(e)
     | Success(si) -> si
     };
-    sharedUrl = Path.join(uri, "v1/shared");
-    SKUtils.fetch(sharedUrl)? match {
-    | SKUtils.FetchResult(200, _, Some(strGraph)) ->
-      sharedGraph = Result::guard(() ->
-        graphFromJSON(JSON.decode(strGraph))
-      ) match {
-      | Failure(e) -> return Failure(e)
-      | Success(si) -> si
-      };
-      wId = 0;
-      _ = SKStore.gContextInit(SKStore.Context::create{});
-      SKStore.Context::withGc(context ~> {
-        buildWidget(context, wId, serviceInfo, sharedGraph);
-        context.initPre();
-        context.update();
-      });
-      SKUIMain.init(wId, kAbout, args);
-      Success(void)
-    | _ -> Failure(DebuggerException("Unable to retrieve Skip shared Graph"))
-    }
+    wId = 0;
+    _ = SK.gContextInit(SK.Context::create{});
+    SK.Context::withGc(context ~> {
+      env = init(context, uri, wId, serviceInfo);
+      buildWidget(context, env, serviceInfo);
+      context.initPre();
+      context.updateIfRoot();
+      context.addOnOnIniliazed(
+        SK.Updater(ctx ~>
+          ctx.getPersistent(kEnvKey).map(Environment::bType).each(env ->
+            env.openGraph(ctx, SharedKey())
+          )
+        ),
+      )
+    });
+    SKUIMain.init(wId, kAbout, args);
+    Success(void)
   | _ -> Failure(DebuggerException("Unable to retrieve Skip service"))
   };
 }

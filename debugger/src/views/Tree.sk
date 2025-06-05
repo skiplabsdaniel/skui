@@ -1,4 +1,5 @@
-module alias E = UiEngine;
+module alias SK = SKStore;
+module alias D = SkDebugger;
 
 module SkDebugViews;
 
@@ -6,67 +7,169 @@ fun icon(name: String): UiIcon.Description {
   UiIcon.Description(UiIcon.KCategory("themify"), name);
 }
 
-class Tree(info: SkDebugger.ServiceInfo) extends E.Renderable {
-  //
-  fun render(_context: mutable SKStore.Context): ?E.Description {
-    items = mutable Vector[
-      this.item(
-        "Inputs",
-        "inputs",
-        this.info.inputs,
-        true,
-        Some(icon("import")),
-      ),
-      this.item(
-        "Resources",
-        "resources",
-        this.info.resources,
-        true,
-        Some(icon("cloud")),
-      ),
-    ];
-    if (!this.info.remotesResources.isEmpty()) {
-      items.push(
-        this.item(
-          "Remotes resources",
-          "remotes",
-          this.info.remotesResources,
-          true,
-        ),
+fun getProgress(
+  context: mutable SK.Context,
+  path: Ui.Path,
+  env: D.Environment,
+): ?Ui.Progress {
+  res = path match {
+  | Ui.Path(resource, Some(Ui.Path("resources", None()))) ->
+    future = env.fetchResourceInstances(context, resource);
+    if (future.isLoading()) {
+      Some(
+        future
+          .progression()
+          .map(v -> Ui.Progression(v))
+          .default(Ui.Indeterminate()),
       )
-    };
-    tree = E.Tree::create{
-      items => E.ARef(items.toArray()),
-      optConfiguration => Some(E.BRef(UiFlex.Configuration{flex => 1})),
-    };
-    name = E.Label::simple(this.info.name);
-    platform = E.Label::simple(this.info.platform);
-    version = E.Label::simple(this.info.version);
-    Some(
-      E.Flex::vertical(
-        Array[name, platform, version, tree],
-        UiFlex.Start(),
-        UiFlex.CrossStretch(),
-      ),
-    )
-  }
+    } else {
+      None()
+    }
+  | _ -> None()
+  };
+  res;
+}
 
-  private fun item(
-    name: String,
-    id: String,
-    values: Array<String>,
-    leaf: Bool,
-    icon: ?UiIcon.Description = None(),
-  ): E.TreeItem {
-    items = values.map(i ->
-      E.TreeItem::create(`${id}/${i}`, UiTree.Item{text => !i, leaf, icon})
-    );
-    E.TreeItem::create(
-      id,
-      UiTree.Item{text => !name, leaf => false},
-      Some(E.ARef(items)),
-    );
+fun toResourceList(
+  result: SKUtils.FetchResult,
+): Result<Array<String>, .Exception> {
+  result.json(jsv ~> jsv.expectArray().value.map(v -> v.toString()).toArray())
+}
+
+fun getItems(
+  context: mutable SK.Context,
+  optPath: ?Ui.Path,
+  env: D.Environment,
+  info: D.ServiceInfo,
+): ?Array<String> {
+  res = optPath match {
+  | Some(Ui.Path("inputs", None())) -> Some(info.inputs)
+  | Some(Ui.Path("resources", None())) -> Some(info.resources)
+  | Some(Ui.Path("remotes", None())) -> Some(info.remotesResources)
+  | None() ->
+    items = if (!info.remotesResources.isEmpty()) {
+      Some(Array["service", "inputs", "resources", "remotes"])
+    } else {
+      Some(Array["service", "inputs", "resources"])
+    };
+    items
+  | Some(Ui.Path(resource, Some(Ui.Path("resources", None())))) ->
+    future = env.fetchResourceInstances(context, resource);
+    if (!future.isLoading()) {
+      future.error() match {
+      | Some(failure) ->
+        Some(Array[`error:${failure.optError.default(!"Uknown")}`])
+      | _ ->
+        result = future.get().value;
+        if (result.status == 200) {
+          toResourceList(result) match {
+          | Success(list) -> Some(list)
+          | Failure(e) -> Some(Array[`error:${e.getMessage()}`])
+          }
+        } else {
+          Some(Array[`error:HTTP error with status ${result.status}`])
+        }
+      }
+    } else {
+      None()
+    }
+  | _ -> None()
+  };
+  res;
+}
+
+fun getItem(
+  _context: mutable SK.Context,
+  path: Ui.Path,
+  service: UiTree.Item,
+): UiTree.Item {
+  path match {
+  | Ui.Path("service", None()) -> service
+  | Ui.Path("inputs", None()) -> UiTree.Item{text => !"Inputs", leaf => false}
+  | Ui.Path(i, Some(Ui.Path("inputs", None()))) ->
+    UiTree.Item{text => !i, leaf => true, icon => Some(icon("import"))}
+  | Ui.Path("resources", None()) ->
+    UiTree.Item{text => !"Resources", leaf => false}
+  | Ui.Path(r, Some(Ui.Path("resources", None()))) ->
+    UiTree.Item{text => !r, leaf => false, icon => Some(icon("cloud"))}
+  | Ui.Path("remotes", None()) ->
+    UiTree.Item{text => !"Remote resources", leaf => false}
+  | Ui.Path(r, Some(Ui.Path("remotes", None()))) ->
+    UiTree.Item{text => !r, leaf => false, icon => Some(icon("world"))}
+  | Ui.Path(
+    instanceStr,
+    Some(Ui.Path(_, Some(Ui.Path("resources", None())))),
+  ) ->
+    instance = D.instanceFromJSON(SKJSON.decode(instanceStr));
+    UiTree.Item{text => !instance.params.prettyPrint(), leaf => true}
+  | _ -> UiTree.Item{text => !"TODO", leaf => true}
   }
+}
+
+fun getBadge(_context: mutable SKStore.Context, path: Ui.Path): ?Text {
+  path match {
+  | Ui.Path(
+    instanceStr,
+    Some(Ui.Path(_, Some(Ui.Path("resources", None())))),
+  ) ->
+    instance = D.instanceFromJSON(SKJSON.decode(instanceStr));
+    Some(Raw(instance.clients.size().toString()))
+  | _ -> None()
+  }
+}
+
+fun fire(
+  context: mutable SK.Context,
+  optPath: ?Ui.Path,
+  _selection: Array<Ui.Path>,
+  env: D.Environment,
+): void {
+  optPath match {
+  | Some(Ui.Path("service", None())) -> env.openGraph(context, D.SharedKey())
+  | Some(
+    Ui.Path(
+      instanceStr,
+      Some(Ui.Path(resource, Some(Ui.Path("resources", None())))),
+    ),
+  ) ->
+    instance = D.instanceFromJSON(SKJSON.decode(instanceStr));
+    env.openGraph(context, D.ResourceKey(resource, instance.params))
+  | _ -> void
+  }
+}
+
+fun buildTreeView(
+  context: mutable SKStore.Context,
+  path: Ui.Path,
+  env: D.Environment,
+  info: D.ServiceInfo,
+): Ui.Widget {
+  serviceItem = UiTree.Item{
+    text => !info.name,
+    leaf => true,
+    icon => Some(icon("double-angle-right")),
+    tooltip => Some(
+      I18N.format(
+        !"platform: {1}\nversion: {2}",
+        Vector<Text>[Raw(info.platform), Raw(info.version)],
+      ),
+    ),
+  };
+  controller = UiTree.LamController{
+    selectionModel => (_ctx, _iu) ~> UiTree.Single(),
+    items => (ctx, optPath) ~> getItems(ctx, optPath, env, info),
+    item => (ctx, path) ~> getItem(ctx, path, serviceItem),
+    progress => (ctx, path) ~> getProgress(ctx, path, env),
+    badge => getBadge,
+    fire => (ctx, optPatgh, selection) ~> fire(ctx, optPatgh, selection, env),
+  };
+  treePath = path.makeChild("tree");
+  Ui.Tree::create(
+    context,
+    treePath,
+    UiTree.init(context, treePath, controller),
+    Some(_ ~> UiFlex.Configuration{flex => 1}),
+  )
 }
 
 module end;

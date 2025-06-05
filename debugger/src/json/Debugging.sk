@@ -31,6 +31,20 @@ fun graphFromJSON(jsv: JSON.Value): Graph {
   )
 }
 
+fun instanceFromJSON(jsv: SKJSON.CJSON): Instance {
+  jso = SKJSON.asObject(jsv);
+  Instance(
+    SKJSON.getValue(jso, "params").fromSome(
+      "Instance 'params' must be defined",
+    ),
+    SKJSON.expectArray(
+      SKJSON.getArray(jso, "clients").fromSome(
+        "Instance 'clients' must be defined",
+      ),
+    ).map(v ~> SKJSON.asString(v)),
+  )
+}
+
 private fun entityFromJSON(jsv: JSON.Value): Entity {
   jso = jsv.expectObject();
   getStringArray = (prop) ~> {

@@ -9,7 +9,7 @@ module SkuiEngExamplesBuild;
 @skui_build__source_dirs
 fun source_dirs(env: SkuiBuild.Env): Array<String> {
   // If the environment is not targeting WebAssembly, include the native source directory
-  if (!env.isWasm32()) Array["../views/native/src"] else Array[]
+  if (!env.isWasm32()) Array["../views/native/src", "cc"] else Array[]
 }
 
 /**
@@ -54,14 +54,35 @@ fun extra_sources(env: SkuiBuild.Env): Array<String> {
 
 module end;
 
+module Cc;
+
+extension class Build {
+  fun filterC(): Build {
+    !this.files_ = this.files_.filter(f -> f.endsWith(".c"));
+    this
+  }
+
+  fun filterCpp(): Build {
+    !this.files_ = this.files_.filter(f -> f.endsWith(".cpp"));
+    this
+  }
+}
+
+module end;
+
 /**
  * @brief Main function to build the project and handle errors.
  */
 fun main(): void {
-  SkuiBuild.build("skdebugger") match {
+  SkuiBuild.create() match {
   | Failure(err) ->
     skipExit(err.code) ///< Exit with error code on failure
-  | _ ->
-    void ///< Do nothing on success
+  | Success((build, _)) ->
+    build.each(b -> {
+      bcpp = b.filterCpp().cpp(true).flag("-std=c++17");
+      bcpp.compile("skdebugger");
+      bc = b.filterC();
+      bc.compile("skdebugger1");
+    })
   }
 }

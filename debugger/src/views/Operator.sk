@@ -1,0 +1,52 @@
+module SkDebugViews;
+
+class DOperator(
+  fill: Ui.Paint,
+  stroke: Ui.Paint,
+  width: Float,
+  thickness: Float,
+) extends Ui.Decoration {
+  // TODO Missing size for Dim
+  fun getPadding(_direction: Ui.HorizontalDirection): Geometry.Insets {
+    Geometry.Insets::all(this.width)
+  }
+
+  fun fillDrawables(
+    _context: mutable SKStore.Context,
+    support: Ui.DrawableSupport,
+    offset: Geometry.Offset,
+    size: Geometry.Size,
+    _direction: Ui.HorizontalDirection,
+    drawables: mutable Vector<Ui.Drawable>,
+  ): void {
+    mid = this.thickness / 2.0;
+    fillPath = Shape.Path{
+      elements => Array[
+        Shape.MoveTo(offset + Geometry.Offset(mid, this.width)),
+        Shape.LineTo(offset + Geometry.Offset(this.width, mid)),
+        Shape.LineTo(offset + Geometry.Offset(size.width - this.width, mid)),
+        Shape.LineTo(offset + Geometry.Offset(size.width - mid, this.width)),
+        Shape.LineTo(
+          offset + Geometry.Offset(size.width - mid, size.height - this.width),
+        ),
+        Shape.LineTo(
+          offset + Geometry.Offset(size.width - this.width, size.height - mid),
+        ),
+        Shape.LineTo(offset + Geometry.Offset(this.width, size.height - mid)),
+        Shape.LineTo(offset + Geometry.Offset(mid, size.height - this.width)),
+        Shape.ClosePath(),
+      ],
+    };
+    offsets = Shape.Path::thickenPolyline(
+      fillPath.sample(),
+      this.thickness,
+      Shape.CButt(),
+      Shape.JBevel(),
+    );
+    strokePath = Shape.Path::polyline(offsets, true);
+    drawables.push(support.shape(fillPath, this.fill));
+    drawables.push(support.shape(strokePath, this.stroke))
+  }
+}
+
+module end;

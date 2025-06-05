@@ -1,0 +1,219 @@
+module alias SK = SKStore;
+
+module SkDebugger;
+
+const kEnvKey: String = "Debug.Environment";
+
+base class GraphKey extends SK.Key, SK.File {
+  children =
+  | SharedKey()
+  | ResourceKey(String, SKJSON.CJSON)
+
+  static fun bKeyType(obj: SK.Key): GraphKey {
+    obj match {
+    | x @ GraphKey _ -> x
+    | _ -> SK.cast_violation("SkDebugger.GraphKey", obj)
+    }
+  }
+
+  static fun bType(obj: SK.File): GraphKey {
+    obj match {
+    | x @ GraphKey _ -> x
+    | _ -> SK.cast_violation("SkDebugger.GraphKey", obj)
+    }
+  }
+}
+
+base class Environment(uri: String, wId: Int) extends SK.File {
+  fun getGraphTitle(mutable SK.Context): Text;
+  fun getGraphWidget(mutable SK.Context): ?SK.Future<Ui.Widget>;
+  fun fetch(mutable SK.Context, Fetch): SK.Future<FetchResult>;
+  fun openGraph(mutable SK.Context, GraphKey): void;
+
+  static fun bType(obj: SK.File): Environment {
+    obj match {
+    | x @ Environment _ -> x
+    | _ -> SK.cast_violation("SkDebugger.Environment", obj)
+    }
+  }
+
+  fun fetchResourceInstances(
+    context: mutable SK.Context,
+    resource: String,
+  ): SK.Future<FetchResult> {
+    this.fetch(
+      context,
+      Fetch(Path.join(this.uri, `v1/instances/${resource}`), SKUtils.Get()),
+    );
+  }
+}
+
+class LamEnvironment(
+  private graphTitle: Ui.Getter<Text>,
+  private graphWidget: Ui.Getter<?SK.Future<Ui.Widget>>,
+  private fetch_: Ui.GetterOne<SK.Future<FetchResult>, Fetch>,
+  private openGraph_: (mutable SK.Context, GraphKey) ~> void,
+) extends Environment {
+  //
+  fun getGraphTitle(ctx: mutable SK.Context): Text {
+    this.graphTitle(ctx)
+  }
+
+  fun getGraphWidget(ctx: mutable SK.Context): ?SK.Future<Ui.Widget> {
+    this.graphWidget(ctx)
+  }
+
+  fun fetch(ctx: mutable SK.Context, f: Fetch): SK.Future<FetchResult> {
+    this.fetch_(ctx, f)
+  }
+
+  fun openGraph(ctx: mutable SK.Context, g: GraphKey): void {
+    this.openGraph_(ctx, g)
+  }
+}
+
+fun init(
+  context: mutable SK.Context,
+  uri: String,
+  wId: Int,
+  service: ServiceInfo,
+  space: Float = 10.0,
+): Environment {
+  fetch = initFetchCall(context, wId, rootPath.sub("fetch"));
+  graphsHDL = context.makeDir(
+    GraphKey::bKeyType,
+    SK.IntFile::type,
+    rootPath.sub("graphs"),
+    Array[],
+  );
+  openedGraphHDL = context.makeDir(
+    SK.UnitID::keyType,
+    GraphKey::bType,
+    rootPath.sub("graphs/opened"),
+    Array[],
+  );
+  collectedHdl = graphsHDL.map(
+    GraphKey::bKeyType,
+    SK.Loadable::btype,
+    context,
+    rootPath.sub("collected"),
+    (ctx, writer, key, _it) ~> {
+      options = key match {
+      | SharedKey() -> Fetch(Path.join(uri, "v1/shared"))
+      | ResourceKey(name, params) ->
+        Fetch(
+          Path.join(uri, `v1/resource/${name}`),
+          SKUtils.Get(),
+          Map[],
+          Some(params.prettyPrint()),
+        )
+      };
+      writer.set(key, fetch(ctx, options).asLoadable())
+    },
+  );
+  parsedHdl = collectedHdl.map(
+    GraphKey::bKeyType,
+    SK.Loadable::btype,
+    context,
+    rootPath.sub("parsed"),
+    (ctx, writer, key, it) ~> {
+      writer.set(
+        key,
+        it.first.then(ctx, (_, f) ~> {
+          result = FetchResult::type(f).value;
+          if (result.status == 200) {
+            result.json(graphFromJSON) match {
+            | Failure(e) ->
+              error = I18N.format(
+                !"Unable to build graph {1}",
+                Vector<Text>[!e.getMessage()],
+              );
+              SK.LoadFailed(Some(error))
+            | Success(graph) -> SK.Loaded(graph)
+            }
+          } else {
+            error = I18N.format(
+              !"HTTP error with status {1}",
+              Vector<Text>[Raw(result.status.toString())],
+            );
+            SK.LoadFailed(Some(error))
+          }
+        }),
+      );
+    },
+  );
+  metricsHdl = parsedHdl.map(
+    GraphKey::bKeyType,
+    SK.Loadable::btype,
+    context,
+    rootPath.sub("metrics"),
+    (ctx, writer, key, it) ~> {
+      writer.set(
+        key,
+        it.first.then(ctx, (_, f) ~> {
+          SK.Loaded(GraphMetrics::compute(Graph::type(f), TNodeFactory()))
+        }),
+      );
+    },
+  );
+  widgetsHdl = metricsHdl.map(
+    GraphKey::bKeyType,
+    SK.Loadable::btype,
+    context,
+    rootPath.sub("widgets"),
+    (ctx, writer, key, it) ~> {
+      writer.set(
+        key,
+        it.first.then(ctx, (_, f) -> {
+          path = Ui.Path::create(
+            key match {
+            | SharedKey() -> "shared"
+            | ResourceKey(name, params) ->
+              `${name}/${base64(params.prettyPrint())}`
+            },
+          );
+          Unsafe.maybeCast(GMetrics::bType(f), GraphMetrics<TNode>) match {
+          | Some(metrics) ->
+            controller = GraphController::make(path, metrics, space);
+            SK.Loaded(
+              Ui.WidgetFile(
+                UiGraph::createForController(ctx, path, controller),
+              ),
+            )
+          | _ -> SK.LoadFailed(Some(!"Unrecognized metrics"))
+          }
+        }),
+      );
+    },
+  );
+  iHandle = SK.toIHandle(graphsHDL);
+  iOpened = SK.toIHandle(openedGraphHDL);
+  openGraph = (ctx, key) ~> {
+    iHandle.write(ctx, key, SK.IntFile(ctx.timeStamp().value));
+    iOpened.write(ctx, SK.UnitID::singleton, key);
+    ctx.updateIfRoot()
+  };
+  env = LamEnvironment(
+    ctx ~>
+      !(openedGraphHDL.maybeGet(ctx, SK.UnitID::singleton) match {
+      | Some(SharedKey()) -> service.name
+      | Some(ResourceKey(name, param)) -> `${name}: ${param.prettyPrint()}`
+      | _ -> "Loading..."
+      }),
+    ctx ~> {
+      openedGraphHDL.maybeGet(ctx, SK.UnitID::singleton).flatMap(key ->
+        widgetsHdl.maybeGet(ctx, key).map(l ->
+          SK.LoadableFuture(f ~> Ui.WidgetFile::type(f).widget, l)
+        )
+      )
+    },
+    fetch,
+    openGraph,
+    uri,
+    wId,
+  );
+  context.setPersistent(kEnvKey, env);
+  env
+}
+
+module end;

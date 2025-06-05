@@ -9,8 +9,8 @@ fun widgetDirName(path: Ui.Path): SK.DirName {
 
 class EdgeStyle(
   thickness: Float,
-  cap: Shape.CapStyle = Shape.CButt(),
-  join: Shape.JoinStyle = Shape.JMiter(),
+  cap: Shape.CapStyle = Shape.CSquare(),
+  join: Shape.JoinStyle = Shape.JBevel(),
   miterLimit: Float = 4.0,
 )
 
@@ -34,7 +34,7 @@ class DrawInfo(edges: Array<Edge>) extends Ui.DrawInfo
 
 base class Controller {
   fun getLayers(mutable SK.Context): Array<Int>;
-  fun getWidget(mutable SK.Context, Int, Int): Ui.Widget;
+  fun buildWidget(mutable SK.Context, Int, Int): Ui.Widget;
   fun buildEdges(mutable SK.Context, Array<Array<G.Rect>>): Array<Edge>;
   fun getSpaces(mutable SK.Context): (Float, Float);
   fun getEdgeStyle(mutable SK.Context): EdgeStyle;
@@ -79,7 +79,9 @@ class UiGraph protected {
             for (ridx in Range(0, lsize)) {
               writer.set(
                 LayerRow(lidx, ridx),
-                Ui.WidgetFile(params.controller.getWidget(context, lidx, ridx)),
+                Ui.WidgetFile(
+                  params.controller.buildWidget(context, lidx, ridx),
+                ),
               )
             }
           );

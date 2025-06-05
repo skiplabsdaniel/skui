@@ -657,6 +657,99 @@ fun test_with_merge(): void {
     ],
   )
 }
+
+@test
+fun testResourceGraph(): void {
+  test(
+    "{\"entities\":[{\"inputs\":[\"/sk/resource_mappers/add/b64_e30./merge/20/\"],\"name\":\"/sk/resource_mappers/add/b64_e30./map/ext_7/\",\"reads\":[],\"type\":{\"constructors\":[{\"name\":\"Plus\",\"parameters\":[]}],\"operator\":\"map\"}},{\"inputs\":[\"/input1/\",\"/input2/\"],\"name\":\"/sk/resource_mappers/add/b64_e30./merge/20/\",\"reads\":[],\"type\":{\"operator\":\"merge\"}}],\"inputs\":[{\"alias\":\"input1\",\"name\":\"/input1/\"},{\"alias\":\"input2\",\"name\":\"/input2/\"}],\"outputs\":[{\"alias\":\"add\",\"name\":\"/sk/resource_mappers/add/b64_e30./map/ext_7/\"}],\"reads\":[]}",
+    D.GraphMetrics(
+      Array[Array[0, 1], Array[2], Array[3], Array[4]],
+      Map[
+        D.Extremity(4, 0) => D.Extremity(3, 0),
+        D.Extremity(3, 0) => D.Extremity(2, 0),
+        D.Extremity(2, 0) => D.Extremity(0, 0),
+        D.Extremity(2, 1) => D.Extremity(1, 0),
+      ],
+      Array[(1, 2), (0, 2), (2, 3), (3, 4)],
+      Array[
+        TestComputeLayers.TInput("/input1/"),
+        TestComputeLayers.TInput("/input2/"),
+        TestComputeLayers.TOperator(
+          "/sk/resource_mappers/add/b64_e30./merge/20/",
+        ),
+        TestComputeLayers.TOperator(
+          "/sk/resource_mappers/add/b64_e30./map/ext_7/",
+        ),
+        TestComputeLayers.TOutput(
+          "/sk/resource_mappers/add/b64_e30./map/ext_7/",
+        ),
+      ],
+      Array[(0, 0), (0, 1), (1, 0), (2, 0), (3, 0)],
+      Array[
+        None(),
+        None(),
+        Some((Array[], Array[0, 1])),
+        Some((Array[], Array[2])),
+        Some((Array[], Array[3])),
+      ],
+      Array[0, 0, 0, 0],
+    ),
+    (2, 0),
+    G.Size(550.0, 130.0),
+    Array[
+      Array[G.Rect(30.0, 10.0, 130.0, 60.0), G.Rect(30.0, 70.0, 130.0, 120.0)],
+      Array[G.Rect(160.0, 40.0, 260.0, 90.0)],
+      Array[G.Rect(290.0, 40.0, 390.0, 90.0)],
+      Array[G.Rect(420.0, 40.0, 520.0, 90.0)],
+    ],
+    Array[
+      D.Edge(
+        0,
+        2,
+        S.Path{
+          elements => Array[
+            S.MoveTo(Geometry.Offset(130.0, 35.0)),
+            S.LineTo(Geometry.Offset(140.0, 35.0)),
+            S.LineTo(Geometry.Offset(140.0, 56.666666667)),
+            S.LineTo(Geometry.Offset(160.0, 56.666666667)),
+          ],
+        },
+      ),
+      D.Edge(
+        1,
+        2,
+        S.Path{
+          elements => Array[
+            S.MoveTo(Geometry.Offset(130.0, 95.0)),
+            S.LineTo(Geometry.Offset(150.0, 95.0)),
+            S.LineTo(Geometry.Offset(150.0, 73.333333333)),
+            S.LineTo(Geometry.Offset(160.0, 73.333333333)),
+          ],
+        },
+      ),
+      D.Edge(
+        2,
+        3,
+        S.Path{
+          elements => Array[
+            S.MoveTo(Geometry.Offset(260.0, 65.0)),
+            S.LineTo(Geometry.Offset(290.0, 65.0)),
+          ],
+        },
+      ),
+      D.Edge(
+        3,
+        4,
+        S.Path{
+          elements => Array[
+            S.MoveTo(Geometry.Offset(390.0, 65.0)),
+            S.LineTo(Geometry.Offset(420.0, 65.0)),
+          ],
+        },
+      ),
+    ],
+  )
+}
 //
 
 

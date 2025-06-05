@@ -1,7 +1,8 @@
-module alias H = UiEngineHandle;
+module alias SK = SKStore;
+
 module SkDebugger;
 
-const rootPath: SKStore.DirName = SKStore.DirName::create("/debug/");
+const rootPath: SK.DirName = SK.DirName::create("/debug/");
 
 class Name{name: String, alias: ?String} uses Hashable, Orderable
 
@@ -42,6 +43,14 @@ class Entity(
       )})`
     }
   }
+
+  fun toString(): String {
+    if (this.type.constructors.isEmpty()) this.type.operator else {
+      `${this.type.operator}(${this.type.constructors.map(c -> c.name)
+        .filterNone()
+        .join(", ")})`
+    }
+  }
 }
 
 class ServiceInfo{
@@ -58,29 +67,36 @@ class Graph(
   entities: Array<Entity>,
   reads: Array<Read>,
   outputs: Array<Name>,
-)
+) extends SK.File
+
+class Instance(params: SKJSON.CJSON, clients: Array<String>)
+
+fun indicator(context: mutable SK.Context, path: Ui.Path): Ui.Widget {
+  Ui.Indicator::create(
+    context,
+    path,
+    UiProgress.parameters(
+      context,
+      path,
+      UiProgress.LamController{progress => _ctx ~> None()},
+    ),
+  )
+}
 
 fun buildWidget(
-  context: mutable SKStore.Context,
-  wId: Int,
+  context: mutable SK.Context,
+  env: Environment,
   service: ServiceInfo,
-  shared: Graph,
 ): void {
-  context.setGlobal("Ui.Properties.Root", SKStore.DirNameFile(rootPath));
+  context.setPersistent("Ui.Properties.Root", SK.DirNameFile(rootPath));
   support = SKUIGL.DrawableSupport(SKUI.pictureToTexturable);
-  optPath: ?String = None();
-  H.init(context, optPath);
-  builder = (ctx, root) ~> {
-    UiSerializableProp.Property::initValues(
-      ctx,
-      optPath,
-      Array[(SKStore.StrID("root"), Some(SkDebugViews.App(service, shared)))],
-    );
-    property = UiSerializableProp.Property::forName(ctx, optPath, "root");
-    hdl = UiEngine.widgetPipeline(ctx, property, root);
-    (ctx, _root) ~> hdl.get(ctx).widget
+  builder = (_ctx, _root) ~> {
+    (ctx, _root) ~> {
+      path = Ui.Path::create("root").makeChild("app");
+      SkDebugViews.buildApp(ctx, path, env, service);
+    }
   };
-  SKUI.init(context, wId, builder, support, predefined());
+  SKUI.init(context, env.wId, builder, support, predefined());
 }
 
 fun predefined(): SortedMap<Font.TypefaceInfo, String> {
