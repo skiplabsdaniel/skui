@@ -150,10 +150,6 @@ class Tabs{
   optCloseTabs: ?Serializable = None(),
 } extends Description {
   //
-  fun collect(_collector: Renderable -> void): void {
-    void
-  }
-
   fun build(
     context: mutable SKStore.Context,
     name: String,

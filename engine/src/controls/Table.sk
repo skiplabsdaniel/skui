@@ -60,10 +60,6 @@ class Table{
   optSelection: ?Serializable = None(),
 } extends Description {
   //
-  fun collect(_collector: Renderable -> void): void {
-    void
-  }
-
   fun build(
     _context: mutable SKStore.Context,
     _name: String,

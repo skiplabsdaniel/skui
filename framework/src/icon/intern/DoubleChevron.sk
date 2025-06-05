@@ -1,0 +1,80 @@
+module Icon;
+
+class DoubleChevron(
+  direction: Ui.AxisDirection = Ui.ToRight(),
+  width: Int = 16,
+  optPaint: ?Ui.Paint = None(),
+) extends PathIcon {
+  protected fun computedSize(_context: mutable SKStore.Context): Geometry.Size {
+    Geometry.Size::square(this.width.toFloat());
+  }
+
+  fun update(optSize: ?Geometry.Size, keepRatio: Bool): this {
+    static(this.direction, this.width, this.optPaint, optSize, keepRatio)
+  }
+
+  protected fun getPath(offset: Geometry.Offset): Shape.Path {
+    fWidth = this.width.toFloat();
+    elements = this.direction match {
+    | Ui.Up() ->
+      Array[
+        Array[
+          Shape.MoveTo(offset.translateY(fWidth)),
+          Shape.LineTo(offset.translate(fWidth / 2.0, fWidth / 2.0)),
+          Shape.LineTo(offset.translate(fWidth, fWidth)),
+        ],
+        Array[
+          Shape.MoveTo(offset.translateY(fWidth / 2.0)),
+          Shape.LineTo(offset.translateX(fWidth / 2.0)),
+          Shape.LineTo(offset.translate(fWidth, fWidth / 2.0)),
+        ],
+      ]
+    | Ui.Down() ->
+      Array[
+        Array[
+          Shape.MoveTo(offset),
+          Shape.LineTo(offset.translate(fWidth / 2.0, fWidth / 2.0)),
+          Shape.LineTo(offset.translateX(fWidth)),
+        ],
+        Array[
+          Shape.MoveTo(offset.translateY(fWidth / 2.0)),
+          Shape.LineTo(offset.translate(fWidth / 2.0, fWidth)),
+          Shape.LineTo(offset.translate(fWidth, fWidth / 2.0)),
+        ],
+      ]
+    | Ui.ToLeft() ->
+      Array[
+        Array[
+          Shape.MoveTo(offset.translateX(fWidth)),
+          Shape.LineTo(offset.translate(fWidth / 2.0, fWidth / 2.0)),
+          Shape.LineTo(offset.translate(fWidth, fWidth)),
+        ],
+        Array[
+          Shape.MoveTo(offset.translateX(fWidth / 2.0)),
+          Shape.LineTo(offset.translateY(fWidth / 2.0)),
+          Shape.LineTo(offset.translate(fWidth / 2.0, fWidth)),
+        ],
+      ]
+    | Ui.ToRight() ->
+      Array[
+        Array[
+          Shape.MoveTo(offset),
+          Shape.LineTo(offset.translate(fWidth / 2.0, fWidth / 2.0)),
+          Shape.LineTo(offset.translateY(fWidth)),
+        ],
+        Array[
+          Shape.MoveTo(offset.translateX(fWidth / 2.0)),
+          Shape.LineTo(offset.translate(fWidth, fWidth / 2.0)),
+          Shape.LineTo(offset.translate(fWidth / 2.0, fWidth)),
+        ],
+      ]
+    };
+    chevrons = elements
+      .map(es -> Shape.Path{elements => es})
+      .map(p -> p.thicken(fWidth / 4.0))
+      .map(p -> p.elements);
+    Shape.Path{elements => Arrays.mergeAll(chevrons)}
+  }
+}
+
+module end;

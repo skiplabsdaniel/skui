@@ -15,6 +15,7 @@ const kBUFFER_LEN: Int = 256 * 1024;
 class Env(
   refDir: String, /**< Reference directory for the build. */
   outDir: String, /**< Output directory for build artifacts. */
+  targetDir: ?String, /**< Output directory for main artifacts. */
   name: String, /**< Name of the build target. */
   profile: String, /**< Build profile (e.g., debug or release). */
   optTarget: ?String, /**< Optional target architecture (e.g., wasm32). */
@@ -28,6 +29,7 @@ class Env(
     Env(
       Environ.var("SKARGO_MANIFEST_DIR"),
       Environ.var("OUT_DIR"),
+      Environ.varOpt("TARGET_DIR"),
       Environ.var("NAME"),
       Environ.var("PROFILE"),
       Environ.varOpt("TARGET"),
@@ -169,7 +171,7 @@ class Env(
  * @param name The name of the target to build.
  * @return A Result containing the build environment or an error.
  */
-fun build(name: String): Result<Env, IO.Error> {
+fun create(): Result<(?Cc.Build, Env), IO.Error> {
   git_hash = System.subprocess(
     Array["git", "rev-parse", "--short", "HEAD"],
   ) match {
@@ -219,7 +221,6 @@ fun build(name: String): Result<Env, IO.Error> {
   };
   build_harness(
     env,
-    name,
     includeDirs,
     sourceDirs,
     preambles,
@@ -228,6 +229,15 @@ fun build(name: String): Result<Env, IO.Error> {
     resourceDirs,
     extraSources,
   );
+}
+
+fun build(name: String): Result<Env, IO.Error> {
+  create() match {
+  | Success((build, env)) ->
+    build.each(b -> b.compile(name));
+    Success(env)
+  | Failure(e) -> Failure(e)
+  }
 }
 
 /**
@@ -249,7 +259,6 @@ fun build(name: String): Result<Env, IO.Error> {
  */
 fun build_harness(
   env: Env,
-  name: String,
   includeDirs: Array<String>,
   sourceDirs: Array<String>,
   preambles: Array<String>,
@@ -257,7 +266,7 @@ fun build_harness(
   resources: Array<String>,
   resourceDirs: Array<String>,
   extraSources: Array<String>,
-): Result<Env, IO.Error> {
+): Result<(?Cc.Build, Env), IO.Error> {
   isWasm = env.isWasm32(); /**< Check if the target is WebAssembly. */
   resourceSrcs = Array[]; /**< Array to store processed resource source files. */
 
@@ -336,7 +345,7 @@ fun build_harness(
   });
 
   // Compile the library
-  buildLibrary(env, name, isWasm, sourceDirs, resourceSrcs, includeDirs);
+  build = buildLibrary(env, isWasm, sourceDirs, resourceSrcs, includeDirs);
 
   // Process preambles
   preambles
@@ -359,7 +368,7 @@ fun build_harness(
     ); /**< Notify build system of extra sources. */
   };
 
-  Success(env); /**< Return the successfully built environment. */
+  Success((build, env)); /**< Return the successfully built environment. */
 }
 
 /**
@@ -370,7 +379,6 @@ fun build_harness(
  * and includes the specified directories and resources.
  *
  * @param env The build environment containing paths and configurations.
- * @param name The name of the library to compile.
  * @param isWasm A boolean indicating whether the target is WebAssembly.
  * @param sourceDirs An array of directories containing source files.
  * @param resources An array of resource files to include in the library.
@@ -378,12 +386,11 @@ fun build_harness(
  */
 fun buildLibrary(
   env: Env,
-  name: String,
   isWasm: Bool,
   sourceDirs: Array<String>,
   resources: Array<String>,
   includeDirs: Array<String>,
-): void {
+): ?Cc.Build {
   /**
    * @brief Collect all source files from the specified directories.
    *
@@ -407,13 +414,13 @@ fun buildLibrary(
    * @brief Exit early if there are no source files or resources to compile.
    */
   if (sources.isEmpty() && resources.isEmpty()) {
-    return void;
+    return None();
   };
 
   /**
    * @brief Notify the build system to re-run if any source file changes.
    */
-  sources.each(f -> print_string(`skargo:rerun-if-changed=${f}`));
+  sources.each(l -> l.each(f -> print_string(`skargo:rerun-if-changed=${f}`)));
 
   /**
    * @brief Initialize the build process with recommended flags.
@@ -447,12 +454,7 @@ fun buildLibrary(
   /**
    * @brief Add resource files to the build configuration.
    */
-  !build = build.files(resources);
-
-  /**
-   * @brief Compile the library with the specified name.
-   */
-  build.compile(name);
+  Some(build.files(resources));
 }
 
 /**
@@ -721,7 +723,8 @@ fun cargo_lib(env: Env, name: String, manifest: String): void {
   );
   rprofile = if (env.profile == "release") "release" else "debug";
   outpath = env.outpath(`rust/${rprofile}/lib${name}.so`);
-  buildpath = Path.join(env.outpath("../../.."), `lib${name}.so`);
+  targetPath = Path.join(env.targetDir.default(env.outpath("../../..")));
+  buildpath = Path.join(targetPath, `lib${name}.so`);
   run(Array["cp", outpath, buildpath], env.verbose);
   dirname = Path.dirname(buildpath);
   print_string(`skargo:skc-link-arg=-l${name}`);

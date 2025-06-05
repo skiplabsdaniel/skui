@@ -92,7 +92,7 @@ fun manageResize(
 ): void {
   pos = SKStore.newObstack();
   SKStore.Context::withoutGc(context ~> {
-    context.getGlobal("FWK.Window.Size").map(FWK.Sizer::type).each(sizer ->
+    context.getPersistent("FWK.Window.Size").map(FWK.Sizer::type).each(sizer ->
       sizer.value(
         context,
         wId.toInt(),
@@ -170,7 +170,7 @@ fun manageKeyboardEvent(
 fun windowInitialized(wId: UInt32): void {
   pos = SKStore.newObstack();
   SKStore.Context::withoutGc(context ~> {
-    context.setGlobal(
+    context.setPersistent(
       "SKUIMessage.Sender",
       SKUIMessage.Sender((_ctx, message, asyncMode, delay) ~> {
         sendMessage(wId, message, asyncMode, delay);

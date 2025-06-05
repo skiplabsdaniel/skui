@@ -342,7 +342,7 @@ class Image(
 
   fun resized(width: Int, height: Int): ?Picture {
     SKStore.getWorkingContext().flatMap(ctx ->
-      ctx.getGlobal("Ui.Resizer").map(Resizer::type).flatMap(r ->
+      ctx.getPersistent("Ui.Resizer").map(Resizer::type).flatMap(r ->
         r.fn(this, width, height)
       )
     )

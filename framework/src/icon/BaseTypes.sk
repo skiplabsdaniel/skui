@@ -502,6 +502,54 @@ class Description(
             )
           ),
         )
+      | "double-chevron-right" ->
+        Some(
+          Ui.InnerIconBuilder(pt ~>
+            Icon.DoubleChevron(
+              Ui.ToRight(),
+              Math.ceil(pt.pixels()).toInt(),
+              None(),
+              this.optSize.map(s -> s.toSize(Geometry.Size::square(pt.value))),
+              this.optSize.map(s -> s.keepRatio).default(false),
+            )
+          ),
+        )
+      | "double-chevron-left" ->
+        Some(
+          Ui.InnerIconBuilder(pt ~>
+            Icon.DoubleChevron(
+              Ui.ToLeft(),
+              Math.ceil(pt.pixels()).toInt(),
+              None(),
+              this.optSize.map(s -> s.toSize(Geometry.Size::square(pt.value))),
+              this.optSize.map(s -> s.keepRatio).default(false),
+            )
+          ),
+        )
+      | "double-chevron-up" ->
+        Some(
+          Ui.InnerIconBuilder(pt ~>
+            Icon.DoubleChevron(
+              Ui.Up(),
+              Math.ceil(pt.pixels()).toInt(),
+              None(),
+              this.optSize.map(s -> s.toSize(Geometry.Size::square(pt.value))),
+              this.optSize.map(s -> s.keepRatio).default(false),
+            )
+          ),
+        )
+      | "double-chevron-down" ->
+        Some(
+          Ui.InnerIconBuilder(pt ~>
+            Icon.DoubleChevron(
+              Ui.Down(),
+              Math.ceil(pt.pixels()).toInt(),
+              None(),
+              this.optSize.map(s -> s.toSize(Geometry.Size::square(pt.value))),
+              this.optSize.map(s -> s.keepRatio).default(false),
+            )
+          ),
+        )
       | "check" ->
         Some(
           Ui.InnerIconBuilder(pt ~>

@@ -329,7 +329,7 @@ fun initPipeline(
       key match {
       | id @ Ui.Path _ ->
         ratio = context
-          .getGlobal("FWK.Ratio")
+          .getPersistent("FWK.Ratio")
           .map(FWK.Ratio::type)
           .map(r -> r.fn(context, wId))
           .default(1.0);
@@ -421,7 +421,7 @@ fun initPipeline(
         nodeSumsHdl.get(context, KOffsets(kLayer.path)),
       );
       ratio = context
-        .getGlobal("FWK.Ratio")
+        .getPersistent("FWK.Ratio")
         .map(FWK.Ratio::type)
         .map(r -> r.fn(context, wId))
         .default(1.0);

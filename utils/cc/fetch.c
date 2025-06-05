@@ -15,9 +15,11 @@ void rs_free_fetch_result(fetch_result_t);
 const char *sk_string_create(const char *buffer, uint32_t size);
 void *sk_create_result(int64_t, const char *, const char *, const char *);
 
-void *sk_fetch(const char *url, const char *method, const char *headers,
-               const char *body, int64_t timeout_s) {
+fetch_result_t sk_inner_fetch(const char *url, const char *method,
+                              const char *headers, const char *body,
+                              int64_t timeout_s) {
   fetch_result_t result = rs_fetch(url, method, headers, body, timeout_s);
+  int64_t status = result.status;
   const char *rheaders =
       result.headers ? sk_string_create(result.headers, strlen(result.headers))
                      : NULL;
@@ -27,5 +29,13 @@ void *sk_fetch(const char *url, const char *method, const char *headers,
                           ? sk_string_create(result.error, strlen(result.error))
                           : NULL;
   rs_free_fetch_result(result);
-  return sk_create_result(result.status, rheaders, rbody, error);
+  fetch_result_t copied = {status, rheaders, rbody, error};
+  return copied;
+}
+
+void *sk_fetch(const char *url, const char *method, const char *headers,
+               const char *body, int64_t timeout_s) {
+  fetch_result_t result = sk_inner_fetch(url, method, headers, body, timeout_s);
+  return sk_create_result(result.status, result.headers, result.body,
+                          result.error);
 }

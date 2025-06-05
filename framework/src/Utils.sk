@@ -18,14 +18,14 @@ fun initSizeManager(
   );
   iWindowHdl = SKStore.toIHandle(windowHdl);
   iRatioHdl = SKStore.toIHandle(ratioHdl);
-  context.setGlobal(
+  context.setPersistent(
     "FWK.Window.Size",
     FWK.Sizer((ctx, wId, w, h, r) ~> {
       iWindowHdl.write(ctx, SKStore.IID(wId), UiEvent.Size(w, h));
       iRatioHdl.write(ctx, SKStore.IID(wId), SKStore.FloatFile(r));
     }),
   );
-  context.setGlobal(
+  context.setPersistent(
     "FWK.Ratio",
     FWK.Ratio((ctx, wId) ~>
       iRatioHdl
@@ -53,15 +53,14 @@ fun init(
   context.initIconSupport();
   context.initTextSupport(support);
   root = UiRoot.HStorage::create(context, SKStore.DirName::create("/ui/root/"));
-  context.setGlobal("FWK.Root", root);
+  context.setPersistent("FWK.Root", root);
   (windowHdl, _ratioHdl) = initSizeManager(context);
   SystemProperties.init(context);
   Ui.init(context);
   inits.each(i -> i(context));
   getter = builder(context, root);
-
   FWKPipeline.initPipeline(context, getter, windowHdl, root, support, wId);
-  context.setGlobal(
+  context.setPersistent(
     "SKStore.Updater",
     SKStore.Updater(_ctx ~> FWK.update(uint32(wId))),
   )

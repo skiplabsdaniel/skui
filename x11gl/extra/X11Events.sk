@@ -29,7 +29,7 @@ native fun sendMessage(
 fun windowInitialized(wId: Int): void {
   pos = SKStore.newObstack();
   SKStore.Context::withoutGc(context ~> {
-    context.setGlobal(
+    context.setPersistent(
       "SKUIMessage.Sender",
       SKUIMessage.Sender((_ctx, message, asyncMode, delay) ~> {
         sendMessage(wId, message, asyncMode, delay);
@@ -94,7 +94,7 @@ private fun manageMouseButton(_wId: Int, button: Int, pressed: Bool): void {
 fun manageResize(wId: Int, w: Int, h: Int, r: Int): void {
   pos = SKStore.newObstack();
   SKStore.Context::withoutGc(context ~> {
-    context.getGlobal("FWK.Window.Size").map(FWK.Sizer::type).each(sizer ->
+    context.getPersistent("FWK.Window.Size").map(FWK.Sizer::type).each(sizer ->
       sizer.value(context, wId, w, h, r.toFloat() / 100.0)
     );
     context.updateIfRoot();

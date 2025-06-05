@@ -235,11 +235,6 @@ class Tree{
     }
   }
 
-  //
-  fun collect(_collector: Renderable -> void): void {
-    void
-  }
-
   fun build(
     context: mutable SKStore.Context,
     id: String,

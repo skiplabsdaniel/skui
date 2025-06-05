@@ -236,15 +236,15 @@ class KeyInfo(symbol: String, key: String) {
   }
 
   fun isControl(): Bool {
-    this.key.startsWith("Control")
+    this.symbol.startsWith("Control")
   }
 
   fun isShift(): Bool {
-    this.key.startsWith("Shift")
+    this.symbol.startsWith("Shift")
   }
 
   fun isMeta(): Bool {
-    this.key.startsWith("Meta")
+    this.symbol.startsWith("Meta")
   }
 
   fun isAlt(): Bool {

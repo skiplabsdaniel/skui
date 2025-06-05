@@ -156,12 +156,33 @@ class Flex{
     widgets: Array<Widgetable>,
     mainAlignment: UiFlex.Alignment = UiFlex.Start(),
     crossAlignment: UiFlex.CrossAlignment = UiFlex.CrossStart(),
+    maxSizeOnMain: Bool = false,
+    optConfiguration: ?Ui.Configuration = None(),
   ): Flex {
     Flex{
       optWidgets => Some(UiEngine.SArray(widgets)),
       optVertical => Some(UiEngine.SBool(true)),
       optMainAlignment => Some(SInt(mainAlignment.toCode())),
       optCrossAlignment => Some(SInt(crossAlignment.toCode())),
+      optMaxSize => Some(UiEngine.SBool(maxSizeOnMain)),
+      optConfiguration,
+    }
+  }
+
+  static fun horizontal(
+    widgets: Array<Widgetable>,
+    mainAlignment: UiFlex.Alignment = UiFlex.Start(),
+    crossAlignment: UiFlex.CrossAlignment = UiFlex.CrossStart(),
+    maxSizeOnMain: Bool = false,
+    optConfiguration: ?Ui.Configuration = None(),
+  ): Flex {
+    Flex{
+      optWidgets => Some(UiEngine.SArray(widgets)),
+      optVertical => Some(UiEngine.SBool(false)),
+      optMainAlignment => Some(SInt(mainAlignment.toCode())),
+      optCrossAlignment => Some(SInt(crossAlignment.toCode())),
+      optMaxSize => Some(UiEngine.SBool(maxSizeOnMain)),
+      optConfiguration,
     }
   }
 
@@ -182,6 +203,7 @@ class Flex{
     downToUp = toBoolOptGetter(context, this.optDownToUp);
     mainAlignment = toIntOptGetter(context, this.optMainAlignment);
     crossAlignment = toIntOptGetter(context, this.optCrossAlignment);
+    mainAxisMax = toBoolOptGetter(context, this.optMaxSize);
     Ui.Flex::createForController(
       context,
       path,
@@ -204,6 +226,10 @@ class Flex{
           UiFlex.CrossAlignment::fromCode(
             crossAlignment(ctx, false).default(0),
           ),
+        mainAxisSize => ctx ~>
+          mainAxisMax(ctx, false)
+            .map(m -> if (m) UiFlex.Max() else UiFlex.Min())
+            .default(UiFlex.Min()),
         widgets,
       },
       toOptConfGetter(context, this.optConfiguration),
@@ -239,6 +265,7 @@ class AspectRatio{
         centered => ctx ~> centered(ctx, false).default(true),
         aspectRatio => ctx ~> ratio(ctx, false).default(0.0),
       },
+      toOptConfGetter(context, this.optConfiguration),
     );
   }
 }

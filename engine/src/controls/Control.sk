@@ -26,10 +26,6 @@ class Button{
   optTooltip: ?Serializable = None(),
 } extends Description {
   //
-  fun collect(_collector: Renderable -> void): void {
-    void
-  }
-
   fun build(
     context: mutable SKStore.Context,
     name: String,
@@ -81,10 +77,6 @@ class Slider{
   optTicks: ?Serializable = None(),
 } extends Description {
   //
-  fun collect(_collector: Renderable -> void): void {
-    void
-  }
-
   fun build(
     context: mutable SKStore.Context,
     id: String,
@@ -222,10 +214,6 @@ class Toggle{
   optTooltip: ?Serializable = None(),
 } extends Description {
   //
-  fun collect(_collector: Renderable -> void): void {
-    void
-  }
-
   fun build(
     context: mutable SKStore.Context,
     name: String,
@@ -281,10 +269,6 @@ class Scroll{
   optNegative: ?Serializable = None(),
 } extends Description {
   //
-  fun collect(_collector: Renderable -> void): void {
-    void
-  }
-
   fun build(
     context: mutable SKStore.Context,
     name: String,

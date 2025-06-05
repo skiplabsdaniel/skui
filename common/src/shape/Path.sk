@@ -411,6 +411,23 @@ class Path{elements: Array<PathElement> = Array[]} uses Orderable {
     points.toArray();
   }
 
+  fun thicken(
+    thickness: Float,
+    cap: CapStyle = CButt(),
+    join: JoinStyle = JMiter(),
+    miterLimit: Float = 4.0,
+    samplesPerCurve: Int = 20,
+  ): Path {
+    offsets = static::thickenPolyline(
+      this.sample(samplesPerCurve),
+      thickness,
+      cap,
+      join,
+      miterLimit,
+    );
+    Shape.Path::polyline(offsets, true)
+  }
+
   static fun thickenPolyline(
     points: Array<Geometry.Offset>,
     thickness: Float,

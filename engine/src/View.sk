@@ -11,10 +11,6 @@ class Label{
     Label{optText => Some(!text)}
   }
 
-  fun collect(_collector: Renderable -> void): void {
-    void
-  }
-
   fun build(
     context: mutable SKStore.Context,
     name: String,
@@ -43,10 +39,6 @@ class Label{
 
 class Indicator{optProgress: ?Serializable = None()} extends Description {
   //
-  fun collect(_collector: Renderable -> void): void {
-    void
-  }
-
   fun build(
     context: mutable SKStore.Context,
     name: String,
@@ -74,10 +66,6 @@ class Decorated{
   optRigthToLeft: ?Serializable = None(),
 } extends Description {
   //
-  fun collect(collector: Renderable -> void): void {
-    this.optWidget.each(s -> collect(s, collector))
-  }
-
   fun build(
     context: mutable SKStore.Context,
     name: String,
@@ -106,10 +94,6 @@ class Decorated{
 
 class Image{optPicture: ?Serializable = None()} extends Description {
   //
-  fun collect(_collector: Renderable -> void): void {
-    void
-  }
-
   fun build(
     context: mutable SKStore.Context,
     name: String,
@@ -165,10 +149,6 @@ class TextView{
   optStyle: ?Serializable = None(),
 } extends Description {
   //
-  fun collect(_collector: Renderable -> void): void {
-    void
-  }
-
   fun build(
     context: mutable SKStore.Context,
     name: String,

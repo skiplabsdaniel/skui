@@ -2,7 +2,7 @@ module SKUtils;
 
 class FetchException(message: String) extends .Exception
 
-base class Method uses Show {
+base class Method uses Orderable, Show {
   children =
   | Get()
   | Post()
@@ -24,6 +24,21 @@ base class Method uses Show {
   | Connect() -> "CONNECT"
   | Trace() -> "TRACE"
   | Patch() -> "PATCH"
+
+  static fun fromString(m: String): Method {
+    m.uppercase() match {
+    | "GET" -> Get()
+    | "POST" -> Post()
+    | "PUT" -> Put()
+    | "DELETE" -> Delete()
+    | "HEAD" -> Head()
+    | "OPTIONS" -> Options()
+    | "CONNECT" -> Connect()
+    | "TRACE" -> Trace()
+    | "PATCH" -> Patch()
+    | _ -> invariant_violation(`Unknown method ${m}`)
+    }
+  }
 }
 
 class FetchOption{
@@ -34,9 +49,9 @@ class FetchOption{
 }
 
 class FetchResult(status: Int, headers: Map<String, String>, text: ?String) {
-  fun json(): Result<JSON.Value, .Exception> {
+  fun json<T>(conv: JSON.Value ~> T): Result<T, .Exception> {
     this.text match {
-    | Some(text) -> Result::guard(() -> JSON.decode(text))
+    | Some(text) -> Result::guard(() -> conv(JSON.decode(text)))
     | _ -> Failure(FetchException("No data available"))
     }
   }

@@ -211,4 +211,34 @@ fun point_at_edge(): void {
   expectOffsets(actual, expected)
 }
 
+@test
+fun from_shape(): void {
+  shape = Shape.Path{
+    elements => Array[
+      Shape.MoveTo(G.Offset(79.015625, 18.609375)),
+      Shape.LineTo(G.Offset(89.015625, 18.609375)),
+      Shape.LineTo(G.Offset(89.015625, 29.348958333)),
+      Shape.LineTo(G.Offset(109.015625, 29.348958333)),
+    ],
+  };
+  samples = shape.sample();
+  actual = Shape.Path::thickenPolyline(
+    samples,
+    3.0,
+    Shape.CSquare(),
+    Shape.JMiter(),
+  );
+  expected = Array[
+    G.Offset(77.515625, 20.109375),
+    G.Offset(90.515625, 20.109375),
+    G.Offset(90.515625, 27.848958333),
+    G.Offset(110.515625, 27.848958333),
+    G.Offset(110.515625, 30.848958333),
+    G.Offset(87.515625, 30.848958333),
+    G.Offset(87.515625, 17.109375),
+    G.Offset(77.515625, 17.109375),
+  ];
+  expectOffsets(actual, expected)
+}
+
 module end;

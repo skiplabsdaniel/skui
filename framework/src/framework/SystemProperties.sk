@@ -26,11 +26,11 @@ class QuitManager(manage: Ui.Getter<Bool>) extends SKStore.File
 class ExitManager(exit: Ui.Getter<void>) extends SKStore.File
 
 fun initOnExit(context: mutable SKStore.Context, exit: Ui.Getter<void>): void {
-  context.setGlobal("FWK.Exit", ExitManager(exit))
+  context.setPersistent("FWK.Exit", ExitManager(exit))
 }
 
 fun exit(context: mutable SKStore.Context): void {
-  context.getGlobal("FWK.Exit").map(ExitManager::type).each(m ->
+  context.getPersistent("FWK.Exit").map(ExitManager::type).each(m ->
     m.exit(context)
   )
 }
@@ -38,7 +38,7 @@ fun exit(context: mutable SKStore.Context): void {
 fun quit(context: mutable SKStore.Context, wId: Int): Bool {
   //
   context
-    .getGlobal(`FWK.Quit[${wId}]`)
+    .getPersistent(`FWK.Quit[${wId}]`)
     .map(QuitManager::type)
     .map(m -> m.manage(context))
     .default(true)
@@ -104,7 +104,7 @@ fun repeat(
   todo(context);
   optRepeatOn.each(repeatOn -> {
     id = context.timeStamp().value;
-    context.setGlobal(`SystemProperties.Repeat(${id})`, Todo(todo));
+    context.setPersistent(`SystemProperties.Repeat(${id})`, Todo(todo));
     emit(context, Repeat(id, Some(repeatOn), 1), false, Some(500))
   })
 }
@@ -139,7 +139,7 @@ class Messages()
         repeatable.next(),
         ctx ~> {
           ctx
-            .getGlobal(`SystemProperties.Repeat(${repeatable.toRepeat})`)
+            .getPersistent(`SystemProperties.Repeat(${repeatable.toRepeat})`)
             .map(Todo::type)
             .each(todo -> todo.todo(ctx))
         },
@@ -147,7 +147,9 @@ class Messages()
         false,
         50,
         ctx ~>
-          ctx.removeGlobal(`SystemProperties.Repeat(${repeatable.toRepeat})`)
+          ctx.removePersistent(
+            `SystemProperties.Repeat(${repeatable.toRepeat})`,
+          )
         ,
       )
     }

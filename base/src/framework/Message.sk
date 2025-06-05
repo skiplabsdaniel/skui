@@ -196,8 +196,7 @@ fun cancelMessage(context: mutable SKStore.Context, message: String): void {
   }
 }
 
-@wasm_export("SKIP_SKUIMessage_manage")
-@cpp_export("SKIP_SKUIMessage_manage")
+@export("SKIP_SKUIMessage_manage")
 fun manage(message: String): void {
   SKStore.Context::withoutGc(context ~> {
     jsv = vtry<JSON.Value>(
@@ -235,8 +234,7 @@ fun manage(message: String): void {
 }
 
 @debug
-@wasm_export("SKIP_SKUIMessage_messageFailure")
-@cpp_export("SKIP_SKUIMessage_messageFailure")
+@export("SKIP_SKUIMessage_messageFailure")
 fun messageFailure(message: String): void {
   SKStore.Context::withoutGc(context ~> {
     catchErrors = context.getBoolGlobal("SKUIMessage.catchErrors");
@@ -263,7 +261,7 @@ fun send(
   delay: UInt32,
 ): Bool {
   context
-    .getGlobal("SKUIMessage.Sender")
+    .getPersistent("SKUIMessage.Sender")
     .map(Sender::type)
     .map(sender -> sender.fn(context, message, asyncMode, delay))
     .default(false)
@@ -584,7 +582,7 @@ fun emitJSON(
 
 fun getChannelId(context: readonly SKStore.Context): ?UInt32 {
   context
-    .getGlobal("SKUIMessage.Channel")
+    .getPersistent("SKUIMessage.Channel")
     .map(SKStore.UInt32File::type)
     .map(f -> f.value)
 }

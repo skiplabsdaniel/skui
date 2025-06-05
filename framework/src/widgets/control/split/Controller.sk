@@ -1,11 +1,12 @@
 module UiSplit;
 
 class LamController{
-  first: Ui.Getter<Ui.Widget>,
-  second: Ui.Getter<Ui.Widget>,
-  axis: Ui.GetterOne<Ui.Axis, Bool>,
-  separation: Ui.GetterOne<Ui.SeparationProperty, Bool>,
+  private first: Ui.Getter<Ui.Widget>,
+  private second: Ui.Getter<Ui.Widget>,
+  private axis: Ui.GetterOne<Ui.Axis, Bool>,
+  private separation: Ui.GetterOne<Ui.SeparationProperty, Bool>,
 } extends Controller {
+  //
   fun getAxis(
     context: mutable SKStore.Context,
     isUntracked: Bool = false,

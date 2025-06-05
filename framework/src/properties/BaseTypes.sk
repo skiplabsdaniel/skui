@@ -70,7 +70,7 @@ fun toDirName(
   optPath: ?String,
 ): SKStore.DirName {
   root = context
-    .getGlobal("Ui.Properties.Root")
+    .getPersistent("Ui.Properties.Root")
     .map(SKStore.DirNameFile::type)
     .map(f ~> f.value)
     .default(Ui.rootPath);

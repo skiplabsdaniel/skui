@@ -182,7 +182,7 @@ extension class Style extends UiEngine.SObject {
       ),
       pt,
     );
-    lineSpacing = Ui.Dim::fromString(UiEngine.getString(value, "lineSpacing"))
+    lineSpacing = Ui.Dim::fromString(UiEngine.getString(value, "line-spacing"))
       .map(v ~>
         v match {
         | fd @ Ui.FixedSize _ -> Text.ConstLineSpacing(fd.pixels())
@@ -196,9 +196,11 @@ extension class Style extends UiEngine.SObject {
       ),
       faceId,
       hAlignment => Text.FixedAlign::fromCode(
-        UiEngine.getInt(value, "hAlignment"),
+        UiEngine.getInt(value, "h-alignment"),
       ),
-      vAlignment => Text.VAlign::fromCode(UiEngine.getInt(value, "vAlignment")),
+      vAlignment => Text.VAlign::fromCode(
+        UiEngine.getInt(value, "v-alignment"),
+      ),
       lineSpacing,
       wrapping => Text.Wrapping::fromCode(UiEngine.getInt(value, "wrapping")),
       overrun => Text.Overrun::fromCode(UiEngine.getInt(value, "overflow")),

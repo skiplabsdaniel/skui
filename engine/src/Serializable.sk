@@ -15,8 +15,15 @@ base class Serializable extends SKStore.File uses HasClassName {
 }
 
 base class SObject extends Serializable {
-  fun serialize(): (String, Map<String, Serializable>);
-  static fun deserialize(value: Map<String, Serializable>): this;
+  overridable fun serialize(): (String, Map<String, Serializable>) {
+    invariant_violation("Not Implemented")
+  }
+
+  overridable static macro fun deserialize(
+    _value: Map<String, Serializable>,
+  ): this {
+    invariant_violation("Not Implemented")
+  }
 }
 
 fun getString(value: Map<String, Serializable>, name: String): String {
@@ -266,7 +273,7 @@ fun fromJSON(json: JSON.Value): Serializable {
           }
         } else {
           SKStore.getWorkingContext()
-            .flatMap(ctx -> ctx.getGlobal(`UiEngine.Deserializer.${type_}`))
+            .flatMap(ctx -> ctx.getPersistent(`UiEngine.Deserializer.${type_}`))
             .map(Deserializer::type)
             .map(d -> d.deserialize(value));
         };

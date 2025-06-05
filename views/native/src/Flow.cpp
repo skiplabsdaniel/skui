@@ -11,10 +11,13 @@ skui::WindowSupplier supplier;
 Atom kSkuiFwkUpdateMessage;
 Atom kSkuiMessageSend;
 Atom kSkuiAnimationFrame;
+Atom kSkuiExcuteFunction;
 
 std::atomic<uint32_t> nextMsgId{0};
+std::atomic<uint32_t> nextFunctionId{0};
 std::map<uint32_t, std::string> messages;
 std::map<uint32_t, skui::Timer> timers;
+std::map<uint32_t, std::function<void()>> functions;
 
 extern "C" {
 uint32_t SKIP_String_byteSize(char *str);
@@ -63,6 +66,21 @@ void SKIP_SKUIX11_sendMessage(uint64_t wId, char *message, bool,
     supplier.sendClientMessage(wId, kSkuiMessageSend, msgId, 0);
   }
 }
+
+void SKUI_runInMain(uint64_t wId, std::function<void()> runnable) {
+  auto fnId = nextFunctionId++;
+  functions[fnId] = runnable;
+  supplier.sendClientMessage(wId, kSkuiExcuteFunction, fnId, 0);
+}
+
+} // extern "C"
+
+void runFunction(uint32_t param1, uint32_t) {
+  auto it = functions.find(param1);
+  if (it != functions.end()) {
+    auto fn = it->second;
+    fn();
+  }
 }
 
 void manageMessage(uint32_t param1, uint32_t) {
@@ -150,6 +168,7 @@ void SKIP_SKUIX11_launch(uint64_t wId, char *skTitle, uint64_t screen,
   kSkuiFwkUpdateMessage = XInternAtom(display, "SKUI_FWK_UPDATE", False);
   kSkuiMessageSend = XInternAtom(display, "SKUI_MESSAGE_SEND", False);
   kSkuiAnimationFrame = XInternAtom(display, "SKUI_ANIMATION_FRAME", False);
+  kSkuiExcuteFunction = XInternAtom(display, "SKUI_EXECUTE_FUNCTION", False);
   manager.customMessages.insert(
       std::pair<Atom, std::function<void(uint32_t, uint32_t)>>(
           kSkuiFwkUpdateMessage, manageUpdate));
@@ -161,6 +180,9 @@ void SKIP_SKUIX11_launch(uint64_t wId, char *skTitle, uint64_t screen,
           kSkuiAnimationFrame, [&manager](uint32_t param1, uint32_t) {
             manager.performFrame(param1);
           }));
+  manager.customMessages.insert(
+      std::pair<Atom, std::function<void(uint32_t, uint32_t)>>(
+          kSkuiExcuteFunction, runFunction));
   manager.initialized(xic, [wId](uint64_t frames) {
     supplier.sendClientMessage(wId, kSkuiAnimationFrame, (uint32_t)frames, 0);
   });

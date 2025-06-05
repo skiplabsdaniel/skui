@@ -16,7 +16,7 @@ const envHandle: SKStore.IHandle<
 );
 
 fun init(context: mutable SKStore.Context, rootId: Int): void {
-  context.setGlobal("FWKEnv.RootWindow", SKStore.IntFile(rootId));
+  context.setPersistent("FWKEnv.RootWindow", SKStore.IntFile(rootId));
   _ = context.makeDir(
     SKStore.DirName::keyType,
     SKStore.BoolFile::type,
@@ -38,9 +38,10 @@ fun exists(
 }
 
 fun getRootId(context: mutable SKStore.Context): ?UInt32 {
-  context.getGlobal("FWKEnv.RootWindow").map(SKStore.IntFile::type).map(f ~>
-    uint32(f.value)
-  )
+  context
+    .getPersistent("FWKEnv.RootWindow")
+    .map(SKStore.IntFile::type)
+    .map(f ~> uint32(f.value))
 }
 
 module end;

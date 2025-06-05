@@ -17,22 +17,22 @@ extension class Context {
   mutable fun initFontSupport(
     predefined: SortedMap<Font.TypefaceInfo, String>,
   ): void {
-    this.setGlobal(
+    this.setPersistent(
       "Ui.FontSupport",
       TrueType.createFontSupport(this, predefined),
     );
   }
 
   readonly fun getFontSupport(): Ui.FontSupport {
-    Ui.FontSupport::type(this.getGlobal("Ui.FontSupport").fromSome());
+    Ui.FontSupport::type(this.getPersistent("Ui.FontSupport").fromSome());
   }
 
   mutable fun setDialogsState(state: UiDialogs.State): void {
-    this.setGlobal("UiDialogs.State", state);
+    this.setPersistent("UiDialogs.State", state);
   }
 
   mutable fun openAlert(text: Text, optTitle: ?Text = None()): void {
-    state = this.getGlobal("UiDialogs.State")
+    state = this.getPersistent("UiDialogs.State")
       .map(f ~> f as UiDialogs.State _)
       .fromSome();
     state.openAlert(this, text, optTitle);
@@ -45,7 +45,7 @@ extension class Context {
     type_: UiDialogs.QType = UiDialogs.YesNo(),
     optTitle: ?Text = None(),
   ): void {
-    state = this.getGlobal("UiDialogs.State")
+    state = this.getPersistent("UiDialogs.State")
       .map(f ~> f as UiDialogs.State _)
       .fromSome();
     state.openConfirmDialog(this, text, onConfirm, autoClose, type_, optTitle);
@@ -58,7 +58,7 @@ extension class Context {
     optTitle: ?Text = None(),
     settings: UiDialogs.Settings = UiDialogs.Settings{},
   ): void {
-    state = this.getGlobal("UiDialogs.State")
+    state = this.getPersistent("UiDialogs.State")
       .map(f ~> f as UiDialogs.State _)
       .fromSome();
     state.openInputDialog(
@@ -72,19 +72,19 @@ extension class Context {
   }
 
   mutable fun initTextSupport(support: Ui.DrawableSupport): void {
-    this.setGlobal("Ui.TextSupport", Ui.TextSupport::create(this, support));
+    this.setPersistent("Ui.TextSupport", Ui.TextSupport::create(this, support));
   }
 
   readonly fun getTextSupport(): Ui.TextSupport {
-    Ui.TextSupport::type(this.getGlobal("Ui.TextSupport").fromSome());
+    Ui.TextSupport::type(this.getPersistent("Ui.TextSupport").fromSome());
   }
 
   mutable fun initIconSupport(): void {
-    this.setGlobal("UiIcon.Support", UiIcon.createIconSupport(this));
+    this.setPersistent("UiIcon.Support", UiIcon.createIconSupport(this));
   }
 
   readonly fun getIconSupport(): UiIcon.Support {
-    UiIcon.Support::type(this.getGlobal("UiIcon.Support").fromSome());
+    UiIcon.Support::type(this.getPersistent("UiIcon.Support").fromSome());
   }
 
   readonly fun get<T: frozen>(path: Path, conv: SKStore.File ~> T): ?T {
@@ -118,11 +118,11 @@ extension class Context {
         )
       },
     );
-    this.setGlobal("FWK.Focused", SKStore.HandlePathFile(handle));
+    this.setPersistent("FWK.Focused", SKStore.HandlePathFile(handle));
   }
 
   mutable fun isFocused(path: Ui.Path): Bool {
-    this.getGlobal("FWK.Focused") match {
+    this.getPersistent("FWK.Focused") match {
     | Some(fm) ->
       BoolFile::type(HandlePathFile::type(fm).handle.get(this, path)).value
     | _ -> false
@@ -138,11 +138,11 @@ extension class Context {
   }
 
   mutable fun getTheme(): Ui.Theme {
-    this.getGlobal("Ui.Theme") match {
+    this.getPersistent("Ui.Theme") match {
     | Some(file) -> Ui.Theme::btype(file)
     | _ ->
       theme = UiTheme.Default();
-      this.setGlobal("Ui.Theme", theme);
+      this.setPersistent("Ui.Theme", theme);
       theme
     }
   }

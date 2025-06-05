@@ -78,19 +78,20 @@ class AspectRatio{
     };
     cConstraints = BoxConstraints::tight(width, height);
     !node = widget.getNode(context, cConstraints);
+    nSize = node.size;
     offset = if (centered) {
       Geometry.Offset(
-        if (size.width > width) (size.width - width) / 2.0 else 0.0,
-        if (size.height > height) (size.height - height) / 2.0 else 0.0,
+        if (size.width > nSize.width) (size.width - nSize.width) / 2.0 else 0.0,
+        if (size.height > nSize.height) {
+          (size.height - nSize.height) / 2.0
+        } else {
+          0.0
+        },
       );
     } else {
       Geometry.Offset(0.0, 0.0);
     };
-    Node::create(
-      this,
-      Geometry.Size(width, height),
-      Array[CNode::create(node, offset, cConstraints)],
-    )
+    Node::create(this, size, Array[CNode::create(node, offset, cConstraints)])
   }
 }
 

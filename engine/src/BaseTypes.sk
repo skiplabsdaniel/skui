@@ -31,7 +31,9 @@ base class Description{
    *
    * @param callback A function to be called with each contained `Renderable`.
    */
-  fun collect(Renderable -> void): void;
+  overridable fun collect(_collector: Renderable -> void): void {
+    void
+  }
 
   /**
    * @brief Builds a UI widget based on this description.
