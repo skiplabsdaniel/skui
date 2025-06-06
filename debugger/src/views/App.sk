@@ -11,18 +11,7 @@ fun buildSplit(
 ): Ui.Widget {
   graphView = buildGraphView(context, path.makeChild("graph"), env);
   treeView = buildTreeView(context, path.makeChild("tree"), env, info);
-  time = context.timeStamp();
-  prop = time.toString();
-  UiSeparationProp.Property::initValues(
-    context,
-    Some(prop),
-    Array[(SKStore.StrID("app-split"), Some(Ui.FromStart(200)))],
-  );
-  appSplitProp = UiSeparationProp.Property::forName(
-    context,
-    Some(prop),
-    "app-split",
-  );
+  appSplitProp = D.useSeparationState(context, "app-split");
   Ui.Split::create(
     context,
     path,

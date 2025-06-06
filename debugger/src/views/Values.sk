@@ -1,0 +1,108 @@
+module alias SK = SKStore;
+module alias D = SkDebugger;
+
+module SkDebugViews;
+
+class ValuesTree(env: D.Environment, path: Ui.Path) {
+  //
+  fun getProgress(_context: mutable SK.Context, _path: Ui.Path): ?Ui.Progress {
+    invariant_violation("Not implemented")
+  }
+
+  fun getItems(context: mutable SK.Context, optPath: ?Ui.Path): ?Array<String> {
+    optPath match {
+    | None() ->
+      this.env.getValueKeys(context, this.path).flatMap(future -> {
+        if (future.isLoading()) {
+          None()
+        } else {
+          future.error() match {
+          | Some(lf) -> Some(Array[`error:${lf.optError.default(!"Unknown")}`])
+          | _ -> Some(future.get())
+          }
+        }
+      })
+    | _ -> None()
+    }
+  }
+
+  fun getItem(_context: mutable SK.Context, path: Ui.Path): UiTree.Item {
+    path match {
+    | Ui.Path(value, None()) -> UiTree.Item{text => Raw(value), leaf => true}
+    | _ -> UiTree.Item{text => !`TODO: [value, graph]`, leaf => true}
+    }
+  }
+
+  fun getBadge(_context: mutable SKStore.Context, _path: Ui.Path): ?Text {
+    None()
+  }
+
+  fun fire(
+    _context: mutable SK.Context,
+    optPath: ?Ui.Path,
+    selection: Array<Ui.Path>,
+  ): void {
+    debug(("Fire", optPath, selection))
+  }
+}
+
+fun buildValuesTreeView(
+  context: mutable SKStore.Context,
+  path: Ui.Path,
+  env: D.Environment,
+  valuePath: Ui.Path,
+): Ui.Widget {
+  utils = ValuesTree(env, valuePath);
+  controller = UiTree.LamController{
+    selectionModel => (_ctx, _iu) ~> UiTree.Single(),
+    items => utils.getItems,
+    item => utils.getItem,
+    progress => utils.getProgress,
+    badge => utils.getBadge,
+    fire => utils.fire,
+  };
+  Ui.Tree::create(
+    context,
+    path,
+    UiTree.init(context, path, controller),
+    Some(_ ~> UiFlex.Configuration{flex => 1}),
+  )
+}
+
+fun buildValuesTabsView(
+  _context: mutable SKStore.Context,
+  _path: Ui.Path,
+  _env: D.Environment,
+): Ui.Widget {
+  invariant_violation("Not implemented")
+}
+
+fun buildValuesView(
+  context: mutable SKStore.Context,
+  path: Ui.Path,
+  env: D.Environment,
+  valuePath: Ui.Path,
+  conf: ?Ui.Configuration = None(),
+): Ui.Widget {
+  tabView = buildValuesTabsView(context, path.makeChild("tabs"), env);
+  treeView = buildValuesTreeView(
+    context,
+    path.makeChild("tree"),
+    env,
+    valuePath,
+  );
+  valuesSplitProp = D.useSeparationState(context, "values-split");
+  Ui.Split::create(
+    context,
+    path,
+    UiSplit.LamController{
+      first => Ui.default(treeView),
+      second => Ui.default(tabView),
+      axis => Ui.defaultOne(Ui.HorizontalAxis()),
+      separation => Ui.defaultOne(valuesSplitProp),
+    },
+    conf.map(c -> _ ~> c),
+  )
+}
+
+module end;

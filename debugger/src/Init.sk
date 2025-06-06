@@ -24,11 +24,21 @@ base class GraphKey extends SK.Key, SK.File {
   }
 }
 
+// To define trace
+class ValueInfo(
+  value: String,
+  hasSubGrap: Bool,
+  // trace: To define
+)
+
 base class Environment(uri: String, wId: Int) extends SK.File {
   fun getGraphTitle(mutable SK.Context): Text;
   fun getGraphWidget(mutable SK.Context): ?SK.Future<Ui.Widget>;
   fun fetch(mutable SK.Context, Fetch): SK.Future<FetchResult>;
   fun openGraph(mutable SK.Context, GraphKey): void;
+  fun getValueKeys(mutable SK.Context, Ui.Path): ?SK.Future<Array<String>>;
+
+  fun getValueInfo(mutable SK.Context, Ui.Path): ?SK.Future<ValueInfo>;
 
   static fun bType(obj: SK.File): Environment {
     obj match {
@@ -69,6 +79,20 @@ class LamEnvironment(
 
   fun openGraph(ctx: mutable SK.Context, g: GraphKey): void {
     this.openGraph_(ctx, g)
+  }
+
+  fun getValueKeys(
+    _ctx: mutable SK.Context,
+    _path: Ui.Path,
+  ): ?SK.Future<Array<String>> {
+    invariant_violation("Not implemented")
+  }
+
+  fun getValueInfo(
+    _ctx: mutable SK.Context,
+    _path: Ui.Path,
+  ): ?SK.Future<ValueInfo> {
+    invariant_violation("Not implemented")
   }
 }
 
@@ -214,6 +238,21 @@ fun init(
   );
   context.setPersistent(kEnvKey, env);
   env
+}
+
+fun useSeparationState(
+  context: mutable SK.Context,
+  name: String,
+  default: Ui.Separation = Ui.FromStart(200),
+): Ui.SeparationProperty {
+  time = context.timeStamp();
+  prop = time.toString();
+  UiSeparationProp.Property::initValues(
+    context,
+    Some(prop),
+    Array[(SKStore.StrID(name), Some(default))],
+  );
+  UiSeparationProp.Property::forName(context, Some(prop), name);
 }
 
 module end;

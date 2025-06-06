@@ -58,7 +58,7 @@ fun getItems(
     if (!future.isLoading()) {
       future.error() match {
       | Some(failure) ->
-        Some(Array[`error:${failure.optError.default(!"Uknown")}`])
+        Some(Array[`error:${failure.optError.default(!"Unknown")}`])
       | _ ->
         result = future.get().value;
         if (result.status == 200) {
