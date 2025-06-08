@@ -77,12 +77,6 @@ fun main(): void {
   SkuiBuild.create() match {
   | Failure(err) ->
     skipExit(err.code) ///< Exit with error code on failure
-  | Success((build, _)) ->
-    build.each(b -> {
-      bcpp = b.filterCpp().cpp(true).flag("-std=c++17");
-      bcpp.compile("skdebugger");
-      bc = b.filterC();
-      bc.compile("skdebugger1");
-    })
+  | Success((build, _)) -> build.each(b -> b.compile("skdebugger"))
   }
 }

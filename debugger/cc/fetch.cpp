@@ -1,6 +1,5 @@
 #include <functional>
 #include <iostream>
-#include <optional>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,29 +37,27 @@ void skui_fetch(uint64_t wId, const char *url, const char *method,
   TXT(url, strUrl);
   TXT(method, strMethod);
   TXT(headers, strHeader);
-  std::optional<std::string> oStrBody;
-  if (body != nullptr) {
-    TXT(body, strBody);
-    oStrBody.emplace(strBody);
-  }
+  const char *cBody = body != nullptr ? strdup(body) : nullptr;
   TXT(executor, strExecutor);
-  std::thread t([wId, strUrl, strMethod, strHeader, oStrBody, strExecutor,
+  std::thread t([wId, strUrl, strMethod, strHeader, cBody, strExecutor,
                  timeout_s, time]() {
-    const char *skbody = oStrBody.has_value() ? STR((*oStrBody)) : nullptr;
     void *obstack = SKIP_new_Obstack();
+    const char *skbody =
+        cBody != nullptr ? sk_string_create(cBody, strlen(cBody)) : nullptr;
     fetch_result_t result = sk_inner_fetch(STR(strUrl), STR(strMethod),
                                            STR(strHeader), skbody, timeout_s);
     fetch_result_t copied = {result.status,
                              result.headers ? strdup(result.headers) : nullptr,
                              result.body ? strdup(result.body) : nullptr,
                              result.error ? strdup(result.error) : nullptr};
-    SKUI_runInMain(wId, [time, strUrl, strMethod, strHeader, oStrBody,
-                         strExecutor, copied]() {
+    SKUI_runInMain(wId, [time, strUrl, strMethod, strHeader, cBody, strExecutor,
+                         copied]() {
       void *obstack = SKIP_new_Obstack();
       const char *skurl = STR(strUrl);
       const char *skmethod = STR(strMethod);
       const char *skheader = STR(strHeader);
-      const char *skbody = oStrBody.has_value() ? STR((*oStrBody)) : nullptr;
+      const char *skbody =
+          cBody != nullptr ? sk_string_create(cBody, strlen(cBody)) : nullptr;
       const char *skexecutor = STR(strExecutor);
       const char *rHeader = CSTR(copied.headers);
       const char *rBody = CSTR(copied.body);
@@ -68,6 +65,14 @@ void skui_fetch(uint64_t wId, const char *url, const char *method,
       void *result = sk_create_result(copied.status, rHeader, rBody, rError);
       skui_fetch_result(skurl, skmethod, skheader, skbody, skexecutor, time,
                         result);
+      if (cBody != nullptr)
+        free((void *)cBody);
+      if (copied.headers != nullptr)
+        free((void *)copied.headers);
+      if (copied.body != nullptr)
+        free((void *)copied.body);
+      if (copied.error != nullptr)
+        free((void *)copied.error);
       SKIP_destroy_Obstack(obstack);
     });
     SKIP_destroy_Obstack(obstack);

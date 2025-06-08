@@ -69,6 +69,10 @@ class Graph(
   outputs: Array<Name>,
 ) extends SK.File
 
+class Entries(
+  values: Array<(SKJSON.CJSON, Array<SKJSON.CJSON>)>,
+) extends SK.File
+
 class Instance(params: SKJSON.CJSON, clients: Array<String>)
 
 fun indicator(context: mutable SK.Context, path: Ui.Path): Ui.Widget {

@@ -45,6 +45,15 @@ fun instanceFromJSON(jsv: SKJSON.CJSON): Instance {
   )
 }
 
+fun entriesFromJSON(jsv: SKJSON.CJSON): Entries {
+  Entries(
+    SKJSON.expectArray(jsv).map(v -> {
+      entry = SKJSON.expectArray(v);
+      (entry[0], SKJSON.expectArray(entry[1]))
+    }),
+  )
+}
+
 private fun entityFromJSON(jsv: JSON.Value): Entity {
   jso = jsv.expectObject();
   getStringArray = (prop) ~> {

@@ -127,21 +127,35 @@ fun init(
     context,
     rootPath.sub("tocollect"),
     (_ctx, writer, key, it) ~> {
-      GraphDef::fromPath(key)
-        .map(def ->
-          def match {
-          | SharedDef _ -> Fetch(Path.join(uri, "v1/shared"), it.first.value)
-          | ResourceDef(name, params) ->
-            Fetch(
-              Path.join(uri, `v1/resource/${name}`),
+      GraphDef::fromPath(key).map(def ->
+        def match {
+        | SharedDef _ -> Fetch(Path.join(uri, "v1/shared"), it.first.value)
+        | ResourceDef(name, params) ->
+          Fetch::jsonPost(
+            Path.join(uri, `v1/resource/${name}`),
+            it.first.value,
+            params.toJSON(),
+          )
+        }
+      ) match {
+      | Some(options) -> writer.set(key, options)
+      | _ ->
+        key match {
+        | Ui.Path(input, Some(Ui.Path("inputs", None()))) ->
+          description = JSON.Object(
+            Map["kind" => JSON.String("input"), "name" => JSON.String(input)],
+          );
+          writer.set(
+            key,
+            Fetch::jsonPost(
+              Path.join(uri, `v1/values`),
               it.first.value,
-              SKUtils.Get(),
-              Map[],
-              Some(params.prettyPrint()),
-            )
-          }
-        )
-        .each(options -> writer.set(key, options))
+              description,
+            ),
+          )
+        | _ -> void
+        }
+      }
     },
   );
   collectedHdl = toCollectHdl.map(
@@ -246,6 +260,7 @@ fun init(
   );
   iHandle = SK.toIHandle(pathsHdl);
   open = (ctx, key) ~> {
+    debug(("open", key));
     iHandle.write(ctx, key, SK.IntFile(ctx.timeStamp().value));
     ctx.updateIfRoot()
   };

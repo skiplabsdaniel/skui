@@ -79,6 +79,16 @@ class Fetch(
     )
   }
 
+  static fun jsonPost(url: String, time: Int, body: JSON.Value): Fetch {
+    Fetch(
+      url,
+      time,
+      SKUtils.Post(),
+      Map["Content-Type" => "application/json"],
+      Some(body.toString()),
+    )
+  }
+
   static fun fromFetchKey(key: FetchKey): Fetch {
     Fetch(
       key.url,
