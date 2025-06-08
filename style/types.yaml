@@ -1,0 +1,257 @@
+types:
+
+  # UNITS
+  # Length units commonly used in CSS
+  length-unit:
+    type: enum
+    values: [px, em, rem, vh, vw, %, ch, ex]
+
+  # Units for angles in CSS (degrees, radians, turns)
+  angle-unit:
+    type: enum
+    values: [deg, rad, turn]
+
+  # Time units for animations, transitions, etc.
+  time-unit:
+    type: enum
+    values: [s, ms]
+
+  # Frequency units, used in filters or audio-related properties
+  frequency-unit:
+    type: enum
+    values: [hz, khz]
+
+  # COLORS
+  # Color format, can be extended with regex for hex/rgb/hsl/named colors
+  color:
+    type: string
+
+  # PRIMITIVES
+  # Length value with unit
+  length:
+    type: object
+    properties:
+      value: number           # Numeric part of length
+      unit: { $ref: length-unit }  # Unit part
+
+  # Percentage values (e.g. 50%)
+  percentage:
+    type: string
+    pattern: "^[0-9]+%$"
+
+  # Angle values (e.g. 45deg)
+  angle:
+    type: object
+    properties:
+      value: number
+      unit: { $ref: angle-unit }
+
+  # Time values (e.g. 200ms, 3s)
+  time:
+    type: object
+    properties:
+      value: number
+      unit: { $ref: time-unit }
+
+  # Frequency values (e.g. 440hz)
+  frequency:
+    type: object
+    properties:
+      value: number
+      unit: { $ref: frequency-unit }
+
+  # TEXT PROPERTIES
+  # Font styles: normal, italic, oblique
+  font-style:
+    type: enum
+    values: [normal, italic, oblique]
+
+  # Font variant, e.g. small-caps
+  font-variant:
+    type: enum
+    values: [normal, small-caps]
+
+  # Font weight options (named and numeric)
+  font-weight:
+    type: enum
+    values: [normal, bold, bolder, lighter, 100, 200, 300, 400, 500, 600, 700, 800, 900]
+
+  # Font size can be length, percentage or predefined keywords
+  font-size:
+    type: oneOf
+    options:
+      - { $ref: length }
+      - { $ref: percentage }
+      - enum: [xx-small, x-small, small, medium, large, x-large, xx-large, smaller, larger]
+
+  # Font family as a list of font names/families
+  font-family:
+    type: array
+    items: string
+
+  # Text decoration line types (underline, overline, etc.)
+  text-decoration-line:
+    type: enum
+    values: [none, underline, overline, line-through, blink]
+
+  # Text decoration styles (solid, dotted, etc.)
+  text-decoration-style:
+    type: enum
+    values: [solid, double, dotted, dashed, wavy]
+
+  # Color used in text decoration
+  text-decoration-color:
+    type: { $ref: color }
+
+  # BOX PROPERTIES (excluding layout-related properties)
+  # Border styles available in CSS
+  border-style:
+    type: enum
+    values: [none, hidden, dotted, dashed, solid, double, groove, ridge, inset, outset]
+
+  # Border width can be length or named thickness
+  border-width:
+    type: oneOf
+    options:
+      - { $ref: length }
+      - enum: [thin, medium, thick]
+
+  # Border color
+  border-color:
+    type: { $ref: color }
+
+  # Border radius can be length or percentage
+  border-radius:
+    type: oneOf
+    options:
+      - { $ref: length }
+      - { $ref: percentage }
+
+  # Box shadow property (complex, can be extended)
+  box-shadow:
+    type: array
+    items:
+      type: object
+      properties:
+        offset-x: { $ref: length }
+        offset-y: { $ref: length }
+        blur-radius:
+          oneOf:
+            - { $ref: length }
+            - null        # optional
+        spread-radius:
+          oneOf:
+            - { $ref: length }
+            - null        # optional
+        color:
+          oneOf:
+            - { $ref: color }
+            - null        # optional
+        inset:
+          type: boolean  # true for inset shadows
+
+  # BACKGROUND PROPERTIES
+  background-repeat:
+    type: enum
+    values: [repeat, repeat-x, repeat-y, no-repeat, space, round]
+
+  background-position:
+    type: oneOf
+    options:
+      - enum: [left, center, right, top, bottom]
+      - array:
+          items: [{ $ref: percentage }, { $ref: percentage }]
+      - array:
+          items: [{ $ref: length }, { $ref: length }]
+      - array:
+          items:
+            - enum: [left, center, right, top, bottom]
+            - oneOf: [{ $ref: percentage }, { $ref: length }]
+
+  background-size:
+    type: oneOf
+    options:
+      - enum: [auto, cover, contain]
+      - array:
+          items: [{ $ref: length }, { $ref: length }]
+      - array:
+          items: [{ $ref: percentage }, { $ref: percentage }]
+
+  background-image:
+    type: array
+    items:
+      type: object
+      properties:
+        url:
+          type: string   # url string
+        linear-gradient:
+          type: object
+          properties:
+            direction: { type: string } # e.g. 'to bottom'
+            stops:
+              type: array
+              items:
+                type: object
+                properties:
+                  position: { $ref: percentage }
+                  color: { $ref: color }
+        radial-gradient:
+          type: object
+          properties:
+            shape: { type: string }  # e.g. 'circle', 'ellipse'
+            size: { type: string }   # e.g. 'closest-side'
+            position: { $ref: background-position }
+            stops:
+              type: array
+              items:
+                type: object
+                properties:
+                  position: { $ref: percentage }
+                  color: { $ref: color }
+
+  # POSITIONABLE GROUP (background-repeat, position, size)
+  positionable:
+    type: object
+    properties:
+      repeat: { $ref: background-repeat }
+      position: { $ref: background-position }
+      size: { $ref: background-size }
+
+  # ANIMATIONS
+  animation-name:
+    type: string  # or list of strings
+
+  animation-duration:
+    type: oneOf
+    options:
+      - { $ref: time }
+      - enum: [inherit, initial, unset]
+
+  animation-timing-function:
+    type: enum
+    values: [linear, ease, ease-in, ease-out, ease-in-out, step-start, step-end]
+
+  animation-delay:
+    type: oneOf
+    options:
+      - { $ref: time }
+      - enum: [inherit, initial, unset]
+
+  animation-iteration-count:
+    type: oneOf
+    options:
+      - number
+      - enum: [infinite]
+
+  animation-direction:
+    type: enum
+    values: [normal, reverse, alternate, alternate-reverse]
+
+  animation-fill-mode:
+    type: enum
+    values: [none, forwards, backwards, both]
+
+  animation-play-state:
+    type: enum
+    values: [running, paused]
+

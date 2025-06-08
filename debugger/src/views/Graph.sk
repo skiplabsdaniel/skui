@@ -18,7 +18,7 @@ fun buildGraphView(
     context,
     titlePath.makeChild("text"),
     UiText.LamController{
-      text => env.getGraphTitle,
+      text => env.getTitle,
       style => Ui.default(
         Text.Style{
           faceId => UiTheme.bigFace,
@@ -42,13 +42,13 @@ fun buildGraphView(
     titlePath.makeChild("error"),
     UiText.LamController{
       text => ctx ~>
-        env.getGraphWidget(ctx) match {
+        env.getWidget(ctx) match {
         | Some(future) ->
           if (future.isLoading()) {
             Raw("")
           } else {
             future.error() match {
-            | Some(failure) -> failure.optError.default(!"Uknown")
+            | Some(failure) -> failure.optError.default(!"Unknown")
             | _ -> Raw("")
             }
           }
@@ -68,7 +68,7 @@ fun buildGraphView(
     path.makeChild("centered"),
     UiAspectRatio.LamController{
       widget => ctx ~> {
-        env.getGraphWidget(ctx) match {
+        env.getWidget(ctx) match {
         | Some(future) ->
           if (future.isLoading()) {
             indicator

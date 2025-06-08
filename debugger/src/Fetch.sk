@@ -6,7 +6,6 @@ class Call(
   wId: Int,
   dirName: SK.DirName,
   fetch: FetchKey,
-  time: SK.Time,
   timeout_s: Int,
 ) extends SKStore.Postponable {
   //
@@ -19,12 +18,10 @@ class Call(
       this.fetch.body,
       this.timeout_s,
       this.dirName.toString(),
-      this.time.value,
+      this.fetch.time,
     )
   }
 }
-
-class Timed(value: SK.Loadable, time: SK.Time) extends SK.File
 
 class FetchResult(value: SKUtils.FetchResult) extends SK.File
 
@@ -36,7 +33,7 @@ fun initFetchCall(
 ): Ui.GetterOne<SK.Future<FetchResult>, Fetch> {
   callHdl = SK.LHandle::lazy(
     FetchKey::keyType,
-    Timed::type,
+    SK.Loadable::btype,
     context,
     dirName,
     (ctx, _self, key) ~> {
@@ -48,46 +45,44 @@ fun initFetchCall(
             values.size() == 1,
             "Must have at least one and only one value",
           );
-          Some(Timed::type(values[0]))
+          Some(SK.Loadable::btype(values[0]))
         | _ -> None()
         }
       | _ -> None()
       }) match {
       | Some(v) -> v
       | _ ->
-        time = ctx.timeStamp();
-        ctx.postpone(Call(wId, dirName, key, time, timeout_s));
-        Timed(SK.Loading(), time)
+        ctx.postpone(Call(wId, dirName, key, timeout_s));
+        SK.Loading()
       }
     },
-    false,
   );
   (ctx, key) ~> {
-    SK.LoadableFuture(
-      FetchResult::type,
-      callHdl.get(ctx, key.toFetchKey()).value,
-    )
+    SK.LoadableFuture(FetchResult::type, callHdl.get(ctx, key.toFetchKey()))
   }
 }
 
 class Fetch(
   url: String,
+  time: Int,
   method: SKUtils.Method = SKUtils.Get(),
   headers: Map<String, String> = Map[],
   body: ?String = None(),
-) {
+) extends SK.File {
   fun toFetchKey(): FetchKey {
     FetchKey(
       this.url,
       this.method.toString(),
       JSON.Object(this.headers.map((_k, v) -> JSON.String(v))).toString(),
       this.body,
+      this.time,
     )
   }
 
   static fun fromFetchKey(key: FetchKey): Fetch {
     Fetch(
       key.url,
+      key.time,
       SKUtils.Method::fromString(key.method),
       JSON.decode(key.headers).expectObject().value.map((_, v) ->
         v.expectString()
@@ -102,6 +97,7 @@ class FetchKey(
   method: String,
   headers: String,
   body: ?String,
+  time: Int,
 ) extends SK.Key {
   fun toString(): String {
     inspect(this).toString()
@@ -112,31 +108,22 @@ fun writeFetchResult(
   dirName: SK.DirName,
   key: FetchKey,
   loadable: SK.Loadable,
-  time: Int,
 ): void {
   SK.Context::withoutGc(ctx ~> {
     invariant(ctx.currentArrow().isNone(), "Cannot be called durring update");
     ctx.maybeGetLazyDir(dirName) match {
     | Some(ldir) ->
-      (optTime, reads) = ldir.unsafeGet(key) match {
+      reads = ldir.unsafeGet(key) match {
       | SK.LDefined(values, reads) ->
         invariant(
           values.size() == 1,
           "Must have at least one and only one value",
         );
-        timed = Timed::type(values[0]);
-        (Some(timed.time), reads)
-      | SK.LRemoved(reads) -> (None(), reads)
+        reads
+      | SK.LRemoved(reads) -> reads
       | _ -> invariant_violation("Must be defined")
       };
-      cTime = SK.Time(time);
-      optTime match {
-      | None() ->
-        ldir.writeArray(ctx, key, Array[Timed(loadable, cTime)], reads)
-      | Some(t) if (t == cTime) ->
-        ldir.writeArray(ctx, key, Array[Timed(loadable, cTime)], reads)
-      | _ -> void
-      }
+      ldir.writeArray(ctx, key, Array[loadable], reads)
     | _ -> invariant_violation(`No lazy dir ${dirName} found`)
     };
     ctx.update()
@@ -157,12 +144,11 @@ fun skui_fetch_result(
 ): void {
   writeFetchResult(
     SK.DirName::create(executor),
-    FetchKey(url, method, headers, body),
+    FetchKey(url, method, headers, body, time),
     result match {
     | Success(res) -> SK.Loaded(FetchResult(res))
     | Failure(res) -> SK.LoadFailed(Some(!res.getMessage()))
     },
-    time,
   )
 }
 

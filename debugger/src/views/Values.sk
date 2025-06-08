@@ -3,38 +3,29 @@ module alias D = SkDebugger;
 
 module SkDebugViews;
 
-class ValuesTree(env: D.Environment, path: Ui.Path) {
+class ValuesTree(values: Array<(SKJSON.CJSON, Array<SKJSON.CJSON>)>) {
   //
-  fun getProgress(_context: mutable SK.Context, _path: Ui.Path): ?Ui.Progress {
-    invariant_violation("Not implemented")
-  }
-
-  fun getItems(context: mutable SK.Context, optPath: ?Ui.Path): ?Array<String> {
+  fun getItems(
+    _context: mutable SK.Context,
+    optPath: ?Ui.Path,
+  ): ?Array<String> {
     optPath match {
-    | None() ->
-      this.env.getValueKeys(context, this.path).flatMap(future -> {
-        if (future.isLoading()) {
-          None()
-        } else {
-          future.error() match {
-          | Some(lf) -> Some(Array[`error:${lf.optError.default(!"Unknown")}`])
-          | _ -> Some(future.get())
-          }
-        }
-      })
+    | None() -> Some(this.values.mapWithIndex((idx, _) -> idx.toString()))
     | _ -> None()
     }
   }
 
   fun getItem(_context: mutable SK.Context, path: Ui.Path): UiTree.Item {
     path match {
-    | Ui.Path(value, None()) -> UiTree.Item{text => Raw(value), leaf => true}
+    | Ui.Path(value, None()) ->
+      value.toIntOption().flatMap(idx ->
+        this.values.maybeGet(idx).map(kv -> kv.i0.prettyPrint())
+      ) match {
+      | Some(text) -> UiTree.Item{text => Raw(text), leaf => true}
+      | _ -> UiTree.Item{text => !`Error: Unknown`, leaf => true}
+      }
     | _ -> UiTree.Item{text => !`TODO: [value, graph]`, leaf => true}
     }
-  }
-
-  fun getBadge(_context: mutable SKStore.Context, _path: Ui.Path): ?Text {
-    None()
   }
 
   fun fire(
@@ -46,19 +37,61 @@ class ValuesTree(env: D.Environment, path: Ui.Path) {
   }
 }
 
+class ValueTree(value: SKJSON.CJSON) {
+  //
+  fun getItems(
+    _context: mutable SK.Context,
+    optPath: ?Ui.Path,
+  ): ?Array<String> {
+    value = this.getValue(optPath);
+    Some(
+      value match {
+      | SKJSON.CJObject(fields) -> fields.cols
+      | SKJSON.CJArray(v) -> v.mapWithIndex((idx, _) -> idx.toString())
+      | _ -> Array["#"]
+      },
+    )
+  }
+
+  fun getItem(_context: mutable SK.Context, path: Ui.Path): UiTree.Item {
+    path match {
+    | _ -> UiTree.Item{text => !"TODO", leaf => true}
+    }
+  }
+
+  fun fire(
+    _context: mutable SK.Context,
+    optPath: ?Ui.Path,
+    selection: Array<Ui.Path>,
+  ): void {
+    debug(("Fire", optPath, selection))
+  }
+
+  private fun getValue(optPath: ?Ui.Path): SKJSON.CJSON {
+    optPath match {
+    | Some(Ui.Path(id, optParent)) ->
+      pValue = this.getValue(optParent);
+      id.toIntOption() match {
+      | Some(iid) -> SKJSON.expectArray(pValue)[iid]
+      | _ if (id == "#") -> pValue
+      | _ -> SKJSON.getValue(SKJSON.asObject(pValue), id).fromSome()
+      }
+    | _ -> this.value
+    }
+  }
+}
+
 fun buildValuesTreeView(
   context: mutable SKStore.Context,
   path: Ui.Path,
-  env: D.Environment,
-  valuePath: Ui.Path,
+  _env: D.Environment,
+  values: Array<(SKJSON.CJSON, Array<SKJSON.CJSON>)>,
 ): Ui.Widget {
-  utils = ValuesTree(env, valuePath);
+  utils = ValuesTree(values);
   controller = UiTree.LamController{
-    selectionModel => (_ctx, _iu) ~> UiTree.Single(),
+    selectionModel => Ui.defaultOne(UiTree.Single()),
     items => utils.getItems,
     item => utils.getItem,
-    progress => utils.getProgress,
-    badge => utils.getBadge,
     fire => utils.fire,
   };
   Ui.Tree::create(
@@ -69,28 +102,91 @@ fun buildValuesTreeView(
   )
 }
 
+class Tabs(env: D.Environment, path: Ui.Path) {
+  //
+  fun getTabs(_context: mutable SKStore.Context): Array<String> {
+    Array["value", "graph", "trace"]
+  }
+
+  fun getTab(_context: mutable SKStore.Context, id: String): UiTabPane.Tab {
+    id match {
+    | "value" ->
+      UiTabPane.Tab{
+        optText => Some(!"Value"),
+        optTooltip => Some(!"Detail of the key and it's value"),
+      }
+    | "graph" ->
+      UiTabPane.Tab{
+        optText => Some(!"Value"),
+        optTooltip => Some(
+          !"The sub graph careted to compute the key, value pair\nTo be done",
+        ),
+      }
+    | "trace" ->
+      UiTabPane.Tab{
+        optText => Some(!"Trace"),
+        optTooltip => Some(!"The update trace\nTo be done"),
+      }
+    | _ -> invariant_violation("Invalid tab id")
+    };
+  }
+
+  fun getWidget(context: mutable SKStore.Context, id: String): ?Ui.Widget {
+    fill = Ui.webColor("#d62f0d").default(Colors.black());
+    Some(
+      Ui.VText::createForController(
+        context,
+        this.path.makeChild("text"),
+        UiText.LamController{
+          text => Ui.default(
+            I18N.format(!"TODO '{1}' view", Vector<Text>[Raw(id)]),
+          ),
+          style => Ui.default(
+            Text.Style{
+              faceId => UiTheme.bigFace,
+              fill,
+              hAlignment => Text.Center(),
+            },
+          ),
+        },
+      ),
+    )
+  }
+
+  fun isDisabled(_context: mutable SKStore.Context, tab: String): Bool {
+    tab match {
+    | "value" -> false
+    | _ -> true
+    }
+  }
+}
+
 fun buildValuesTabsView(
-  _context: mutable SKStore.Context,
-  _path: Ui.Path,
-  _env: D.Environment,
+  context: mutable SKStore.Context,
+  path: Ui.Path,
+  env: D.Environment,
 ): Ui.Widget {
-  invariant_violation("Not implemented")
+  tabs = Tabs(env, path);
+  Ui.TabPane::create(
+    context,
+    path,
+    UiTabPane.LamController{
+      tabs => tabs.getTabs,
+      tab => tabs.getTab,
+      widget => tabs.getWidget,
+    },
+  )
 }
 
 fun buildValuesView(
   context: mutable SKStore.Context,
   path: Ui.Path,
   env: D.Environment,
-  valuePath: Ui.Path,
+  values: Array<(SKJSON.CJSON, Array<SKJSON.CJSON>)>,
   conf: ?Ui.Configuration = None(),
 ): Ui.Widget {
   tabView = buildValuesTabsView(context, path.makeChild("tabs"), env);
-  treeView = buildValuesTreeView(
-    context,
-    path.makeChild("tree"),
-    env,
-    valuePath,
-  );
+  treeView = buildValuesTreeView(context, path.makeChild("tree"), env, values);
   valuesSplitProp = D.useSeparationState(context, "values-split");
   Ui.Split::create(
     context,

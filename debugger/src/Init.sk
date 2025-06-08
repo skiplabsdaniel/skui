@@ -4,41 +4,42 @@ module SkDebugger;
 
 const kEnvKey: String = "Debug.Environment";
 
-base class GraphKey extends SK.Key, SK.File {
+base class GraphDef {
   children =
-  | SharedKey()
-  | ResourceKey(String, SKJSON.CJSON)
+  | SharedDef()
+  | ResourceDef(String, SKJSON.CJSON)
 
-  static fun bKeyType(obj: SK.Key): GraphKey {
-    obj match {
-    | x @ GraphKey _ -> x
-    | _ -> SK.cast_violation("SkDebugger.GraphKey", obj)
-    }
-  }
-
-  static fun bType(obj: SK.File): GraphKey {
-    obj match {
-    | x @ GraphKey _ -> x
-    | _ -> SK.cast_violation("SkDebugger.GraphKey", obj)
+  static fun fromPath(path: Ui.Path): ?GraphDef {
+    path match {
+    | Ui.Path("service", None()) -> Some(SharedDef())
+    | Ui.Path(
+      instanceStr,
+      Some(Ui.Path(resource, Some(Ui.Path("resources", None())))),
+    ) if (instanceStr != "noinstances") ->
+      instance = instanceFromJSON(SKJSON.decode(instanceStr));
+      Some(ResourceDef(resource, instance.params))
+    | _ -> None()
     }
   }
 }
 
-// To define trace
 class ValueInfo(
   value: String,
   hasSubGrap: Bool,
   // trace: To define
 )
 
-base class Environment(uri: String, wId: Int) extends SK.File {
-  fun getGraphTitle(mutable SK.Context): Text;
-  fun getGraphWidget(mutable SK.Context): ?SK.Future<Ui.Widget>;
-  fun fetch(mutable SK.Context, Fetch): SK.Future<FetchResult>;
-  fun openGraph(mutable SK.Context, GraphKey): void;
-  fun getValueKeys(mutable SK.Context, Ui.Path): ?SK.Future<Array<String>>;
+class TPath(time: Int, path: Ui.Path) uses Orderable extends SK.File
 
-  fun getValueInfo(mutable SK.Context, Ui.Path): ?SK.Future<ValueInfo>;
+base class Environment(uri: String, wId: Int) extends SK.File {
+  fun getTitle(mutable SK.Context): Text;
+  fun getWidget(mutable SK.Context): ?SK.Future<Ui.Widget>;
+
+  fun open(mutable SK.Context, Ui.Path): void;
+
+  fun fetch(mutable SK.Context, Fetch): SK.Future<FetchResult>;
+
+  fun getTime(mutable SK.Context): Int;
 
   static fun bType(obj: SK.File): Environment {
     obj match {
@@ -50,35 +51,41 @@ base class Environment(uri: String, wId: Int) extends SK.File {
   fun fetchResourceInstances(
     context: mutable SK.Context,
     resource: String,
+    time: Int,
   ): SK.Future<FetchResult> {
     this.fetch(
       context,
-      Fetch(Path.join(this.uri, `v1/instances/${resource}`), SKUtils.Get()),
+      Fetch(
+        Path.join(this.uri, `v1/instances/${resource}`),
+        time,
+        SKUtils.Get(),
+      ),
     );
   }
 }
 
 class LamEnvironment(
-  private graphTitle: Ui.Getter<Text>,
-  private graphWidget: Ui.Getter<?SK.Future<Ui.Widget>>,
+  private title: Ui.Getter<Text>,
+  private widget: Ui.Getter<?SK.Future<Ui.Widget>>,
+  private open_: (mutable SK.Context, Ui.Path) ~> void,
   private fetch_: Ui.GetterOne<SK.Future<FetchResult>, Fetch>,
-  private openGraph_: (mutable SK.Context, GraphKey) ~> void,
+  private time: (mutable SK.Context) ~> Int,
 ) extends Environment {
   //
-  fun getGraphTitle(ctx: mutable SK.Context): Text {
-    this.graphTitle(ctx)
+  fun getTitle(ctx: mutable SK.Context): Text {
+    this.title(ctx)
   }
 
-  fun getGraphWidget(ctx: mutable SK.Context): ?SK.Future<Ui.Widget> {
-    this.graphWidget(ctx)
+  fun getWidget(ctx: mutable SK.Context): ?SK.Future<Ui.Widget> {
+    this.widget(ctx)
+  }
+
+  fun open(ctx: mutable SK.Context, path: Ui.Path): void {
+    this.open_(ctx, path)
   }
 
   fun fetch(ctx: mutable SK.Context, f: Fetch): SK.Future<FetchResult> {
     this.fetch_(ctx, f)
-  }
-
-  fun openGraph(ctx: mutable SK.Context, g: GraphKey): void {
-    this.openGraph_(ctx, g)
   }
 
   fun getValueKeys(
@@ -94,6 +101,10 @@ class LamEnvironment(
   ): ?SK.Future<ValueInfo> {
     invariant_violation("Not implemented")
   }
+
+  fun getTime(ctx: mutable SK.Context): Int {
+    this.time(ctx)
+  }
 }
 
 fun init(
@@ -104,39 +115,57 @@ fun init(
   space: Float = 10.0,
 ): Environment {
   fetch = initFetchCall(context, wId, rootPath.sub("fetch"));
-  graphsHDL = context.makeDir(
-    GraphKey::bKeyType,
+  pathsHdl = context.makeDir(
+    Ui.Path::keyType,
     SK.IntFile::type,
-    rootPath.sub("graphs"),
+    rootPath.sub("paths"),
     Array[],
   );
-  openedGraphHDL = context.makeDir(
-    SK.UnitID::keyType,
-    GraphKey::bType,
-    rootPath.sub("graphs/opened"),
-    Array[],
+  toCollectHdl = pathsHdl.map(
+    Ui.Path::keyType,
+    Fetch::type,
+    context,
+    rootPath.sub("tocollect"),
+    (_ctx, writer, key, it) ~> {
+      GraphDef::fromPath(key)
+        .map(def ->
+          def match {
+          | SharedDef _ -> Fetch(Path.join(uri, "v1/shared"), it.first.value)
+          | ResourceDef(name, params) ->
+            Fetch(
+              Path.join(uri, `v1/resource/${name}`),
+              it.first.value,
+              SKUtils.Get(),
+              Map[],
+              Some(params.prettyPrint()),
+            )
+          }
+        )
+        .each(options -> writer.set(key, options))
+    },
   );
-  collectedHdl = graphsHDL.map(
-    GraphKey::bKeyType,
+  collectedHdl = toCollectHdl.map(
+    Ui.Path::keyType,
     SK.Loadable::btype,
     context,
     rootPath.sub("collected"),
-    (ctx, writer, key, _it) ~> {
-      options = key match {
-      | SharedKey() -> Fetch(Path.join(uri, "v1/shared"))
-      | ResourceKey(name, params) ->
-        Fetch(
-          Path.join(uri, `v1/resource/${name}`),
-          SKUtils.Get(),
-          Map[],
-          Some(params.prettyPrint()),
-        )
-      };
-      writer.set(key, fetch(ctx, options).asLoadable())
+    (ctx, writer, key, it) ~> {
+      writer.set(key, fetch(ctx, it.first).asLoadable())
+    },
+  );
+  openedHdl = pathsHdl.map(
+    SK.UnitID::keyType,
+    TPath::type,
+    context,
+    rootPath.sub("paths/opened"),
+    (ctx, writer, key, it) ~> {
+      collectedHdl.maybeGet(ctx, key).each(_ ->
+        writer.set(SK.UnitID::singleton, TPath(it.first.value, key))
+      )
     },
   );
   parsedHdl = collectedHdl.map(
-    GraphKey::bKeyType,
+    Ui.Path::keyType,
     SK.Loadable::btype,
     context,
     rootPath.sub("parsed"),
@@ -146,14 +175,18 @@ fun init(
         it.first.then(ctx, (_, f) ~> {
           result = FetchResult::type(f).value;
           if (result.status == 200) {
-            result.json(graphFromJSON) match {
-            | Failure(e) ->
-              error = I18N.format(
-                !"Unable to build graph {1}",
-                Vector<Text>[!e.getMessage()],
-              );
-              SK.LoadFailed(Some(error))
-            | Success(graph) -> SK.Loaded(graph)
+            GraphDef::fromPath(key) match {
+            | Some _ ->
+              result.json(graphFromJSON) match {
+              | Failure(e) ->
+                error = I18N.format(
+                  !"Unable to build graph {1}",
+                  Vector<Text>[!e.getMessage()],
+                );
+                SK.LoadFailed(Some(error))
+              | Success(graph) -> SK.Loaded(graph)
+              }
+            | _ -> SK.LoadFailed(Some(!"TODO"))
             }
           } else {
             error = I18N.format(
@@ -167,7 +200,7 @@ fun init(
     },
   );
   metricsHdl = parsedHdl.map(
-    GraphKey::bKeyType,
+    Ui.Path::keyType,
     SK.Loadable::btype,
     context,
     rootPath.sub("metrics"),
@@ -175,13 +208,16 @@ fun init(
       writer.set(
         key,
         it.first.then(ctx, (_, f) ~> {
-          SK.Loaded(GraphMetrics::compute(Graph::type(f), TNodeFactory()))
+          f match {
+          | g @ Graph _ -> SK.Loaded(GraphMetrics::compute(g, TNodeFactory()))
+          | _ -> SK.LoadFailed(Some(!"TODO"))
+          }
         }),
       );
     },
   );
   widgetsHdl = metricsHdl.map(
-    GraphKey::bKeyType,
+    Ui.Path::keyType,
     SK.Loadable::btype,
     context,
     rootPath.sub("widgets"),
@@ -189,50 +225,64 @@ fun init(
       writer.set(
         key,
         it.first.then(ctx, (_, f) -> {
-          path = Ui.Path::create(
-            key match {
-            | SharedKey() -> "shared"
-            | ResourceKey(name, params) ->
-              `${name}/${base64(params.prettyPrint())}`
-            },
-          );
-          Unsafe.maybeCast(GMetrics::bType(f), GraphMetrics<TNode>) match {
-          | Some(metrics) ->
-            controller = GraphController::make(path, metrics, space);
-            SK.Loaded(
-              Ui.WidgetFile(
-                UiGraph::createForController(ctx, path, controller),
-              ),
-            )
-          | _ -> SK.LoadFailed(Some(!"Unrecognized metrics"))
+          path = key.makeChild("widget");
+          f match {
+          | gm @ GMetrics _ ->
+            Unsafe.maybeCast(gm, GraphMetrics<TNode>) match {
+            | Some(metrics) ->
+              controller = GraphController::make(path, metrics, space);
+              SK.Loaded(
+                Ui.WidgetFile(
+                  UiGraph::createForController(ctx, path, controller),
+                ),
+              )
+            | _ -> SK.LoadFailed(Some(!"Unrecognized metrics"))
+            }
+          | _ -> SK.LoadFailed(Some(!"TODO"))
           }
         }),
       );
     },
   );
-  iHandle = SK.toIHandle(graphsHDL);
-  iOpened = SK.toIHandle(openedGraphHDL);
-  openGraph = (ctx, key) ~> {
+  iHandle = SK.toIHandle(pathsHdl);
+  open = (ctx, key) ~> {
     iHandle.write(ctx, key, SK.IntFile(ctx.timeStamp().value));
-    iOpened.write(ctx, SK.UnitID::singleton, key);
     ctx.updateIfRoot()
+  };
+  openedPath = ctx ~> {
+    sorted = openedHdl.getArray(ctx, SK.UnitID::singleton).sorted();
+    sorted.maybeGet(sorted.size() - 1).map(tp -> tp.path)
   };
   env = LamEnvironment(
     ctx ~>
-      !(openedGraphHDL.maybeGet(ctx, SK.UnitID::singleton) match {
-      | Some(SharedKey()) -> service.name
-      | Some(ResourceKey(name, param)) -> `${name}: ${param.prettyPrint()}`
+      !(openedPath(ctx) match {
+      | Some(path) ->
+        GraphDef::fromPath(path)
+          .map(def ->
+            def match {
+            | SharedDef _ -> service.name
+            | ResourceDef(name, params) -> `${name}: ${params.prettyPrint()}`
+            }
+          )
+          .default("TODO")
       | _ -> "Loading..."
       }),
     ctx ~> {
-      openedGraphHDL.maybeGet(ctx, SK.UnitID::singleton).flatMap(key ->
+      openedPath(ctx).flatMap(key ->
         widgetsHdl.maybeGet(ctx, key).map(l ->
           SK.LoadableFuture(f ~> Ui.WidgetFile::type(f).widget, l)
         )
       )
     },
+    open,
     fetch,
-    openGraph,
+    ctx ~> {
+      // get the current time without depend on it
+      sorted = openedHdl
+        .getArrayValue(ctx, SK.UnitID::singleton, true)
+        .sorted();
+      sorted.maybeGet(sorted.size() - 1).map(tp -> tp.time).default(0)
+    },
     uri,
     wId,
   );

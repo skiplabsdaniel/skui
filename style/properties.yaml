@@ -1,0 +1,306 @@
+typography:
+  font-family: string
+  font-size:
+    - small
+    - medium
+    - large
+    - x-large
+    - xx-large
+    - smaller
+    - larger
+    - { $ref: length }  # ex: 12px, 1.5em
+    - { $ref: percentage }  # ex: 120%
+  font-weight:
+    - normal
+    - bold
+    - bolder
+    - lighter
+    - "100"
+    - "200"
+    - "300"
+    - "400"
+    - "500"
+    - "600"
+    - "700"
+    - "800"
+    - "900"
+  font-style:
+    - normal
+    - italic
+    - oblique
+  text-align:
+    - left
+    - right
+    - center
+    - justify
+    - start
+    - end
+  text-decoration:
+    - none
+    - underline
+    - overline
+    - line-through
+  text-transform:
+    - none
+    - capitalize
+    - uppercase
+    - lowercase
+  letter-spacing:
+    - { $ref: length }  # ex: 2px, 0.1em
+    - normal
+  line-height:
+    - normal
+    - [number]  # ex: 1.5
+    - { $ref: length }  # ex: 20px
+    - { $ref: percentage }  # ex: 150%
+  white-space:
+    - normal
+    - nowrap
+    - pre
+    - pre-wrap
+    - pre-line
+    - break-spaces
+  direction:
+    - ltr
+    - rtl
+  word-break:
+    - normal
+    - break-all
+    - keep-all
+    - break-word
+  hyphens:
+    - none
+    - manual
+    - auto
+
+visual:
+  color: { $ref: color }  # ex: #RRGGBB, rgb(), named colors
+  background:
+    - color: { $ref: color }  # ex: "#fff", "rgb(0,0,0)", "blue"
+    - image:
+      - url: string  # ex: 'url("image.png")'
+      - none
+      - linear-gradient:
+        - to: { $ref: position }
+        - stops: { $ref: stops }
+        - repeat: { $ref: repeat }
+      - radial-gradient:
+        - position: { $ref: position }
+        - stops: { $ref: stops }
+        - repeat: { $ref: repeat }
+      - conic-gradient: 
+        - from: [angle]
+        - position: { $ref: position }
+        - stops: { $ref: stops }
+        - repeat: { $ref: repeat }
+    - position: { $ref: position }
+    - size: { $ref: size }
+    - attachment:
+        - scroll
+        - fixed
+        - local
+    - origin:
+        - padding-box
+        - border-box
+        - content-box
+    - clip:
+        - border-box
+        - padding-box
+        - content-box
+    - blend-mode:
+        - normal
+        - multiply
+        - screen
+        - overlay
+        - darken
+        - lighten
+        - color-dodge
+        - color-burn
+        - hard-light
+        - soft-light
+        - difference
+        - exclusion
+        - hue
+        - saturation
+        - color
+        - luminosity
+  border:
+    - radius:
+      - { $ref: length }  # ex: 5px, 1em
+      - { $ref: percentage }  # ex: 50%
+  box-shadow: string
+  opacity:
+    - [number]  # 0 to 1
+  filter: string
+  mix-blend-mode:
+    - normal
+    - multiply
+    - screen
+    - overlay
+    - darken
+    - lighten
+    - color-dodge
+    - color-burn
+    - hard-light
+    - soft-light
+    - difference
+    - exclusion
+    - hue
+    - saturation
+    - color
+    - luminosity
+  outline: string
+  visibility:
+    - visible
+    - hidden
+    - collapse
+
+spacing:
+  margin:
+    - { $ref: length }
+    - { $ref: percentage }
+    - auto
+  padding:
+    - { $ref: length }
+    - { $ref: percentage }
+  scroll-margin:
+    - { $ref: length }
+    - { $ref: percentage }
+  scroll-padding:
+    - { $ref: length }
+    - { $ref: percentage }
+
+alignment:
+  vertical-align:
+    - baseline
+    - sub
+    - super
+    - top
+    - text-top
+    - middle
+    - bottom
+    - text-bottom
+    - { $ref: length }
+    - { $ref: percentage }
+  text-align:
+    - left
+    - right
+    - center
+    - justify
+    - start
+    - end
+  justify-self:
+    - auto
+    - normal
+    - stretch
+    - center
+    - start
+    - end
+    - flex-start
+    - flex-end
+  align-self:
+    - auto
+    - normal
+    - stretch
+    - center
+    - start
+    - end
+    - flex-start
+    - flex-end
+  object-fit:
+    - fill
+    - contain
+    - cover
+    - none
+    - scale-down
+  object-position:
+    - keyword  # ex: center, top left
+    - { $ref: length }
+    - { $ref: percentage }
+
+animation:
+  transition: string
+  transition-delay:
+    - [time]  # ex: 0.5s, 200ms
+  transition-duration:
+    - [time]
+  animation: string
+  animation-name: string
+  animation-timing-function:
+    - ease
+    - ease-in
+    - ease-out
+    - ease-in-out
+    - linear
+    - step-start
+    - step-end
+  transform: string
+  scale:
+    - [number]
+  rotate:
+    - [angle]  # ex: 30deg, 0.5rad
+  translate:
+    - { $ref: length }
+    - { $ref: percentage }
+
+behavior:
+  cursor:
+    - auto
+    - default
+    - pointer
+    - wait
+    - text
+    - move
+    - not-allowed
+    - crosshair
+    - zoom-in
+    - zoom-out
+  pointer-events:
+    - auto
+    - none
+  user-select:
+    - auto
+    - none
+    - text
+    - all
+  resize:
+    - none
+    - both
+    - horizontal
+    - vertical
+  overflow:
+    - visible
+    - hidden
+    - scroll
+    - auto
+    - clip
+  scroll-behavior:
+    - auto
+    - smooth
+  scroll-snap-type:
+    - none
+    - x
+    - y
+    - block
+    - inline
+    - both
+
+accessibility:
+  caret-color: { $ref: color }
+  accent-color: { $ref: color }
+
+content:
+  content: string
+  quotes: string
+  counter-increment: string
+  counter-reset: string
+  list-style:
+    - none
+    - disc
+    - circle
+    - square
+    - decimal
+    - lower-roman
+    - upper-roman
+    - lower-alpha
+    - upper-alpha

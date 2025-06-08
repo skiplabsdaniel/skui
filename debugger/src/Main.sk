@@ -2,6 +2,8 @@ module alias SK = SKStore;
 
 module SkDebugger;
 
+const kServicePath: Ui.Path = Ui.Path("service", None());
+
 class DebuggerException(message: String) extends .Exception {
   //
   fun getMessage(): String {
@@ -41,7 +43,7 @@ fun launch(url: String, args: Cli.ParseResults): Result<void, .Exception> {
       context.addOnOnIniliazed(
         SK.Updater(ctx ~>
           ctx.getPersistent(kEnvKey).map(Environment::bType).each(env ->
-            env.openGraph(ctx, SharedKey())
+            env.open(ctx, kServicePath)
           )
         ),
       )

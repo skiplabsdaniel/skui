@@ -14,7 +14,11 @@ fun getProgress(
 ): ?Ui.Progress {
   res = path match {
   | Ui.Path(resource, Some(Ui.Path("resources", None()))) ->
-    future = env.fetchResourceInstances(context, resource);
+    future = env.fetchResourceInstances(
+      context,
+      resource,
+      env.getTime(context),
+    );
     if (future.isLoading()) {
       Some(
         future
@@ -54,7 +58,11 @@ fun getItems(
     };
     items
   | Some(Ui.Path(resource, Some(Ui.Path("resources", None())))) ->
-    future = env.fetchResourceInstances(context, resource);
+    future = env.fetchResourceInstances(
+      context,
+      resource,
+      env.getTime(context),
+    );
     if (!future.isLoading()) {
       future.error() match {
       | Some(failure) ->
@@ -134,15 +142,7 @@ fun fire(
   env: D.Environment,
 ): void {
   optPath match {
-  | Some(Ui.Path("service", None())) -> env.openGraph(context, D.SharedKey())
-  | Some(
-    Ui.Path(
-      instanceStr,
-      Some(Ui.Path(resource, Some(Ui.Path("resources", None())))),
-    ),
-  ) if (instanceStr != "noinstances") ->
-    instance = D.instanceFromJSON(SKJSON.decode(instanceStr));
-    env.openGraph(context, D.ResourceKey(resource, instance.params))
+  | Some(path) -> env.open(context, path)
   | _ -> void
   }
 }
