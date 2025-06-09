@@ -81,6 +81,7 @@ class LamEnvironment(
   }
 
   fun open(ctx: mutable SK.Context, path: Ui.Path): void {
+    debug(("open", path));
     this.open_(ctx, path)
   }
 
@@ -121,6 +122,11 @@ fun init(
     rootPath.sub("paths"),
     Array[],
   );
+  iHandle = SK.toIHandle(pathsHdl);
+  open = (ctx, key) ~> {
+    iHandle.write(ctx, key, SK.IntFile(ctx.timeStamp().value));
+    ctx.updateIfRoot()
+  };
   toCollectHdl = pathsHdl.map(
     Ui.Path::keyType,
     Fetch::type,
@@ -140,11 +146,72 @@ fun init(
       ) match {
       | Some(options) -> writer.set(key, options)
       | _ ->
-        key match {
+        (key match {
         | Ui.Path(input, Some(Ui.Path("inputs", None()))) ->
-          description = JSON.Object(
-            Map["kind" => JSON.String("input"), "name" => JSON.String(input)],
-          );
+          Some(
+            JSON.Object(
+              Map["kind" => JSON.String("input"), "name" => JSON.String(input)],
+            ),
+          )
+        | Ui.Path(collection, Some(Ui.Path("collections", None()))) ->
+          Some(
+            JSON.Object(
+              Map[
+                "kind" => JSON.String("collection"),
+                "name" => JSON.String(collection),
+              ],
+            ),
+          )
+        | Ui.Path(
+          "output",
+          Some(
+            Ui.Path(
+              instanceStr,
+              Some(Ui.Path(resource, Some(Ui.Path("resources", None())))),
+            ),
+          ),
+        ) ->
+          Some(
+            JSON.Object(
+              Map[
+                "kind" => JSON.String("resource"),
+                "name" => JSON.String(resource),
+                "param" => JSON.decode(instanceStr),
+              ],
+            ),
+          )
+        | Ui.Path(
+          collection,
+          Some(
+            Ui.Path(
+              "collection",
+              Some(
+                Ui.Path(
+                  name,
+                  Some(
+                    Ui.Path(
+                      _,
+                      Some(Ui.Path(_, Some(Ui.Path("resources", None())))),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        )
+        | Ui.Path(
+          collection,
+          Some(
+            Ui.Path(
+              "collection",
+              Some(Ui.Path(name, Some(Ui.Path("service", None())))),
+            ),
+          ),
+        ) ->
+          debug(("Operator", name, collection));
+          Some(JSON.String(collection))
+        | _ -> None()
+        }).each(description ->
           writer.set(
             key,
             Fetch::jsonPost(
@@ -153,8 +220,7 @@ fun init(
               description,
             ),
           )
-        | _ -> void
-        }
+        )
       }
     },
   );
@@ -202,7 +268,47 @@ fun init(
               }
             | _ ->
               key match {
-              | Ui.Path(_, Some(Ui.Path("inputs", None()))) ->
+              | Ui.Path(_, Some(Ui.Path("inputs", None())))
+              | Ui.Path(_, Some(Ui.Path("collections", None())))
+              | Ui.Path(
+                "output",
+                Some(
+                  Ui.Path(
+                    _,
+                    Some(Ui.Path(_, Some(Ui.Path("resources", None())))),
+                  ),
+                ),
+              )
+              | Ui.Path(
+                _,
+                Some(
+                  Ui.Path(
+                    "collection",
+                    Some(
+                      Ui.Path(
+                        _,
+                        Some(
+                          Ui.Path(
+                            _,
+                            Some(
+                              Ui.Path(_, Some(Ui.Path("resources", None()))),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              )
+              | Ui.Path(
+                _,
+                Some(
+                  Ui.Path(
+                    "collection",
+                    Some(Ui.Path(_, Some(Ui.Path("service", None())))),
+                  ),
+                ),
+              ) ->
                 result.skjson(entriesFromJSON) match {
                 | Failure(e) ->
                   SK.LoadFailed(
@@ -261,7 +367,13 @@ fun init(
           | gm @ GMetrics _ ->
             Unsafe.maybeCast(gm, GraphMetrics<TNode>) match {
             | Some(metrics) ->
-              controller = GraphController::make(path, metrics, space);
+              controller = GraphController::make(
+                open,
+                key,
+                path,
+                metrics,
+                space,
+              );
               graph = UiGraph::createForController(ctx, path, controller);
               centered = Ui.AspectRatio::create(
                 ctx,
@@ -272,7 +384,22 @@ fun init(
                   aspectRatio => Ui.default(0.0),
                 },
               );
-              SK.Loaded(Ui.WidgetFile(centered))
+              scrollPath = path.toString();
+              hvScrolls = useIntStates(
+                ctx,
+                scrollPath,
+                Array[("hScroll", 0), ("vScroll", 0)],
+              );
+              scroll = Ui.ScrollPane::create(
+                ctx,
+                path.makeChild("scroll"),
+                UiScroll.LamController{
+                  widget => Ui.default(centered),
+                  hScroll => Ui.defaultOne(hvScrolls[0]),
+                  vScroll => Ui.defaultOne(hvScrolls[1]),
+                },
+              );
+              SK.Loaded(Ui.WidgetFile(scroll))
             | _ -> SK.LoadFailed(Some(!"Unrecognized metrics"))
             }
           | e @ Entries _ ->
@@ -283,11 +410,6 @@ fun init(
       );
     },
   );
-  iHandle = SK.toIHandle(pathsHdl);
-  open = (ctx, key) ~> {
-    iHandle.write(ctx, key, SK.IntFile(ctx.timeStamp().value));
-    ctx.updateIfRoot()
-  };
   openedPath = ctx ~> {
     sorted = openedHdl.getArray(ctx, SK.UnitID::singleton).sorted();
     sorted.maybeGet(sorted.size() - 1).map(tp -> tp.path)
@@ -307,6 +429,50 @@ fun init(
           path match {
           | Ui.Path(input, Some(Ui.Path("inputs", None()))) ->
             I18N.format(!"Input: {1}", Vector<Text>[Raw(input)])
+          | Ui.Path(name, Some(Ui.Path("collections", None()))) ->
+            I18N.format(!"Collection: {1}", Vector<Text>[Raw(name)])
+          | Ui.Path(
+            "output",
+            Some(
+              Ui.Path(
+                instanceStr,
+                Some(Ui.Path(resource, Some(Ui.Path("resources", None())))),
+              ),
+            ),
+          ) ->
+            I18N.format(
+              !"{1}: {2}",
+              Vector<Text>[Raw(resource), Raw(instanceStr)],
+            )
+          | Ui.Path(
+            _,
+            Some(
+              Ui.Path(
+                "collection",
+                Some(
+                  Ui.Path(
+                    name,
+                    Some(
+                      Ui.Path(
+                        _,
+                        Some(Ui.Path(_, Some(Ui.Path("resources", None())))),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          )
+          | Ui.Path(
+            _,
+            Some(
+              Ui.Path(
+                "collection",
+                Some(Ui.Path(name, Some(Ui.Path("service", None())))),
+              ),
+            ),
+          ) ->
+            Raw(name)
           | _ -> !"TODO"
           }
         }
@@ -347,7 +513,20 @@ fun useSeparationState(
     Some(prop),
     Array[(SKStore.StrID(name), Some(default))],
   );
-  UiSeparationProp.Property::forName(context, Some(prop), name);
+  UiSeparationProp.Property::forName(context, Some(prop), name)
+}
+
+fun useIntStates(
+  context: mutable SK.Context,
+  name: String,
+  values: Array<(String, Int)>,
+): Array<Ui.IntProperty> {
+  UiIntProp.Property::initValues(
+    context,
+    Some(name),
+    values.map(item -> (SKStore.StrID(item.i0), Some(item.i1))),
+  );
+  values.map(item -> UiIntProp.Property::forName(context, Some(name), item.i0))
 }
 
 module end;

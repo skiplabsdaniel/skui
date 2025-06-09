@@ -660,6 +660,8 @@ fun layout(
 }
 
 class GraphController(
+  open: (mutable SK.Context, Ui.Path) ~> void,
+  dataPath: Ui.Path,
   path: Ui.Path,
   metrics: GraphMetrics<TNode>,
   separators: (Int, Int),
@@ -668,11 +670,20 @@ class GraphController(
 ) extends Controller {
   //
   static fun make(
+    open: (mutable SK.Context, Ui.Path) ~> void,
+    dataPath: Ui.Path,
     path: Ui.Path,
     metrics: GraphMetrics<TNode>,
     space: Float = 10.0,
   ): GraphController {
-    GraphController(path, metrics, metrics.computeSeparators(), space)
+    GraphController(
+      open,
+      dataPath,
+      path,
+      metrics,
+      metrics.computeSeparators(),
+      space,
+    )
   }
 
   fun getLayers(_context: mutable SK.Context): Array<Int> {
@@ -687,12 +698,15 @@ class GraphController(
     id = this.metrics.layers[layer][row];
     node = this.metrics.idToData[id];
     path = this.path.makeChild(node.getId());
-    (color, fill) = node match {
-    | TInput _ -> (Color::rgbaInt(212, 230, 241, 255), Color::gray(uint8(15)))
-    | TOutput _ -> (Color::rgbaInt(209, 242, 235, 255), Color::gray(uint8(15)))
+    (color, fill, withValues) = node match {
+    | TInput _ ->
+      (Color::rgbaInt(212, 230, 241, 255), Color::gray(uint8(15)), true)
+    | TOutput _ ->
+      (Color::rgbaInt(209, 242, 235, 255), Color::gray(uint8(15)), true)
     | TOperator _ ->
-      (Color::rgbaInt(252, 243, 207, 255), Color::gray(uint8(15)))
-    | TConst _ -> (Color::gray(uint8(240)), Color::rgbaInt(203, 67, 53, 255))
+      (Color::rgbaInt(252, 243, 207, 255), Color::gray(uint8(15)), true)
+    | TConst _ ->
+      (Color::gray(uint8(240)), Color::rgbaInt(203, 67, 53, 255), false)
     };
     decoration = node match {
     | TInput _
@@ -716,21 +730,97 @@ class GraphController(
         ],
       )
     };
-
-    text = Ui.VText::createForController(
-      context,
-      path.makeChild("text"),
-      UiText.LamController{
-        text => Ui.default(!node.toString()),
-        style => Ui.default(
-          Text.Style{
-            faceId => UiTheme.bigFace,
-            fill,
-            hAlignment => Text.Center(),
+    text = if (withValues) {
+      bPath = path.makeChild("button");
+      state = UiButton.init(context, bPath);
+      Ui.Button::create(
+        context,
+        bPath,
+        UiButton.Parameters(
+          UiButton.LamController{
+            text => Ui.default(Some(!node.toString())),
+            kind => Ui.default(UiButton.Regular()),
+            mode => Ui.default(UiButton.Flat()),
+            onFire => (ctx, _) ~> {
+              debug((this.dataPath, node));
+              node match {
+              | TInput(name) ->
+                this.dataPath match {
+                | Ui.Path("service", None()) ->
+                  this.open(
+                    ctx,
+                    name.alias match {
+                    | Some(alias) -> Ui.Path("inputs", None()).makeChild(alias)
+                    | _ ->
+                      this.dataPath.makeChild(node.toString())
+                        .makeChild("collection")
+                        .makeChild(name.name)
+                    },
+                  )
+                | _ ->
+                  this.open(
+                    ctx,
+                    name.alias match {
+                    | Some(alias) ->
+                      Ui.Path("collections", None()).makeChild(alias)
+                    | _ ->
+                      this.dataPath.makeChild(node.toString())
+                        .makeChild("collection")
+                        .makeChild(name.name)
+                    },
+                  )
+                }
+              | TOutput(name) ->
+                this.dataPath match {
+                | Ui.Path("service", None()) ->
+                  this.open(
+                    ctx,
+                    name.alias match {
+                    | Some(alias) ->
+                      Ui.Path("collections", None()).makeChild(alias)
+                    | _ ->
+                      this.dataPath.makeChild(node.toString())
+                        .makeChild("collection")
+                        .makeChild(name.name)
+                    },
+                  )
+                | _ ->
+                  this.open(
+                    ctx,
+                    this.dataPath.makeChild(node.toString()).makeChild(
+                      "output",
+                    ),
+                  )
+                }
+              | TOperator _ ->
+                toOpen = this.dataPath.makeChild(node.toString())
+                  .makeChild("collection")
+                  .makeChild(node.getId(), false);
+                debug(toOpen);
+                this.open(ctx, toOpen)
+              | TConst _ -> void
+              }
+            },
           },
+          state,
         ),
-      },
-    );
+      )
+    } else {
+      Ui.VText::createForController(
+        context,
+        path.makeChild("text"),
+        UiText.LamController{
+          text => Ui.default(!node.toString()),
+          style => Ui.default(
+            Text.Style{
+              faceId => UiTheme.bigFace,
+              fill,
+              hAlignment => Text.Center(),
+            },
+          ),
+        },
+      )
+    };
     Ui.Decorated::create(
       context,
       path,
