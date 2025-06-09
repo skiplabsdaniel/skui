@@ -32,7 +32,11 @@ class LamController{
     this.items(context, optPath)
   }
 
-  fun getItem(context: mutable SKStore.Context, path: Ui.Path, expanded: Bool): Item {
+  fun getItem(
+    context: mutable SKStore.Context,
+    path: Ui.Path,
+    expanded: Bool,
+  ): Item {
     this.item(context, path, expanded)
   }
 
