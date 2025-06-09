@@ -97,9 +97,10 @@ fun create(
       context,
       itemsDirName(path),
       (context, writer, key, _) ~> {
+        expanded = expansion(context, key.path);
         writer.set(
           key.path,
-          ItemFile(controller.getItem(context, key.path), key.info),
+          ItemFile(controller.getItem(context, key.path, expanded), key.info),
         )
       },
     );

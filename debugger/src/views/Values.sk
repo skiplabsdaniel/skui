@@ -21,7 +21,11 @@ class ValuesTree(
     }
   }
 
-  fun getItem(_context: mutable SK.Context, path: Ui.Path): UiTree.Item {
+  fun getItem(
+    _context: mutable SK.Context,
+    path: Ui.Path,
+    _expanded: Bool,
+  ): UiTree.Item {
     path match {
     | Ui.Path(value, None()) ->
       value.toIntOption().flatMap(idx ->
@@ -66,10 +70,24 @@ class ValueTree(values: SKJSON.CJArray) {
     )
   }
 
-  fun getItem(_context: mutable SK.Context, path: Ui.Path): UiTree.Item {
-    path match {
-    | _ -> UiTree.Item{text => !"TODO", leaf => true}
-    }
+  fun getItem(
+    _context: mutable SK.Context,
+    path: Ui.Path,
+    expanded: Bool,
+  ): UiTree.Item {
+    value = this.getValue(Some(path));
+    text = !(
+      if (path.id == "#") value.prettyPrint() else {
+        if (!expanded) `${path.id}: ${value.prettyPrint()}` else path.id
+      }
+    );
+    leaf = value match {
+    | SKJSON.CJObject _
+    | SKJSON.CJArray _ ->
+      false
+    | _ -> true
+    };
+    UiTree.Item{text, leaf}
   }
 
   fun fire(
@@ -115,7 +133,7 @@ fun buildValuesTreeView(
   )
 }
 
-class Tabs(path: Ui.Path) {
+class Tabs(path: Ui.Path, values: Ui.Widget) {
   //
   fun getTabs(_context: mutable SKStore.Context): Array<String> {
     Array["value", "graph", "trace"]
@@ -145,6 +163,7 @@ class Tabs(path: Ui.Path) {
   }
 
   fun getWidget(context: mutable SKStore.Context, id: String): ?Ui.Widget {
+    if (id == "value") return Some(this.values);
     fill = Ui.webColor("#d62f0d").default(Colors.black());
     Some(
       Ui.VText::createForController(
@@ -177,8 +196,9 @@ class Tabs(path: Ui.Path) {
 fun buildValuesTabsView(
   context: mutable SKStore.Context,
   path: Ui.Path,
+  values: Ui.Widget,
 ): Ui.Widget {
-  tabs = Tabs(path);
+  tabs = Tabs(path, values);
   Ui.TabPane::create(
     context,
     path,
@@ -242,12 +262,9 @@ fun buildValuesView(
         fire => utils.fire,
       };
       vPath = path.makeChild(D.base64(it.first.key.prettyPrint()));
-      writer.set(
-        key,
-        Ui.WidgetFile(
-          Ui.Tree::create(ctx, vPath, UiTree.init(ctx, vPath, controller)),
-        ),
-      )
+      values = Ui.Tree::create(ctx, vPath, UiTree.init(ctx, vPath, controller));
+      //widget = buildValuesTabsView(ctx, vPath.makeChild("tabs"), );
+      writer.set(key, Ui.WidgetFile(values))
     },
   );
   iHandle = SK.toIHandle(entryHdl);

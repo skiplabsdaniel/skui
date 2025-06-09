@@ -90,6 +90,7 @@ fun getItems(
 fun getItem(
   _context: mutable SK.Context,
   path: Ui.Path,
+  _expanded: Bool,
   service: UiTree.Item,
 ): UiTree.Item {
   path match {
@@ -167,7 +168,7 @@ fun buildTreeView(
   controller = UiTree.LamController{
     selectionModel => (_ctx, _iu) ~> UiTree.Single(),
     items => (ctx, optPath) ~> getItems(ctx, optPath, env, info),
-    item => (ctx, path) ~> getItem(ctx, path, serviceItem),
+    item => (ctx, path, expanded) ~> getItem(ctx, path, expanded, serviceItem),
     progress => (ctx, path) ~> getProgress(ctx, path, env),
     badge => getBadge,
     fire => (ctx, optPatgh, selection) ~> fire(ctx, optPatgh, selection, env),
