@@ -55,6 +55,13 @@ class FetchResult(status: Int, headers: Map<String, String>, text: ?String) {
     | _ -> Failure(FetchException("No data available"))
     }
   }
+
+  fun skjson<T>(conv: SKJSON.CJSON ~> T): Result<T, .Exception> {
+    this.text match {
+    | Some(text) -> Result::guard(() -> conv(SKJSON.decode(text)))
+    | _ -> Failure(FetchException("No data available"))
+    }
+  }
 }
 
 fun fetch(

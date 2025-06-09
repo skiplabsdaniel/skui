@@ -200,7 +200,23 @@ fun init(
                 SK.LoadFailed(Some(error))
               | Success(graph) -> SK.Loaded(graph)
               }
-            | _ -> SK.LoadFailed(Some(!"TODO"))
+            | _ ->
+              key match {
+              | Ui.Path(_, Some(Ui.Path("inputs", None()))) ->
+                result.skjson(entriesFromJSON) match {
+                | Failure(e) ->
+                  SK.LoadFailed(
+                    Some(
+                      I18N.format(
+                        !"Unable to collect entries {1}",
+                        Vector<Text>[!e.getMessage()],
+                      ),
+                    ),
+                  )
+                | Success(entries) -> SK.Loaded(entries)
+                }
+              | _ -> SK.LoadFailed(Some(!"TODO"))
+              }
             }
           } else {
             error = I18N.format(
@@ -224,6 +240,7 @@ fun init(
         it.first.then(ctx, (_, f) ~> {
           f match {
           | g @ Graph _ -> SK.Loaded(GraphMetrics::compute(g, TNodeFactory()))
+          | e @ Entries _ -> SK.Loaded(e)
           | _ -> SK.LoadFailed(Some(!"TODO"))
           }
         }),
@@ -245,13 +262,21 @@ fun init(
             Unsafe.maybeCast(gm, GraphMetrics<TNode>) match {
             | Some(metrics) ->
               controller = GraphController::make(path, metrics, space);
-              SK.Loaded(
-                Ui.WidgetFile(
-                  UiGraph::createForController(ctx, path, controller),
-                ),
-              )
+              graph = UiGraph::createForController(ctx, path, controller);
+              centered = Ui.AspectRatio::create(
+                ctx,
+                path.makeChild("centered"),
+                UiAspectRatio.LamController{
+                  widget => Ui.default(graph),
+                  centered => Ui.default(true),
+                  aspectRatio => Ui.default(0.0),
+                },
+              );
+              SK.Loaded(Ui.WidgetFile(centered))
             | _ -> SK.LoadFailed(Some(!"Unrecognized metrics"))
             }
+          | e @ Entries _ ->
+            SK.Loaded(Ui.WidgetFile(SkDebugViews.buildValuesView(ctx, path, e)))
           | _ -> SK.LoadFailed(Some(!"TODO"))
           }
         }),
@@ -260,7 +285,6 @@ fun init(
   );
   iHandle = SK.toIHandle(pathsHdl);
   open = (ctx, key) ~> {
-    debug(("open", key));
     iHandle.write(ctx, key, SK.IntFile(ctx.timeStamp().value));
     ctx.updateIfRoot()
   };
@@ -270,18 +294,24 @@ fun init(
   };
   env = LamEnvironment(
     ctx ~>
-      !(openedPath(ctx) match {
+      openedPath(ctx) match {
       | Some(path) ->
-        GraphDef::fromPath(path)
-          .map(def ->
-            def match {
-            | SharedDef _ -> service.name
-            | ResourceDef(name, params) -> `${name}: ${params.prettyPrint()}`
-            }
-          )
-          .default("TODO")
-      | _ -> "Loading..."
-      }),
+        GraphDef::fromPath(path).map(def ->
+          def match {
+          | SharedDef _ -> service.name
+          | ResourceDef(name, params) -> `${name}: ${params.prettyPrint()}`
+          }
+        ) match {
+        | Some(title) -> !title
+        | _ ->
+          path match {
+          | Ui.Path(input, Some(Ui.Path("inputs", None()))) ->
+            I18N.format(!"Input: {1}", Vector<Text>[Raw(input)])
+          | _ -> !"TODO"
+          }
+        }
+      | _ -> !"Loading..."
+      },
     ctx ~> {
       openedPath(ctx).flatMap(key ->
         widgetsHdl.maybeGet(ctx, key).map(l ->

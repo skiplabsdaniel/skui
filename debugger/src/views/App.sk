@@ -9,7 +9,7 @@ fun buildSplit(
   info: D.ServiceInfo,
   conf: Ui.Configuration,
 ): Ui.Widget {
-  graphView = buildGraphView(context, path.makeChild("graph"), env);
+  mainView = buildMainView(context, path.makeChild("main"), env);
   treeView = buildTreeView(context, path.makeChild("tree"), env, info);
   appSplitProp = D.useSeparationState(context, "app-split");
   Ui.Split::create(
@@ -17,7 +17,7 @@ fun buildSplit(
     path,
     UiSplit.LamController{
       first => Ui.default(treeView),
-      second => Ui.default(graphView),
+      second => Ui.default(mainView),
       axis => Ui.defaultOne(Ui.HorizontalAxis()),
       separation => Ui.defaultOne(appSplitProp),
     },

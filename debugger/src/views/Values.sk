@@ -3,14 +3,20 @@ module alias D = SkDebugger;
 
 module SkDebugViews;
 
-class ValuesTree(values: Array<(SKJSON.CJSON, Array<SKJSON.CJSON>)>) {
+class Entry(key: SKJSON.CJSON, values: Array<SKJSON.CJSON>) extends SK.File
+
+class ValuesTree(
+  entries: D.Entries,
+  showEntry: (mutable SK.Context, entry: Entry) ~> void,
+) {
   //
   fun getItems(
     _context: mutable SK.Context,
     optPath: ?Ui.Path,
   ): ?Array<String> {
     optPath match {
-    | None() -> Some(this.values.mapWithIndex((idx, _) -> idx.toString()))
+    | None() ->
+      Some(this.entries.values.mapWithIndex((idx, _) -> idx.toString()))
     | _ -> None()
     }
   }
@@ -19,7 +25,7 @@ class ValuesTree(values: Array<(SKJSON.CJSON, Array<SKJSON.CJSON>)>) {
     path match {
     | Ui.Path(value, None()) ->
       value.toIntOption().flatMap(idx ->
-        this.values.maybeGet(idx).map(kv -> kv.i0.prettyPrint())
+        this.entries.values.maybeGet(idx).map(kv -> kv.i0.prettyPrint())
       ) match {
       | Some(text) -> UiTree.Item{text => Raw(text), leaf => true}
       | _ -> UiTree.Item{text => !`Error: Unknown`, leaf => true}
@@ -29,15 +35,22 @@ class ValuesTree(values: Array<(SKJSON.CJSON, Array<SKJSON.CJSON>)>) {
   }
 
   fun fire(
-    _context: mutable SK.Context,
+    context: mutable SK.Context,
     optPath: ?Ui.Path,
-    selection: Array<Ui.Path>,
+    _selection: Array<Ui.Path>,
   ): void {
-    debug(("Fire", optPath, selection))
+    optPath match {
+    | Some(Ui.Path(value, None())) ->
+      value.toIntOption().each(idx -> {
+        entry = this.entries.values[idx];
+        this.showEntry(context, Entry(entry.i0, entry.i1))
+      })
+    | _ -> void
+    }
   }
 }
 
-class ValueTree(value: SKJSON.CJSON) {
+class ValueTree(values: SKJSON.CJArray) {
   //
   fun getItems(
     _context: mutable SK.Context,
@@ -76,7 +89,7 @@ class ValueTree(value: SKJSON.CJSON) {
       | _ if (id == "#") -> pValue
       | _ -> SKJSON.getValue(SKJSON.asObject(pValue), id).fromSome()
       }
-    | _ -> this.value
+    | _ -> this.values
     }
   }
 }
@@ -84,10 +97,10 @@ class ValueTree(value: SKJSON.CJSON) {
 fun buildValuesTreeView(
   context: mutable SKStore.Context,
   path: Ui.Path,
-  _env: D.Environment,
-  values: Array<(SKJSON.CJSON, Array<SKJSON.CJSON>)>,
+  entries: D.Entries,
+  showEntry: (mutable SK.Context, entry: Entry) ~> void,
 ): Ui.Widget {
-  utils = ValuesTree(values);
+  utils = ValuesTree(entries, showEntry);
   controller = UiTree.LamController{
     selectionModel => Ui.defaultOne(UiTree.Single()),
     items => utils.getItems,
@@ -102,7 +115,7 @@ fun buildValuesTreeView(
   )
 }
 
-class Tabs(env: D.Environment, path: Ui.Path) {
+class Tabs(path: Ui.Path) {
   //
   fun getTabs(_context: mutable SKStore.Context): Array<String> {
     Array["value", "graph", "trace"]
@@ -164,9 +177,8 @@ class Tabs(env: D.Environment, path: Ui.Path) {
 fun buildValuesTabsView(
   context: mutable SKStore.Context,
   path: Ui.Path,
-  env: D.Environment,
 ): Ui.Widget {
-  tabs = Tabs(env, path);
+  tabs = Tabs(path);
   Ui.TabPane::create(
     context,
     path,
@@ -181,23 +193,84 @@ fun buildValuesTabsView(
 fun buildValuesView(
   context: mutable SKStore.Context,
   path: Ui.Path,
-  env: D.Environment,
-  values: Array<(SKJSON.CJSON, Array<SKJSON.CJSON>)>,
-  conf: ?Ui.Configuration = None(),
+  entries: D.Entries,
 ): Ui.Widget {
-  tabView = buildValuesTabsView(context, path.makeChild("tabs"), env);
-  treeView = buildValuesTreeView(context, path.makeChild("tree"), env, values);
+  if (entries.values.isEmpty()) {
+    return Ui.VText::createForController(
+      context,
+      path.makeChild("empty"),
+      UiText.LamController{
+        text => Ui.default(!"Empty collection"),
+        style => Ui.default(
+          Text.Style{
+            faceId => UiTheme.bigFace,
+            fill => .Color::gray(uint8(15)),
+            hAlignment => Text.Center(),
+          },
+        ),
+      },
+    )
+  };
+  noSelection = Ui.VText::createForController(
+    context,
+    path.makeChild("no-selection"),
+    UiText.LamController{
+      text => Ui.default(!"No values selected"),
+      style => Ui.default(
+        Text.Style{
+          faceId => UiTheme.bigFace,
+          fill => .Color::gray(uint8(15)),
+          hAlignment => Text.Center(),
+        },
+      ),
+    },
+  );
+  dirName = D.widgetDirName(path.makeChild("entry"));
+  entryHdl = context.makeDir(SK.UnitID::keyType, Entry::type, dirName);
+  widgetHdl = entryHdl.map(
+    SK.UnitID::keyType,
+    Ui.WidgetFile::type,
+    context,
+    dirName.sub("widget"),
+    (ctx, writer, key, it) ~> {
+      entry = it.first;
+      utils = ValueTree(SKJSON.CJArray(entry.values));
+      controller = UiTree.LamController{
+        selectionModel => Ui.defaultOne(UiTree.Single()),
+        items => utils.getItems,
+        item => utils.getItem,
+        fire => utils.fire,
+      };
+      vPath = path.makeChild(D.base64(it.first.key.prettyPrint()));
+      writer.set(
+        key,
+        Ui.WidgetFile(
+          Ui.Tree::create(ctx, vPath, UiTree.init(ctx, vPath, controller)),
+        ),
+      )
+    },
+  );
+  iHandle = SK.toIHandle(entryHdl);
+  treeView = buildValuesTreeView(
+    context,
+    path.makeChild("tree"),
+    entries,
+    (ctx, entry) ~> iHandle.write(ctx, SK.UnitID::singleton, entry),
+  );
   valuesSplitProp = D.useSeparationState(context, "values-split");
   Ui.Split::create(
     context,
     path,
     UiSplit.LamController{
       first => Ui.default(treeView),
-      second => Ui.default(tabView),
+      second => ctx ~>
+        widgetHdl
+          .maybeGet(ctx, SK.UnitID::singleton)
+          .map(wf -> wf.widget)
+          .default(noSelection),
       axis => Ui.defaultOne(Ui.HorizontalAxis()),
       separation => Ui.defaultOne(valuesSplitProp),
     },
-    conf.map(c -> _ ~> c),
   )
 }
 

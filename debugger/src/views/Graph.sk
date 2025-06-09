@@ -3,7 +3,7 @@ module alias D = SkDebugger;
 
 module SkDebugViews;
 
-fun buildGraphView(
+fun buildMainView(
   context: mutable SKStore.Context,
   path: Ui.Path,
   env: D.Environment,
@@ -63,39 +63,44 @@ fun buildGraphView(
       ),
     },
   );
-  other = Ui.AspectRatio::create(
-    context,
-    path.makeChild("centered"),
-    UiAspectRatio.LamController{
-      widget => ctx ~> {
-        env.getWidget(ctx) match {
-        | Some(future) ->
-          if (future.isLoading()) {
-            indicator
-          } else {
-            future.error() match {
-            | Some _ -> error
-            | _ -> future.get()
-            }
-          }
-        | None() -> indicator
-        }
-      },
-      centered => Ui.default(true),
-      aspectRatio => Ui.default(0.0),
-    },
-    Some(Ui.default(UiFlex.Configuration{flex => 1})),
-  );
   Ui.Flex::createForController(
     context,
     path,
     UiFlex.LamController{
-      widgets => Ui.WidgetsArray(Array[decorated, other]),
+      widgets => WidgetsCollection(decorated, indicator, error, env),
       direction => Ui.default(Ui.VerticalAxis()),
       mainAxisAlignment => Ui.default(UiFlex.Start()),
       crossAxisAlignment => Ui.default(UiFlex.CrossStretch()),
     },
   )
+}
+
+class WidgetsCollection(
+  title: Ui.Widget,
+  indicator: Ui.Widget,
+  error: Ui.Widget,
+  env: D.Environment,
+) extends Ui.WidgetsCollection {
+  fun getSize(_ctx: mutable SKStore.Context): Int {
+    2
+  }
+
+  fun getWidget(ctx: mutable SKStore.Context, index: Int): Ui.Widget {
+    if (index == 0) this.title else {
+      (this.env.getWidget(ctx) match {
+      | Some(future) ->
+        if (future.isLoading()) {
+          this.indicator
+        } else {
+          future.error() match {
+          | Some _ -> this.error
+          | _ -> future.get()
+          }
+        }
+      | None() -> this.indicator
+      }).withConfiguration(Some(Ui.default(UiFlex.Configuration{flex => 1})));
+    }
+  }
 }
 
 module end;
