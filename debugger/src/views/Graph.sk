@@ -7,6 +7,7 @@ fun buildMainView(
   context: mutable SKStore.Context,
   path: Ui.Path,
   env: D.Environment,
+  optPlaceHolder: ?Text = None(),
 ): Ui.Widget {
   fill = Ui.webColor("#d62f0d").default(Colors.black());
   titlePath = path.makeChild("title");
@@ -63,11 +64,34 @@ fun buildMainView(
       ),
     },
   );
+  optPHWidget = optPlaceHolder.map(ph ->
+    Ui.VText::createForController(
+      context,
+      path.makeChild("placeHolder"),
+      UiText.LamController{
+        text => Ui.default(ph),
+        style => Ui.default(
+          Text.Style{
+            faceId => UiTheme.bigFace,
+            fill => .Color::gray(uint8(15)),
+            hAlignment => Text.Center(),
+          },
+        ),
+      },
+      Some(Ui.default(UiFlex.Configuration{flex => 1})),
+    )
+  );
   Ui.Flex::createForController(
     context,
     path,
     UiFlex.LamController{
-      widgets => WidgetsCollection(decorated, indicator, error, env),
+      widgets => WidgetsCollection(
+        decorated,
+        indicator,
+        error,
+        env,
+        optPHWidget,
+      ),
       direction => Ui.default(Ui.VerticalAxis()),
       mainAxisAlignment => Ui.default(UiFlex.Start()),
       crossAxisAlignment => Ui.default(UiFlex.CrossStretch()),
@@ -80,12 +104,25 @@ class WidgetsCollection(
   indicator: Ui.Widget,
   error: Ui.Widget,
   env: D.Environment,
+  optPlaceHolder: ?Ui.Widget = None(),
 ) extends Ui.WidgetsCollection {
-  fun getSize(_ctx: mutable SKStore.Context): Int {
-    2
+  fun getSize(ctx: mutable SKStore.Context): Int {
+    this.optPlaceHolder match {
+    | Some _ ->
+      this.env.getWidget(ctx) match {
+      | Some _ -> 2
+      | _ -> 1
+      }
+    | _ -> 2
+    }
   }
 
   fun getWidget(ctx: mutable SKStore.Context, index: Int): Ui.Widget {
+    this.optPlaceHolder match {
+    | Some(placeHolder) ->
+      if (this.env.getWidget(ctx).isNone()) return placeHolder
+    | _ -> void
+    };
     if (index == 0) this.title else {
       (this.env.getWidget(ctx) match {
       | Some(future) ->

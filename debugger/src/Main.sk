@@ -36,7 +36,7 @@ fun launch(url: String, args: Cli.ParseResults): Result<void, .Exception> {
     wId = 0;
     _ = SK.gContextInit(SK.Context::create{});
     SK.Context::withGc(context ~> {
-      env = init(context, uri, wId, serviceInfo);
+      env = init(context, rootPath, uri, wId, serviceInfo);
       buildWidget(context, env, serviceInfo);
       context.initPre();
       context.updateIfRoot();

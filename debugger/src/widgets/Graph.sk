@@ -751,20 +751,19 @@ class GraphController(
                     | _ ->
                       this.dataPath.makeChild(node.toString())
                         .makeChild("collection")
-                        .makeChild(name.name)
+                        .makeChild(name.name, false)
                     },
                   )
                 | _ ->
+                  display = name.alias match {
+                  | Some(alias) -> `Collection: ${alias}`
+                  | _ -> node.toString()
+                  };
                   this.open(
                     ctx,
-                    name.alias match {
-                    | Some(alias) ->
-                      Ui.Path("collections", None()).makeChild(alias)
-                    | _ ->
-                      this.dataPath.makeChild(node.toString())
-                        .makeChild("collection")
-                        .makeChild(name.name)
-                    },
+                    this.dataPath.makeChild(display)
+                      .makeChild("collection")
+                      .makeChild(name.name, false),
                   )
                 }
               | TOutput(name) ->

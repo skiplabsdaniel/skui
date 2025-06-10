@@ -109,28 +109,25 @@ class LamEnvironment(
 
 fun init(
   context: mutable SK.Context,
+  refPath: SK.DirName,
   uri: String,
   wId: Int,
   service: ServiceInfo,
   space: Float = 10.0,
 ): Environment {
-  fetch = initFetchCall(context, wId, rootPath.sub("fetch"));
+  fetch = initFetchCall(context, wId, refPath.sub("fetch"));
   pathsHdl = context.makeDir(
     Ui.Path::keyType,
     SK.IntFile::type,
-    rootPath.sub("paths"),
+    refPath.sub("paths"),
     Array[],
   );
   iHandle = SK.toIHandle(pathsHdl);
-  open = (ctx, key) ~> {
-    iHandle.write(ctx, key, SK.IntFile(ctx.timeStamp().value));
-    ctx.updateIfRoot()
-  };
   toCollectHdl = pathsHdl.map(
     Ui.Path::keyType,
     Fetch::type,
     context,
-    rootPath.sub("tocollect"),
+    refPath.sub("tocollect"),
     (_ctx, writer, key, it) ~> {
       GraphDef::fromPath(key).map(def ->
         def match {
@@ -226,7 +223,7 @@ fun init(
     Ui.Path::keyType,
     SK.Loadable::btype,
     context,
-    rootPath.sub("collected"),
+    refPath.sub("collected"),
     (ctx, writer, key, it) ~> {
       writer.set(key, fetch(ctx, it.first).asLoadable())
     },
@@ -235,7 +232,7 @@ fun init(
     SK.UnitID::keyType,
     TPath::type,
     context,
-    rootPath.sub("paths/opened"),
+    refPath.sub("paths/opened"),
     (ctx, writer, key, it) ~> {
       collectedHdl.maybeGet(ctx, key).each(_ ->
         writer.set(SK.UnitID::singleton, TPath(it.first.value, key))
@@ -246,7 +243,7 @@ fun init(
     Ui.Path::keyType,
     SK.Loadable::btype,
     context,
-    rootPath.sub("parsed"),
+    refPath.sub("parsed"),
     (ctx, writer, key, it) ~> {
       writer.set(
         key,
@@ -337,7 +334,7 @@ fun init(
     Ui.Path::keyType,
     SK.Loadable::btype,
     context,
-    rootPath.sub("metrics"),
+    refPath.sub("metrics"),
     (ctx, writer, key, it) ~> {
       writer.set(
         key,
@@ -355,7 +352,7 @@ fun init(
     Ui.Path::keyType,
     SK.Loadable::btype,
     context,
-    rootPath.sub("widgets"),
+    refPath.sub("widgets"),
     (ctx, writer, key, it) ~> {
       writer.set(
         key,
@@ -365,8 +362,16 @@ fun init(
           | gm @ GMetrics _ ->
             Unsafe.maybeCast(gm, GraphMetrics<TNode>) match {
             | Some(metrics) ->
+              env = init(
+                ctx,
+                key.toDirName(refPath.sub("widgets").toString()),
+                uri,
+                wId,
+                service,
+                space,
+              );
               controller = GraphController::make(
-                open,
+                env.open,
                 key,
                 path,
                 metrics,
@@ -397,17 +402,46 @@ fun init(
                   vScroll => Ui.defaultOne(hvScrolls[1]),
                 },
               );
-              SK.Loaded(Ui.WidgetFile(scroll))
+              mainView = SkDebugViews.buildMainView(
+                ctx,
+                path.makeChild("values"),
+                env,
+                Some(!"No collection selected"),
+              );
+              graphSplitProp = useSeparationState(
+                ctx,
+                "graph-split",
+                Ui.Percent(50),
+              );
+              split = Ui.Split::create(
+                ctx,
+                path.makeChild("split"),
+                UiSplit.LamController{
+                  first => Ui.default(scroll),
+                  second => Ui.default(mainView),
+                  axis => Ui.defaultOne(Ui.VerticalAxis()),
+                  separation => Ui.defaultOne(graphSplitProp),
+                },
+              );
+              SK.Loaded(Ui.WidgetFile(split))
             | _ -> SK.LoadFailed(Some(!"Unrecognized metrics"))
             }
           | e @ Entries _ ->
-            SK.Loaded(Ui.WidgetFile(SkDebugViews.buildValuesView(ctx, path, e)))
+            SK.Loaded(
+              Ui.WidgetFile(
+                SkDebugViews.buildValuesView(ctx, path.makeChild("values"), e),
+              ),
+            )
           | _ -> SK.LoadFailed(Some(!"TODO"))
           }
         }),
       );
     },
   );
+  open = (ctx, key) ~> {
+    iHandle.write(ctx, key, SK.IntFile(ctx.timeStamp().value));
+    ctx.updateIfRoot()
+  };
   openedPath = ctx ~> {
     sorted = openedHdl.getArray(ctx, SK.UnitID::singleton).sorted();
     sorted.maybeGet(sorted.size() - 1).map(tp -> tp.path)

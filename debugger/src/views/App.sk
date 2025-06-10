@@ -31,7 +31,7 @@ fun buildApp(
   env: D.Environment,
   info: D.ServiceInfo,
 ): Ui.Widget {
-  bar = buildActionsBar(context, path.makeChild("actions-bar"), env);
+  //bar = buildActionsBar(context, path.makeChild("actions-bar"), env);
   split = buildSplit(
     context,
     path.makeChild("split"),
@@ -39,7 +39,8 @@ fun buildApp(
     info,
     UiFlex.Configuration{flex => 1},
   );
-  Ui.Flex::createForController(
+  split
+  /*Ui.Flex::createForController(
     context,
     path,
     UiFlex.LamController{
@@ -49,7 +50,7 @@ fun buildApp(
       crossAxisAlignment => Ui.default(UiFlex.CrossStretch()),
       mainAxisSize => Ui.default(UiFlex.Max()),
     },
-  )
+  )*/
 }
 
 module end;
