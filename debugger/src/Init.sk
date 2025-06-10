@@ -81,7 +81,6 @@ class LamEnvironment(
   }
 
   fun open(ctx: mutable SK.Context, path: Ui.Path): void {
-    debug(("open", path));
     this.open_(ctx, path)
   }
 
@@ -187,7 +186,7 @@ fun init(
               "collection",
               Some(
                 Ui.Path(
-                  name,
+                  _,
                   Some(
                     Ui.Path(
                       _,
@@ -204,11 +203,10 @@ fun init(
           Some(
             Ui.Path(
               "collection",
-              Some(Ui.Path(name, Some(Ui.Path("service", None())))),
+              Some(Ui.Path(_, Some(Ui.Path("service", None())))),
             ),
           ),
         ) ->
-          debug(("Operator", name, collection));
           Some(JSON.String(collection))
         | _ -> None()
         }).each(description ->

@@ -507,7 +507,6 @@ class GraphMetrics<T: Hashable & Equality>(
           elements.push(Shape.LineTo(G.Offset(dstX, bounds.top)));
           path = Shape.Path{elements => elements.toArray()}.clean();
           cleaned = path.clean();
-          //debug(("Read edge", path, cleaned));
           egdes.push(Edge(src.id, e, cleaned));
         });
         offset = reads.size();
@@ -541,7 +540,6 @@ class GraphMetrics<T: Hashable & Equality>(
           elements.push(Shape.LineTo(to));
           path = Shape.Path{elements => elements.toArray()};
           cleaned = path.clean();
-          //debug(("Input edge", path, cleaned));
           egdes.push(Edge(src.id, e, cleaned));
         })
       })
@@ -742,7 +740,6 @@ class GraphController(
             kind => Ui.default(UiButton.Regular()),
             mode => Ui.default(UiButton.Flat()),
             onFire => (ctx, _) ~> {
-              debug((this.dataPath, node));
               node match {
               | TInput(name) ->
                 this.dataPath match {
@@ -796,7 +793,6 @@ class GraphController(
                 toOpen = this.dataPath.makeChild(node.toString())
                   .makeChild("collection")
                   .makeChild(node.getId(), false);
-                debug(toOpen);
                 this.open(ctx, toOpen)
               | TConst _ -> void
               }

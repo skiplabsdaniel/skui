@@ -90,14 +90,6 @@ class ValueTree(values: SKJSON.CJArray) {
     UiTree.Item{text, leaf}
   }
 
-  fun fire(
-    _context: mutable SK.Context,
-    optPath: ?Ui.Path,
-    selection: Array<Ui.Path>,
-  ): void {
-    debug(("Fire", optPath, selection))
-  }
-
   private fun getValue(optPath: ?Ui.Path): SKJSON.CJSON {
     optPath match {
     | Some(Ui.Path(id, optParent)) ->
@@ -245,7 +237,7 @@ fun buildValuesView(
       ),
     },
   );
-  dirName = D.widgetDirName(path.makeChild("entry"));
+  dirName = D.widgetDirName(path.makeChild("entries"));
   entryHdl = context.makeDir(SK.UnitID::keyType, Entry::type, dirName);
   widgetHdl = entryHdl.map(
     SK.UnitID::keyType,
@@ -259,7 +251,6 @@ fun buildValuesView(
         selectionModel => Ui.defaultOne(UiTree.Single()),
         items => utils.getItems,
         item => utils.getItem,
-        fire => utils.fire,
       };
       vPath = path.makeChild(D.base64(it.first.key.prettyPrint()));
       values = Ui.Tree::create(ctx, vPath, UiTree.init(ctx, vPath, controller));
