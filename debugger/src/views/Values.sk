@@ -38,12 +38,11 @@ class ValuesTree(
     }
   }
 
-  fun fire(
+  fun selectionChange(
     context: mutable SK.Context,
-    optPath: ?Ui.Path,
-    _selection: Array<Ui.Path>,
+    selection: Array<Ui.Path>,
   ): void {
-    optPath match {
+    selection.maybeGet(0) match {
     | Some(Ui.Path(value, None())) ->
       value.toIntOption().each(idx -> {
         entry = this.entries.values[idx];
@@ -115,7 +114,7 @@ fun buildValuesTreeView(
     selectionModel => Ui.defaultOne(UiTree.Single()),
     items => utils.getItems,
     item => utils.getItem,
-    fire => utils.fire,
+    selectionChange => utils.selectionChange,
   };
   Ui.Tree::create(
     context,

@@ -47,14 +47,13 @@ fun getItems(
   info: D.ServiceInfo,
 ): ?Array<String> {
   res = optPath match {
-  | Some(Ui.Path("inputs", None())) -> Some(info.inputs)
   | Some(Ui.Path("resources", None())) -> Some(info.resources)
   | Some(Ui.Path("remotes", None())) -> Some(info.remotesResources)
   | None() ->
     items = if (!info.remotesResources.isEmpty()) {
-      Some(Array["service", "inputs", "resources", "remotes"])
+      Some(Array["service", "resources", "remotes"])
     } else {
-      Some(Array["service", "inputs", "resources"])
+      Some(Array["service", "resources"])
     };
     items
   | Some(Ui.Path(resource, Some(Ui.Path("resources", None())))) ->
@@ -95,9 +94,6 @@ fun getItem(
 ): UiTree.Item {
   path match {
   | Ui.Path("service", None()) -> service
-  | Ui.Path("inputs", None()) -> UiTree.Item{text => !"Inputs", leaf => false}
-  | Ui.Path(i, Some(Ui.Path("inputs", None()))) ->
-    UiTree.Item{text => !i, leaf => true, icon => Some(icon("import"))}
   | Ui.Path("resources", None()) ->
     UiTree.Item{text => !"Resources", leaf => false}
   | Ui.Path(r, Some(Ui.Path("resources", None()))) ->
@@ -136,13 +132,12 @@ fun getBadge(_context: mutable SKStore.Context, path: Ui.Path): ?Text {
   }
 }
 
-fun fire(
+fun selectionChange(
   context: mutable SK.Context,
-  optPath: ?Ui.Path,
-  _selection: Array<Ui.Path>,
+  selection: Array<Ui.Path>,
   env: D.Environment,
 ): void {
-  optPath match {
+  selection.maybeGet(0) match {
   | Some(path) -> env.open(context, path)
   | _ -> void
   }
@@ -171,7 +166,7 @@ fun buildTreeView(
     item => (ctx, path, expanded) ~> getItem(ctx, path, expanded, serviceItem),
     progress => (ctx, path) ~> getProgress(ctx, path, env),
     badge => getBadge,
-    fire => (ctx, optPatgh, selection) ~> fire(ctx, optPatgh, selection, env),
+    selectionChange => (ctx, selection) ~> selectionChange(ctx, selection, env),
   };
   treePath = path.makeChild("tree");
   Ui.Tree::create(
