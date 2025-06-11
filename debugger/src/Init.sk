@@ -122,7 +122,6 @@ fun init(
     refPath.sub("paths"),
     Array[],
   );
-  iHandle = SK.toIHandle(pathsHdl);
   toCollectHdl = pathsHdl.map(
     Ui.Path::keyType,
     Fetch::type,
@@ -405,7 +404,8 @@ fun init(
               mainView = SkDebugViews.buildMainView(
                 ctx,
                 path.makeChild("values"),
-                env,
+                env.getTitle,
+                env.getWidget,
                 Some(!"No collection selected"),
               );
               graphSplitProp = useSeparationState(
@@ -438,17 +438,27 @@ fun init(
       );
     },
   );
-  open = (ctx, key) ~> {
-    iHandle.write(ctx, key, SK.IntFile(ctx.timeStamp().value));
-    ctx.updateIfRoot()
-  };
-  openedPath = ctx ~> {
-    sorted = openedHdl.getArray(ctx, SK.UnitID::singleton).sorted();
+  iHandle = SK.toIHandle(pathsHdl);
+  openedPath = (ctx, isUntracked) ~> {
+    sorted = openedHdl
+      .getArrayValue(ctx, SK.UnitID::singleton, isUntracked)
+      .sorted();
     sorted.maybeGet(sorted.size() - 1).map(tp -> tp.path)
+  };
+  open = (ctx, key) ~> {
+    if (
+      openedPath(ctx, true) match {
+      | Some(op) -> op != key
+      | _ -> true
+      }
+    ) {
+      iHandle.write(ctx, key, SK.IntFile(ctx.timeStamp().value));
+      ctx.updateIfRoot()
+    }
   };
   env = LamEnvironment(
     ctx ~>
-      openedPath(ctx) match {
+      openedPath(ctx, false) match {
       | Some(path) ->
         GraphDef::fromPath(path).map(def ->
           def match {
@@ -511,7 +521,7 @@ fun init(
       | _ -> !"Loading..."
       },
     ctx ~> {
-      openedPath(ctx).flatMap(key ->
+      openedPath(ctx, false).flatMap(key ->
         widgetsHdl.maybeGet(ctx, key).map(l ->
           SK.LoadableFuture(f ~> Ui.WidgetFile::type(f).widget, l)
         )

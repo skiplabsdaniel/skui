@@ -6,7 +6,8 @@ module SkDebugViews;
 fun buildMainView(
   context: mutable SKStore.Context,
   path: Ui.Path,
-  env: D.Environment,
+  getTitle: (mutable SK.Context) ~> Text,
+  getWidget: (mutable SK.Context) ~> ?SK.Future<Ui.Widget>,
   optPlaceHolder: ?Text = None(),
 ): Ui.Widget {
   fill = Ui.webColor("#d62f0d").default(Colors.black());
@@ -19,7 +20,7 @@ fun buildMainView(
     context,
     titlePath.makeChild("text"),
     UiText.LamController{
-      text => env.getTitle,
+      text => getTitle,
       style => Ui.default(
         Text.Style{
           faceId => UiTheme.bigFace,
@@ -43,7 +44,7 @@ fun buildMainView(
     titlePath.makeChild("error"),
     UiText.LamController{
       text => ctx ~>
-        env.getWidget(ctx) match {
+        getWidget(ctx) match {
         | Some(future) ->
           if (future.isLoading()) {
             Raw("")
@@ -89,7 +90,7 @@ fun buildMainView(
         decorated,
         indicator,
         error,
-        env,
+        getWidget,
         optPHWidget,
       ),
       direction => Ui.default(Ui.VerticalAxis()),
@@ -103,13 +104,13 @@ class WidgetsCollection(
   title: Ui.Widget,
   indicator: Ui.Widget,
   error: Ui.Widget,
-  env: D.Environment,
+  getWidget_: (mutable SK.Context) ~> ?SK.Future<Ui.Widget>,
   optPlaceHolder: ?Ui.Widget = None(),
 ) extends Ui.WidgetsCollection {
   fun getSize(ctx: mutable SKStore.Context): Int {
     this.optPlaceHolder match {
     | Some _ ->
-      this.env.getWidget(ctx) match {
+      this.getWidget_(ctx) match {
       | Some _ -> 2
       | _ -> 1
       }
@@ -119,12 +120,11 @@ class WidgetsCollection(
 
   fun getWidget(ctx: mutable SKStore.Context, index: Int): Ui.Widget {
     this.optPlaceHolder match {
-    | Some(placeHolder) ->
-      if (this.env.getWidget(ctx).isNone()) return placeHolder
+    | Some(placeHolder) -> if (this.getWidget_(ctx).isNone()) return placeHolder
     | _ -> void
     };
     if (index == 0) this.title else {
-      (this.env.getWidget(ctx) match {
+      (this.getWidget_(ctx) match {
       | Some(future) ->
         if (future.isLoading()) {
           this.indicator

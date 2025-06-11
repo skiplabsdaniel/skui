@@ -9,7 +9,12 @@ fun buildSplit(
   info: D.ServiceInfo,
   conf: Ui.Configuration,
 ): Ui.Widget {
-  mainView = buildMainView(context, path.makeChild("main"), env);
+  mainView = buildMainView(
+    context,
+    path.makeChild("main"),
+    env.getTitle,
+    env.getWidget,
+  );
   treeView = buildTreeView(context, path.makeChild("tree"), env, info);
   appSplitProp = D.useSeparationState(context, "app-split");
   Ui.Split::create(
