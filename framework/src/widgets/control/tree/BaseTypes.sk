@@ -38,11 +38,7 @@ base class Controller {
     optPath: ?Ui.Path,
   ): ?Array<String>;
 
-  fun getItem(
-    context: mutable SKStore.Context,
-    path: Ui.Path,
-    expanded: Bool,
-  ): Item;
+  fun getItem(context: mutable SKStore.Context, path: Ui.Path): Item;
 
   fun getProgress(
     context: mutable SKStore.Context,

@@ -3,7 +3,7 @@ module UiTree;
 class LamController{
   selectionModel: Ui.GetterOne<SelectionModel, Bool>,
   items: Ui.GetterOne<?Array<String>, ?Ui.Path>,
-  item: Ui.GetterTwo<Item, Ui.Path, Bool>,
+  item: Ui.GetterOne<Item, Ui.Path>,
   progress: Ui.GetterOne<?Ui.Progress, Ui.Path> = Ui.defaultOne(None()),
   badge: Ui.GetterOne<?Text, Ui.Path> = Ui.defaultOne(None()),
   badgeMaxChar: Ui.Getter<?Int> = Ui.default(None()),
@@ -32,12 +32,8 @@ class LamController{
     this.items(context, optPath)
   }
 
-  fun getItem(
-    context: mutable SKStore.Context,
-    path: Ui.Path,
-    expanded: Bool,
-  ): Item {
-    this.item(context, path, expanded)
+  fun getItem(context: mutable SKStore.Context, path: Ui.Path): Item {
+    this.item(context, path)
   }
 
   fun getProgress(

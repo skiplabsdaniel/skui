@@ -21,11 +21,7 @@ class ValuesTree(
     }
   }
 
-  fun getItem(
-    _context: mutable SK.Context,
-    path: Ui.Path,
-    _expanded: Bool,
-  ): UiTree.Item {
+  fun getItem(_context: mutable SK.Context, path: Ui.Path): UiTree.Item {
     path match {
     | Ui.Path(value, None()) ->
       value.toIntOption().flatMap(idx ->
@@ -69,15 +65,11 @@ class ValueTree(values: SKJSON.CJArray) {
     )
   }
 
-  fun getItem(
-    _context: mutable SK.Context,
-    path: Ui.Path,
-    expanded: Bool,
-  ): UiTree.Item {
+  fun getItem(_context: mutable SK.Context, path: Ui.Path): UiTree.Item {
     value = this.getValue(Some(path));
     text = !(
       if (path.id == "#") value.prettyPrint() else {
-        if (!expanded) `${path.id}: ${value.prettyPrint()}` else path.id
+        `${path.id}: ${value.prettyPrint()}`
       }
     );
     leaf = value match {
