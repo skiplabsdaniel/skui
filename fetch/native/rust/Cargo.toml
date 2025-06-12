@@ -1,5 +1,5 @@
 [package]
-name = "skip_utils"
+name = "skip_fetch_rust"
 version = "0.1.0"
 authors = ["Skiplabs <dev@skiplabs.io>"]
 edition = "2024"

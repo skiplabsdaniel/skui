@@ -4,7 +4,7 @@ module SkDebugger;
 
 class Call(
   wId: Int,
-  dirName: SK.DirName,
+  executor: String,
   fetch: FetchKey,
   timeout_s: Int,
 ) extends SKStore.Postponable {
@@ -17,13 +17,13 @@ class Call(
       this.fetch.headers,
       this.fetch.body,
       this.timeout_s,
-      this.dirName.toString(),
+      this.executor,
       this.fetch.time,
     )
   }
 }
 
-class FetchResult(value: SKUtils.FetchResult) extends SK.File
+class FetchResult(value: SKFetch.Result) extends SK.File
 
 fun initFetchCall(
   context: mutable SK.Context,
@@ -31,6 +31,8 @@ fun initFetchCall(
   dirName: SK.DirName,
   timeout_s: Int = 5,
 ): Ui.GetterOne<SK.Future<FetchResult>, Fetch> {
+  executor = context.timeStamp().toString();
+  context.setPersistent(`SkDebugger.Fetch.${executor}`, LHandleWriter(dirName));
   callHdl = SK.LHandle::lazy(
     FetchKey::keyType,
     SK.Loadable::btype,
@@ -52,7 +54,7 @@ fun initFetchCall(
       }) match {
       | Some(v) -> v
       | _ ->
-        ctx.postpone(Call(wId, dirName, key, timeout_s));
+        ctx.postpone(Call(wId, executor, key, timeout_s));
         SK.Loading()
       }
     },
@@ -65,7 +67,7 @@ fun initFetchCall(
 class Fetch(
   url: String,
   time: Int,
-  method: SKUtils.Method = SKUtils.Get(),
+  method: SKFetch.Method = SKFetch.Get(),
   headers: Map<String, String> = Map[],
   body: ?String = None(),
 ) extends SK.File {
@@ -83,7 +85,7 @@ class Fetch(
     Fetch(
       url,
       time,
-      SKUtils.Post(),
+      SKFetch.Post(),
       Map["Content-Type" => "application/json"],
       Some(body.toString()),
     )
@@ -93,7 +95,7 @@ class Fetch(
     Fetch(
       key.url,
       key.time,
-      SKUtils.Method::fromString(key.method),
+      SKFetch.Method::fromString(key.method),
       JSON.decode(key.headers).expectObject().value.map((_, v) ->
         v.expectString()
       ),
@@ -114,14 +116,32 @@ class FetchKey(
   }
 }
 
-fun writeFetchResult(
-  dirName: SK.DirName,
-  key: FetchKey,
-  loadable: SK.Loadable,
-): void {
-  SK.Context::withoutGc(ctx ~> {
-    invariant(ctx.currentArrow().isNone(), "Cannot be called durring update");
-    ctx.maybeGetLazyDir(dirName) match {
+base class FetchWriter extends SK.File {
+  fun write(
+    context: mutable SKStore.Context,
+    key: FetchKey,
+    loadable: SK.Loadable,
+  ): void;
+
+  static fun bType(obj: SK.File): FetchWriter {
+    obj match {
+    | x @ FetchWriter _ -> x
+    | _ -> SK.cast_violation("SkDebugger.FetchWriter", obj)
+    }
+  }
+}
+
+class LHandleWriter(dirName: SK.DirName) extends FetchWriter {
+  fun write(
+    context: mutable SKStore.Context,
+    key: FetchKey,
+    loadable: SK.Loadable,
+  ): void {
+    invariant(
+      context.currentArrow().isNone(),
+      "Cannot be called durring update",
+    );
+    context.maybeGetLazyDir(this.dirName) match {
     | Some(ldir) ->
       reads = ldir.unsafeGet(key) match {
       | SK.LDefined(values, reads) ->
@@ -133,10 +153,25 @@ fun writeFetchResult(
       | SK.LRemoved(reads) -> reads
       | _ -> invariant_violation("Must be defined")
       };
-      ldir.writeArray(ctx, key, Array[loadable], reads)
-    | _ -> invariant_violation(`No lazy dir ${dirName} found`)
+      ldir.writeArray(context, key, Array[loadable], reads)
+    | _ -> invariant_violation(`No lazy dir ${this.dirName} found`)
     };
-    ctx.update()
+    context.updateIfRoot()
+  }
+}
+
+fun writeFetchResult(
+  executor: String,
+  key: FetchKey,
+  loadable: SK.Loadable,
+): void {
+  SK.Context::withoutGc(ctx ~> {
+    ctx
+      .getPersistent(`SkDebugger.Fetch.${executor}`)
+      .map(FetchWriter::bType) match {
+    | Some(writer) -> writer.write(ctx, key, loadable)
+    | _ -> invariant_violation(`Unknown fetch executor ${executor}`)
+    }
   })
 }
 
@@ -150,10 +185,10 @@ fun skui_fetch_result(
   body: ?String,
   executor: String,
   time: Int,
-  result: Result<SKUtils.FetchResult, SKUtils.FetchException>,
+  result: Result<SKFetch.Result, SKFetch.Exception>,
 ): void {
   writeFetchResult(
-    SK.DirName::create(executor),
+    executor,
     FetchKey(url, method, headers, body, time),
     result match {
     | Success(res) -> SK.Loaded(FetchResult(res))

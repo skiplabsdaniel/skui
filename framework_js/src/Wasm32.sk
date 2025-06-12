@@ -8,7 +8,7 @@ fun display(
   SKUIJS.display(optOutput, optError, html)
 }
 
-fun init(wId: Int, title: String, _args: Cli.ParseResults): void {
+fun init(wId: Int, title: String, _fps: Int, _screen: Int): void {
   SKUIJS.init(uint32(wId), title)
 }
 

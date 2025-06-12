@@ -34,9 +34,7 @@ fun getProgress(
   res;
 }
 
-fun toResourceList(
-  result: SKUtils.FetchResult,
-): Result<Array<String>, .Exception> {
+fun toResourceList(result: SKFetch.Result): Result<Array<String>, .Exception> {
   result.json(jsv ~> jsv.expectArray().value.map(v -> v.toString()).toArray())
 }
 

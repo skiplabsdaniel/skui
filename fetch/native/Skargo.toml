@@ -1,9 +1,12 @@
 [package]
-name = "skip_utils"
+name = "skip_fetch_rust"
 version = "0.0.1"
 
 [build-dependencies]
-skui_build = { path = "../builder" }
+skui_build = { path = "../../builder" }
 
 [dev-dependencies]
-sktest = { path = "../skip/skiplang/sktest" }
+sktest = { path = "../../skip/skiplang/sktest" }
+
+[dependencies]
+skip_fetch = { path = "../foundation" }

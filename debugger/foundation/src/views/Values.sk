@@ -88,7 +88,7 @@ class ValueTree(values: SKJSON.CJArray) {
       id.toIntOption() match {
       | Some(iid) -> SKJSON.expectArray(pValue)[iid]
       | _ if (id == "#") -> pValue
-      | _ -> SKJSON.getValue(SKJSON.asObject(pValue), id).fromSome()
+      | _ -> SKJSON.getValue(SKJSON.asObject(pValue), id).fromSome("getValue")
       }
     | _ -> this.values
     }

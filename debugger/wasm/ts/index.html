@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Skip debugger</title>
+    <link rel="icon" href="/favicon.svg" />
+    <base href="." />
+    <meta
+      content="text/html; charset=UTF-8; X-Content-Type-Options=nosniff"
+      http-equiv="Content-Type"
+    />
+    <script type="importmap">
+      {
+        "imports": {
+          "@skui/debugger": "/dist/src/index.js"
+        }
+      }
+    </script>
+    <script type="module">
+      import { launch } from "@skui/debugger";
+      launch();
+    </script>
+  </head>
+  <body></body>
+</html>

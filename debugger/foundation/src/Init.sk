@@ -2,7 +2,15 @@ module alias SK = SKStore;
 
 module SkDebugger;
 
+const kServicePath: Ui.Path = Ui.Path("service", None());
 const kEnvKey: String = "Debug.Environment";
+
+class DebuggerException(message: String) extends .Exception {
+  //
+  fun getMessage(): String {
+    this.message
+  }
+}
 
 base class GraphDef {
   children =
@@ -56,9 +64,9 @@ base class Environment(uri: String, wId: Int) extends SK.File {
     this.fetch(
       context,
       Fetch(
-        Path.join(this.uri, `v1/instances/${resource}`),
+        `${this.uri}/v1/instances/${resource}`,
         time,
-        SKUtils.Get(),
+        SKFetch.Get(),
       ),
     );
   }
@@ -107,15 +115,15 @@ class LamEnvironment(
   }
 }
 
-fun init(
+fun env(
   context: mutable SK.Context,
   refPath: SK.DirName,
+  fetch: Ui.GetterOne<SK.Future<FetchResult>, Fetch>,
   uri: String,
   wId: Int,
-  service: ServiceInfo,
+  getName: Ui.Getter<Text>,
   space: Float = 10.0,
 ): Environment {
-  fetch = initFetchCall(context, wId, refPath.sub("fetch"));
   pathsHdl = context.makeDir(
     Ui.Path::keyType,
     SK.IntFile::type,
@@ -130,10 +138,10 @@ fun init(
     (_ctx, writer, key, it) ~> {
       GraphDef::fromPath(key).map(def ->
         def match {
-        | SharedDef _ -> Fetch(Path.join(uri, "v1/shared"), it.first.value)
+        | SharedDef _ -> Fetch(`${uri}/v1/shared`, it.first.value)
         | ResourceDef(name, params) ->
           Fetch::jsonPost(
-            Path.join(uri, `v1/resource/${name}`),
+            `${uri}/v1/resource/${name}`,
             it.first.value,
             params.toJSON(),
           )
@@ -208,11 +216,7 @@ fun init(
         }).each(description ->
           writer.set(
             key,
-            Fetch::jsonPost(
-              Path.join(uri, `v1/values`),
-              it.first.value,
-              description,
-            ),
+            Fetch::jsonPost(`${uri}/v1/values`, it.first.value, description),
           )
         )
       }
@@ -224,7 +228,7 @@ fun init(
     context,
     refPath.sub("collected"),
     (ctx, writer, key, it) ~> {
-      writer.set(key, fetch(ctx, it.first).asLoadable())
+      writer.set(key, fetch(ctx, it.first).asLoadable(f ~> f))
     },
   );
   openedHdl = pathsHdl.map(
@@ -361,12 +365,13 @@ fun init(
           | gm @ GMetrics _ ->
             Unsafe.maybeCast(gm, GraphMetrics<TNode>) match {
             | Some(metrics) ->
-              env = init(
+              env = env(
                 ctx,
                 key.toDirName(refPath.sub("widgets").toString()),
+                fetch,
                 uri,
                 wId,
-                service,
+                Ui.default(!"Unknown"),
                 space,
               );
               controller = GraphController::make(
@@ -456,17 +461,17 @@ fun init(
       ctx.updateIfRoot()
     }
   };
-  env = LamEnvironment(
+  LamEnvironment(
     ctx ~>
       openedPath(ctx, false) match {
       | Some(path) ->
         GraphDef::fromPath(path).map(def ->
           def match {
-          | SharedDef _ -> service.name
-          | ResourceDef(name, params) -> `${name}: ${params.prettyPrint()}`
+          | SharedDef _ -> getName(ctx)
+          | ResourceDef(name, params) -> Raw(`${name}: ${params.prettyPrint()}`)
           }
         ) match {
-        | Some(title) -> !title
+        | Some(title) -> title
         | _ ->
           path match {
           | Ui.Path(input, Some(Ui.Path("inputs", None()))) ->
@@ -538,9 +543,117 @@ fun init(
     },
     uri,
     wId,
+  )
+}
+
+fun init(
+  context: mutable SK.Context,
+  refPath: SK.DirName,
+  uri: String,
+  wId: Int,
+  space: Float = 10.0,
+): void {
+  fetch = initFetchCall(context, wId, refPath.sub("fetch"));
+  serviceInitHdl = context.makeDir(
+    SK.UnitID::keyType,
+    SK.IntFile::type,
+    refPath.sub("service/init"),
+    Array[],
+  );
+  serviceHdl = serviceInitHdl.map(
+    SK.UnitID::keyType,
+    SK.Loadable::btype,
+    context,
+    refPath.sub("service"),
+    (ctx, writer, key, it) ~> {
+      loadable = fetch(ctx, Fetch(`${uri}/v1/service`, it.first.value))
+        .then(result ~>
+          result.value.json(serviceFromJSON) match {
+          | Success(v) -> v
+          | Failure(exn) -> throw exn
+          }
+        )
+        .asLoadable(f ~> f);
+      writer.set(key, loadable)
+    },
+  );
+  env = env(
+    context,
+    refPath,
+    fetch,
+    uri,
+    wId,
+    ctx ~> {
+      serviceHdl
+        .maybeGet(ctx, SK.UnitID::singleton)
+        .flatMap(l -> l.maybeGet(ServiceInfo::type))
+        .map(s -> Raw(s.name))
+        .default(Raw(""))
+    },
+    space,
   );
   context.setPersistent(kEnvKey, env);
-  env
+  context.setPersistent("Ui.Properties.Root", SK.DirNameFile(rootPath));
+  support = SKUIGL.DrawableSupport(SKUI.pictureToTexturable);
+  sPath = Ui.Path::create("root").makeChild("service");
+  ind = indicator(context, sPath.makeChild("indicator"));
+  rootHdl = serviceHdl.map(
+    SK.UnitID::keyType,
+    Ui.WidgetFile::type,
+    context,
+    refPath.sub("service/widget"),
+    (ctx, writer, key, it) ~> {
+      widget = it.first match {
+      | SK.ToLoad()
+      | SK.Loading _ ->
+        ind
+      | SK.LoadFailed(optError) ->
+        Ui.VText::createForController(
+          ctx,
+          sPath.makeChild("error"),
+          UiText.LamController{
+            text => Ui.default(optError.default(!"Unknown")),
+            style => Ui.default(
+              Text.Style{
+                faceId => UiTheme.bigFace,
+                fill => Ui.webColor("#d62f0d").default(Colors.black()),
+                hAlignment => Text.Center(),
+              },
+            ),
+          },
+        )
+      | SK.Loaded(value) ->
+        SkDebugViews.buildApp(
+          ctx,
+          sPath.makeChild("app"),
+          env,
+          ServiceInfo::type(value),
+        )
+      };
+      writer.set(key, Ui.WidgetFile(widget))
+    },
+  );
+  iHandle = SK.toIHandle(serviceInitHdl);
+  context.addOnOnIniliazed(
+    SK.Updater(ctx ~>
+      ctx.getPersistent(kEnvKey).map(Environment::bType).each(env -> {
+        iHandle.write(
+          ctx,
+          SK.UnitID::singleton,
+          SK.IntFile(ctx.timeStamp().value),
+        );
+        env.open(ctx, kServicePath)
+      })
+    ),
+  );
+  builder = (_ctx, _root) ~> {
+    (ctx, _root) ~>
+      rootHdl
+        .maybeGet(ctx, SK.UnitID::singleton)
+        .map(wf -> wf.widget)
+        .default(ind)
+  };
+  SKUI.init(context, env.wId, builder, support, predefined());
 }
 
 fun useSeparationState(

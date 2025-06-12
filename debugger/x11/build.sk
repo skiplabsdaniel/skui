@@ -9,7 +9,7 @@ module SkuiEngExamplesBuild;
 @skui_build__source_dirs
 fun source_dirs(env: SkuiBuild.Env): Array<String> {
   // If the environment is not targeting WebAssembly, include the native source directory
-  if (!env.isWasm32()) Array["../views/native/src", "cc"] else Array[]
+  if (!env.isWasm32()) Array["../../views/native/src", "cc"] else Array[]
 }
 
 /**
@@ -23,9 +23,9 @@ fun include_dirs(env: SkuiBuild.Env): Array<String> {
   // If the environment is not targeting WebAssembly, include native include directories
   if (!env.isWasm32()) {
     Array[
-      "../opengl/native/src/includes", ///< OpenGL includes
-      "../base/native/src/includes", ///< Base includes
-      "../x11gl/native/src/includes", ///< X11GL includes
+      "../../opengl/native/src/includes", ///< OpenGL includes
+      "../../base/native/src/includes", ///< Base includes
+      "../../x11gl/native/src/includes", ///< X11GL includes
     ]
   } else {
     Array[]
@@ -43,28 +43,12 @@ fun extra_sources(env: SkuiBuild.Env): Array<String> {
   // If the environment is not targeting WebAssembly, include additional X11GL source files
   if (!env.isWasm32()) {
     Array[
-      "../x11gl/extra/Host.sk", ///< Host-specific code
-      "../x11gl/extra/X11Events.sk", ///< X11 event handling
-      "../x11gl/extra/X11Key.sk", ///< X11 key handling
+      "../../x11gl/extra/Host.sk", ///< Host-specific code
+      "../../x11gl/extra/X11Events.sk", ///< X11 event handling
+      "../../x11gl/extra/X11Key.sk", ///< X11 key handling
     ]
   } else {
     Array[]
-  }
-}
-
-module end;
-
-module Cc;
-
-extension class Build {
-  fun filterC(): Build {
-    !this.files_ = this.files_.filter(f -> f.endsWith(".c"));
-    this
-  }
-
-  fun filterCpp(): Build {
-    !this.files_ = this.files_.filter(f -> f.endsWith(".cpp"));
-    this
   }
 }
 

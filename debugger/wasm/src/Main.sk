@@ -1,0 +1,14 @@
+module alias SK = SKStore;
+
+module SkDebugger;
+
+@export("sk_debugger_launch")
+fun launchDebugger(url: String): void {
+  wId = 0;
+  launch(wId, url) match {
+  | Failure(err) -> throw err
+  | _ -> SKUIMain.init(wId, kAbout, 60, 0)
+  }
+}
+
+module end;

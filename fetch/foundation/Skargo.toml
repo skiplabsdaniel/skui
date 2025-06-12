@@ -1,0 +1,6 @@
+[package]
+name = "skip_fetch"
+version = "0.0.1"
+
+[dependencies]
+skjson = { path = "../../skip/skiplang/skjson" }

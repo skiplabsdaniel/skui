@@ -1,0 +1,26 @@
+module SKFetch;
+
+fun fetch(
+  url: String,
+  options: Settings = Settings{},
+): .Result<Result, Exception> {
+  sk_fetch(
+    url,
+    options.method.toString(),
+    JSON.Object(options.headers.map((_k, v) -> JSON.String(v))).toString(),
+    options.body,
+    options.timeout_s,
+  )
+}
+
+@debug
+@cpp_extern("sk_fetch")
+native fun sk_fetch(
+  url: String,
+  method: String,
+  headers: String,
+  body: ?String,
+  timeout_s: Int,
+): .Result<Result, Exception>;
+
+module end;

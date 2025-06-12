@@ -17,7 +17,8 @@
     "views/ts/views",
     "engine/ts/wasm",
     "engine/examples/wasm/ts/wasm",
-    "engine/examples/wasm/ts/browser"
+    "engine/examples/wasm/ts/browser",
+    "debugger/wasm/ts"
   ],
   "devDependencies": {
     "@playwright/test": "^1.50.1",

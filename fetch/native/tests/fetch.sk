@@ -4,11 +4,11 @@ module SKFetchTests;
 
 @test
 fun test_fetch_ffi_simple_get(): void {
-  SKUtils.fetch("https://httpbin.org/get") match {
-  | Success(SKUtils.FetchResult(200, _, Some(payload))) ->
+  SKFetch.fetch("https://httpbin.org/get") match {
+  | Success(SKFetch.Result(200, _, Some(payload))) ->
     json = JSON.decode(payload).expectObject();
     T.expectEq(json.getString("url"), "https://httpbin.org/get")
-  | Success(SKUtils.FetchResult(503, _, _)) -> void
+  | Success(SKFetch.Result(503, _, _)) -> void
   | Failure(exn) -> T.fail(exn.getMessage())
   | res -> T.fail(`Unexpected results: ${inspect(res)}`)
   }
@@ -16,16 +16,16 @@ fun test_fetch_ffi_simple_get(): void {
 
 @test
 fun test_fetch_with_post(): void {
-  options = SKUtils.FetchOption{
-    method => SKUtils.Post(),
+  options = SKFetch.Settings{
+    method => SKFetch.Post(),
     body => Some("hello=world"),
     headers => Map["Content-Type" => "application/x-www-form-urlencoded"],
   };
-  SKUtils.fetch("https://httpbin.org/post", options) match {
-  | Success(SKUtils.FetchResult(200, _, Some(payload))) ->
+  SKFetch.fetch("https://httpbin.org/post", options) match {
+  | Success(SKFetch.Result(200, _, Some(payload))) ->
     json = JSON.decode(payload).expectObject();
     T.expectEq(json.getObject("form").getString("hello"), "world")
-  | Success(SKUtils.FetchResult(503, _, _)) -> void
+  | Success(SKFetch.Result(503, _, _)) -> void
   | Failure(exn) -> T.fail(exn.getMessage())
   | res -> T.fail(`Unexpected results: ${inspect(res)}`)
   }
@@ -33,9 +33,9 @@ fun test_fetch_with_post(): void {
 
 @test
 fun test_fetch_not_found(): void {
-  SKUtils.fetch("https://httpbin.org/status/404") match {
-  | Success(SKUtils.FetchResult(404, _, _)) -> void
-  | Success(SKUtils.FetchResult(503, _, _)) -> void
+  SKFetch.fetch("https://httpbin.org/status/404") match {
+  | Success(SKFetch.Result(404, _, _)) -> void
+  | Success(SKFetch.Result(503, _, _)) -> void
   | Failure(exn) -> T.fail(exn.getMessage())
   | res -> T.fail(`Expected 404, got ${inspect(res)}`)
   }
@@ -43,12 +43,12 @@ fun test_fetch_not_found(): void {
 
 @test
 fun test_fetch_with_custom_headers(): void {
-  options = SKUtils.FetchOption{headers => Map["X-Test-Header" => "Karamel"]};
-  SKUtils.fetch("https://httpbin.org/headers", options) match {
-  | Success(SKUtils.FetchResult(200, _, Some(payload))) ->
+  options = SKFetch.Settings{headers => Map["X-Test-Header" => "Karamel"]};
+  SKFetch.fetch("https://httpbin.org/headers", options) match {
+  | Success(SKFetch.Result(200, _, Some(payload))) ->
     json = JSON.decode(payload).expectObject();
     T.expectEq(json.getObject("headers").getString("X-Test-Header"), "Karamel")
-  | Success(SKUtils.FetchResult(503, _, _)) -> void
+  | Success(SKFetch.Result(503, _, _)) -> void
   | Failure(exn) -> T.fail(exn.getMessage())
   | res -> T.fail(`Unexpected results: ${inspect(res)}`)
   }
@@ -56,17 +56,17 @@ fun test_fetch_with_custom_headers(): void {
 
 @test
 fun test_fetch_post_json_body(): void {
-  options = SKUtils.FetchOption{
-    method => SKUtils.Post(),
+  options = SKFetch.Settings{
+    method => SKFetch.Post(),
     body => Some(`{"foo": "bar"}`),
     headers => Map["Content-Type" => "application/json"],
   };
-  SKUtils.fetch("https://httpbin.org/post", options) match {
-  | Success(SKUtils.FetchResult(200, _, Some(payload))) ->
+  SKFetch.fetch("https://httpbin.org/post", options) match {
+  | Success(SKFetch.Result(200, _, Some(payload))) ->
     json = JSON.decode(payload).expectObject();
     data = JSON.decode(json.getString("data")).expectObject();
     T.expectEq(data.getString("foo"), "bar")
-  | Success(SKUtils.FetchResult(503, _, _)) -> void
+  | Success(SKFetch.Result(503, _, _)) -> void
   | Failure(exn) -> T.fail(exn.getMessage())
   | res -> T.fail(`Unexpected results: ${inspect(res)}`)
   }
@@ -74,9 +74,9 @@ fun test_fetch_post_json_body(): void {
 
 @test
 fun test_fetch_timeout(): void {
-  options = SKUtils.FetchOption{timeout_s => 1};
-  SKUtils.fetch("https://httpbin.org/delay/3", options) match {
-  | Success(SKUtils.FetchResult(503, _, _)) -> void
+  options = SKFetch.Settings{timeout_s => 1};
+  SKFetch.fetch("https://httpbin.org/delay/3", options) match {
+  | Success(SKFetch.Result(503, _, _)) -> void
   | Failure _ -> void
   | _ -> T.fail("Expected timeout failure")
   }

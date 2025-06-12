@@ -10,24 +10,25 @@ base class Future<T: frozen> {
     context: mutable Context,
     conv: (mutable Context, T) ~> F,
   ): Loadable;
-  fun asLoadable(): Loadable;
+  fun asLoadable(toFile: T ~> File): Loadable;
 
   fun then<T2: frozen>(conv: T ~> T2): Future<T2> {
-    if (this.isLoading()) {
-      FutureLoading<T2>(this.progression())
-    } else {
-      this.error() match {
-      | Some(failure) -> FutureFailure<T2>(failure.optError)
-      | _ -> FutureSuccess(conv(this.get()))
+    try {
+      if (this.isLoading()) {
+        FutureLoading<T2>(this.progression())
+      } else {
+        this.error() match {
+        | Some(failure) -> FutureFailure<T2>(failure.optError)
+        | _ -> FutureSuccess(conv(this.get()))
+        }
       }
+    } catch {
+    | exn -> FutureFailure<T2>(Some(!exn.getMessage()))
     }
   }
 }
 
-class FutureSuccess<T: frozen>(
-  value: T,
-  optToFile: ?T ~> File = None(),
-) extends Future<T> {
+class FutureSuccess<T: frozen>(value: T) extends Future<T> {
   fun isLoading(): Bool {
     false
   }
@@ -55,8 +56,7 @@ class FutureSuccess<T: frozen>(
     }
   }
 
-  fun asLoadable(): Loadable {
-    toFile = this.optToFile.fromSome();
+  fun asLoadable(toFile: T ~> File): Loadable {
     Loaded(toFile(this.value))
   }
 }
@@ -82,10 +82,10 @@ class FutureLoading<T: frozen>(optProgress: ?Int) extends Future<T> {
     _context: mutable Context,
     _conv: (mutable Context, T) ~> F,
   ): Loadable {
-    this.asLoadable();
+    Loading(this.optProgress)
   }
 
-  fun asLoadable(): Loadable {
+  fun asLoadable(_toFile: T ~> File): Loadable {
     Loading(this.optProgress)
   }
 }
@@ -111,10 +111,10 @@ class FutureFailure<T: frozen>(optError: ?Text) extends Future<T> {
     _context: mutable Context,
     _conv: (mutable Context, T) ~> F,
   ): Loadable {
-    this.asLoadable();
+    LoadFailed(this.optError)
   }
 
-  fun asLoadable(): Loadable {
+  fun asLoadable(_toFile: T ~> File): Loadable {
     LoadFailed(this.optError)
   }
 }
@@ -185,7 +185,7 @@ class LoadableFuture<T: frozen>(
     }
   }
 
-  fun asLoadable(): Loadable {
+  fun asLoadable(_toFile: T ~> File): Loadable {
     this.loadable
   }
 }

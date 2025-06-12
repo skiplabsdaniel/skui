@@ -9,9 +9,7 @@ fun display(
   optOutput.each(print_string);
 }
 
-fun init(wId: Int, title: String, args: Cli.ParseResults): void {
-  screen = args.getString("screen").toIntOption().default(0);
-  fps = args.getString("fps").toIntOption().default(60);
+fun init(wId: Int, title: String, fps: Int, screen: Int): void {
   SKUIX11.launch(wId, title, screen, fps);
 }
 

@@ -99,7 +99,9 @@ fun perform(
               initUiWidget(context, wId, fn(args));
               context.initPre();
             });
-            SKUIMain.init(wId, title, args)
+            fps = args.getString("fps").toIntOption().default(60);
+            screen = args.getString("screen").toIntOption().default(0);
+            SKUIMain.init(wId, title, fps, screen)
           | _ -> invariant_violation(`Unknown subcommand ${subcmd}`)
           }
         }

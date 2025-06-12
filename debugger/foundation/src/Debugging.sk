@@ -60,7 +60,7 @@ class ServiceInfo{
   inputs: Array<String>,
   resources: Array<String>,
   remotesResources: Array<String>,
-}
+} extends SK.File
 
 class Graph(
   inputs: Array<Name>,
@@ -85,22 +85,6 @@ fun indicator(context: mutable SK.Context, path: Ui.Path): Ui.Widget {
       UiProgress.LamController{progress => _ctx ~> None()},
     ),
   )
-}
-
-fun buildWidget(
-  context: mutable SK.Context,
-  env: Environment,
-  service: ServiceInfo,
-): void {
-  context.setPersistent("Ui.Properties.Root", SK.DirNameFile(rootPath));
-  support = SKUIGL.DrawableSupport(SKUI.pictureToTexturable);
-  builder = (_ctx, _root) ~> {
-    (ctx, _root) ~> {
-      path = Ui.Path::create("root").makeChild("app");
-      SkDebugViews.buildApp(ctx, path, env, service);
-    }
-  };
-  SKUI.init(context, env.wId, builder, support, predefined());
 }
 
 fun predefined(): SortedMap<Font.TypefaceInfo, String> {

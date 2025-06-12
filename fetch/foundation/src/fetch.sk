@@ -1,6 +1,6 @@
-module SKUtils;
+module SKFetch;
 
-class FetchException(message: String) extends .Exception
+class Exception(message: String) extends .Exception
 
 base class Method uses Orderable, Show {
   children =
@@ -41,40 +41,27 @@ base class Method uses Orderable, Show {
   }
 }
 
-class FetchOption{
+class Settings{
   method: Method = Get(),
   headers: Map<String, String> = Map[],
   body: ?String = None(),
   timeout_s: Int = 5,
 }
 
-class FetchResult(status: Int, headers: Map<String, String>, text: ?String) {
-  fun json<T>(conv: JSON.Value ~> T): Result<T, .Exception> {
+class Result(status: Int, headers: Map<String, String>, text: ?String) {
+  fun json<T>(conv: JSON.Value ~> T): .Result<T, .Exception> {
     this.text match {
-    | Some(text) -> Result::guard(() -> conv(JSON.decode(text)))
-    | _ -> Failure(FetchException("No data available"))
+    | Some(text) -> .Result::guard(() -> conv(JSON.decode(text)))
+    | _ -> Failure(Exception("No data available"))
     }
   }
 
-  fun skjson<T>(conv: SKJSON.CJSON ~> T): Result<T, .Exception> {
+  fun skjson<T>(conv: SKJSON.CJSON ~> T): .Result<T, .Exception> {
     this.text match {
-    | Some(text) -> Result::guard(() -> conv(SKJSON.decode(text)))
-    | _ -> Failure(FetchException("No data available"))
+    | Some(text) -> .Result::guard(() -> conv(SKJSON.decode(text)))
+    | _ -> Failure(Exception("No data available"))
     }
   }
-}
-
-fun fetch(
-  url: String,
-  options: FetchOption = FetchOption{},
-): Result<FetchResult, FetchException> {
-  sk_fetch(
-    url,
-    options.method.toString(),
-    JSON.Object(options.headers.map((_k, v) -> JSON.String(v))).toString(),
-    options.body,
-    options.timeout_s,
-  )
 }
 
 @export("sk_create_result")
@@ -83,14 +70,14 @@ fun createResult(
   headers: ?String,
   payload: ?String,
   error: ?String,
-): Result<FetchResult, FetchException> {
+): .Result<Result, Exception> {
   error match {
-  | Some(e) -> Failure(FetchException(e))
+  | Some(e) -> Failure(Exception(e))
   | _ ->
     payload match {
     | Some(data) ->
       Success(
-        FetchResult(
+        Result(
           status.toInt(),
           headers
             .map(h ->
@@ -102,19 +89,9 @@ fun createResult(
           Some(data),
         ),
       )
-    | _ -> Success(FetchResult(status.toInt(), Map[], None()))
+    | _ -> Success(Result(status.toInt(), Map[], None()))
     }
   };
 }
-
-@debug
-@cpp_extern("sk_fetch")
-native fun sk_fetch(
-  url: String,
-  method: String,
-  headers: String,
-  body: ?String,
-  timeout_s: Int,
-): Result<FetchResult, FetchException>;
 
 module end;

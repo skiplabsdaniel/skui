@@ -1,0 +1,10 @@
+[package]
+name = "debugger_wasm"
+version = "0.0.1"
+
+[dependencies]
+debugger = { "path" = "../foundation" }
+skui_js = { "path" = "../../framework_js" }
+
+[lib]
+type = ["cdylib"]

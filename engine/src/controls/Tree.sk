@@ -111,7 +111,6 @@ class TreeItemChildren(
   fun getItems(
     context: mutable SKStore.Context,
     optPath: ?Ui.Path,
-    _expanded: Bool,
   ): ?Array<String> {
     this.getChildrenForPath(context, optPath).items(context)
   }

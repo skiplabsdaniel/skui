@@ -6,12 +6,12 @@ fun source_dirs(env: SkuiBuild.Env): Array<String> {
 
 @debug
 fun main(): void {
-  SkuiBuild.build("skdebugger") match {
+  SkuiBuild.build("skip_fetch_rust") match {
   | Failure(err) ->
     skipExit(err.code) ///< Exit with error code on failure
   | Success(env) if (!env.isWasm32()) ->
     try {
-      SkuiBuild.cargo_lib(env, "skip_utils", "./rust/Cargo.toml");
+      SkuiBuild.cargo_lib(env, "skip_fetch_rust", "./rust/Cargo.toml");
     } catch {
     | SkuiBuild.RuntimeException(code) -> skipExit(code)
     | e ->
