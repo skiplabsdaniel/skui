@@ -41,7 +41,7 @@ export async function launch() {
     throw new Error("Debug port must be an integer");
   }
   runDebugger(data.environment, {
-    host: host ?? "localhost",
+    host: host ?? window.location.hostname,
     port: parseInt(port),
     securred: securred == "true",
   });
