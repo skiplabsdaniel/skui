@@ -464,7 +464,7 @@ class GraphMetrics<T: Hashable & Equality>(
     egdes = mutable Vector[];
     crossing = 0;
     default: ?G.Rect = None();
-    widths = this.layers.mapWithIndex((i, l) ->
+    expandeds = this.layers.mapWithIndex((i, l) ->
       l
         .mapWithIndex((j, _) -> getBounds(i, j))
         .reduce(
@@ -482,7 +482,7 @@ class GraphMetrics<T: Hashable & Equality>(
       lsize = this.layers[i].size();
       lcrossing = 0;
       this.layers[i].eachWithIndex((j, e) -> {
-        expanded = widths[i].fromSome("Must hava at lest one node.");
+        expanded = expandeds[i].fromSome("Must have at lest one node.");
         (reads, inputs) = this.sources.get(e).default((Array[], Array[]));
         bounds = getBounds(i, j);
         lHSep = bounds.width() / (reads.size() + 1).toFloat();
@@ -493,7 +493,7 @@ class GraphMetrics<T: Hashable & Equality>(
           src = this.arrowsTo.get(Extremity(e, index));
           (srcl, srcr) = this.idToLayerRow[src.id];
           srcBounds = getBounds(srcl, srcr);
-          srcExpanded = widths[srcl].fromSome("Must hava at lest one node.");
+          srcExpanded = expandeds[srcl].fromSome("Must have at lest one node.");
           srcOffset = srcBounds.centerRight();
           src2Offset =
             G.Offset(srcExpanded.right, srcOffset.dy) +
@@ -503,6 +503,7 @@ class GraphMetrics<T: Hashable & Equality>(
           (up, to, !crossing, !lcrossing) = this.manageCrossedLayer(
             elements,
             getBounds,
+            expandeds,
             G.Offset(src2Offset.dx, dstYUp),
             G.Offset(dstX, dstYUp),
             i,
@@ -529,7 +530,7 @@ class GraphMetrics<T: Hashable & Equality>(
           src = this.arrowsTo.get(Extremity(e, index));
           (srcl, srcr) = this.idToLayerRow[src.id];
           srcBounds = getBounds(srcl, srcr);
-          srcExpanded = widths[srcl].fromSome("Must hava at lest one node.");
+          srcExpanded = expandeds[srcl].fromSome("Must hava at lest one node.");
           srcOffset = srcBounds.centerRight();
           src2Offset =
             G.Offset(srcExpanded.right, srcOffset.dy) +
@@ -540,6 +541,7 @@ class GraphMetrics<T: Hashable & Equality>(
           (up, to, !crossing, !lcrossing) = this.manageCrossedLayer(
             elements,
             getBounds,
+            expandeds,
             G.Offset(src2Offset.dx, dstY),
             G.Offset(expanded.left, dstY),
             i,
@@ -564,6 +566,7 @@ class GraphMetrics<T: Hashable & Equality>(
   private fun manageCrossedLayer(
     elements: mutable Vector<Shape.PathElement>,
     getBounds: (Int, Int) -> G.Rect,
+    expandeds: Array<?G.Rect>,
     up: G.Offset,
     to: G.Offset,
     currentLayer: Int,
@@ -585,9 +588,9 @@ class GraphMetrics<T: Hashable & Equality>(
         None()
       };
       optCrossed.each(crossed -> {
+        expanded = expandeds[srcLayer + 1].fromSome();
         dy = crossed.bottom + (crossing + 1).toFloat() * vSep;
-        // TODO Get the good x offset (relative to layer width)
-        dx = crossed.right + (layerSize + layerCrossing + 1).toFloat() * hSep;
+        dx = expanded.right + (layerSize + layerCrossing + 1).toFloat() * hSep;
         elements.push(Shape.LineTo(G.Offset(up.dx, dy)));
         elements.push(Shape.LineTo(G.Offset(dx, dy)));
         !up = G.Offset(dx, to.dy);
