@@ -424,42 +424,35 @@ class GraphMetrics<T: Hashable & Equality>(
   }
 
   fun computeSeparators(): (Int, Int) {
-    hSep = 0;
-    vSep = 0;
-    idx = 0;
-    crossing = 0;
-    count = 0;
-    layer = 0;
-    edgesLayer = this.edges.map(e ->
-      (this.idToLayerRow[e.i0].i0, this.idToLayerRow[e.i1].i0)
-    ).sorted();
-    while (idx < edgesLayer.size()) {
-      edge = edgesLayer[idx];
-      if (edge.i1 == layer + 1) {
-        !count = count + 1;
-        if (edge.i0 < layer) {
-          !crossing = crossing + 1;
-        } else {
-          !vSep = Math.max(
-            vSep,
-            crossing + this.maxReads.maybeGet(layer).default(0),
-          )
-        };
-        !idx = idx + 1;
-      } else {
-        !hSep = Math.max(hSep, count);
-        !count = 0;
-        !crossing = 0;
-        !layer = layer + 1;
+    max = 0;
+    edgesLayer = this.edges.map(e -> {
+      end = this.idToLayerRow[e.i1].i0;
+      !max = Math.max(max, end);
+      (this.idToLayerRow[e.i0].i0, end)
+    }).sorted();
+    keeping = mutable Map[];
+    crossings = mutable Map[];
+    for (edge in edgesLayer) {
+      layer = edge.i0 + 1;
+      k = keeping.maybeGet(edge.i0).default(0);
+      keeping.set(edge.i0, k + 1);
+      if (layer < edge.i1) {
+        for (i in Range(layer, edge.i1)) {
+          c = crossings.maybeGet(i).default(0);
+          crossings.set(i, c + 1);
+        }
       }
     };
-    if (layer < this.layers.size()) {
-      !hSep = Math.max(hSep, count);
-      !vSep = Math.max(
-        vSep,
-        crossing + this.maxReads.maybeGet(layer).default(0),
-      );
+    withReads = mutable Map[];
+    for (layer in Range(1, max)) {
+      withReads.set(
+        layer,
+        crossings.maybeGet(layer).default(0) +
+          this.maxReads.maybeGet(layer).default(0),
+      )
     };
+    hSep = keeping.values().reduce(Math.max, 0);
+    vSep = withReads.values().reduce(Math.max, 0);
     (hSep, vSep)
   }
 
@@ -470,23 +463,41 @@ class GraphMetrics<T: Hashable & Equality>(
   ): Array<Edge> {
     egdes = mutable Vector[];
     crossing = 0;
+    default: ?G.Rect = None();
+    widths = this.layers.mapWithIndex((i, l) ->
+      l
+        .mapWithIndex((j, _) -> getBounds(i, j))
+        .reduce(
+          (acc, v) ->
+            Some(
+              acc match {
+              | Some(r) -> r.expandToInclude(v)
+              | None() -> v
+              },
+            ),
+          default,
+        )
+    );
     for (i in Range(1, this.layers.size())) {
       lsize = this.layers[i].size();
       lcrossing = 0;
       this.layers[i].eachWithIndex((j, e) -> {
+        expanded = widths[i].fromSome("Must hava at lest one node.");
         (reads, inputs) = this.sources.get(e).default((Array[], Array[]));
         bounds = getBounds(i, j);
         lHSep = bounds.width() / (reads.size() + 1).toFloat();
         reads.reversed().eachWithIndex((index, _) -> {
           elements = mutable Vector<Shape.PathElement>[];
-          dstX = bounds.right - ((index + 1).toFloat() * lHSep);
+          dstX = expanded.right - ((index + 1).toFloat() * lHSep);
           dstYUp = bounds.top - (reads.size() - index).toFloat() * vSep;
           src = this.arrowsTo.get(Extremity(e, index));
           (srcl, srcr) = this.idToLayerRow[src.id];
           srcBounds = getBounds(srcl, srcr);
-          // TODO: Get the good x offset (relative to layer width)
+          srcExpanded = widths[srcl].fromSome("Must hava at lest one node.");
           srcOffset = srcBounds.centerRight();
-          src2Offset = srcOffset + G.Offset(hSep * (srcr + 1).toFloat(), 0.0);
+          src2Offset =
+            G.Offset(srcExpanded.right, srcOffset.dy) +
+            G.Offset(hSep * (srcr + 1).toFloat(), 0.0);
           elements.push(Shape.MoveTo(srcOffset));
           elements.push(Shape.LineTo(src2Offset));
           (up, to, !crossing, !lcrossing) = this.manageCrossedLayer(
@@ -518,8 +529,11 @@ class GraphMetrics<T: Hashable & Equality>(
           src = this.arrowsTo.get(Extremity(e, index));
           (srcl, srcr) = this.idToLayerRow[src.id];
           srcBounds = getBounds(srcl, srcr);
+          srcExpanded = widths[srcl].fromSome("Must hava at lest one node.");
           srcOffset = srcBounds.centerRight();
-          src2Offset = srcOffset + G.Offset(hSep * (srcr + 1).toFloat(), 0.0);
+          src2Offset =
+            G.Offset(srcExpanded.right, srcOffset.dy) +
+            G.Offset(hSep * (srcr + 1).toFloat(), 0.0);
           elements.push(Shape.MoveTo(srcOffset));
           elements.push(Shape.LineTo(src2Offset));
           // TODO: Get the good x offset (relative to layer width)
@@ -527,7 +541,7 @@ class GraphMetrics<T: Hashable & Equality>(
             elements,
             getBounds,
             G.Offset(src2Offset.dx, dstY),
-            G.Offset(bounds.left, dstY),
+            G.Offset(expanded.left, dstY),
             i,
             srcl,
             crossing,
