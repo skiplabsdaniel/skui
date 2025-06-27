@@ -500,7 +500,7 @@ class GraphMetrics<T: Hashable & Equality>(
             G.Offset(hSep * (srcr + 1).toFloat(), 0.0);
           elements.push(Shape.MoveTo(srcOffset));
           elements.push(Shape.LineTo(src2Offset));
-          (up, to, !crossing, !lcrossing) = this.manageCrossedLayer(
+          (from, to, !crossing, !lcrossing) = this.manageCrossedLayer(
             elements,
             getBounds,
             expandeds,
@@ -513,8 +513,9 @@ class GraphMetrics<T: Hashable & Equality>(
             lsize,
             vSep,
             hSep,
+            true
           );
-          elements.push(Shape.LineTo(up));
+          elements.push(Shape.LineTo(from));
           elements.push(Shape.LineTo(to));
           elements.push(Shape.LineTo(G.Offset(dstX, bounds.top)));
           path = Shape.Path{elements => elements.toArray()}.clean();
@@ -537,13 +538,13 @@ class GraphMetrics<T: Hashable & Equality>(
             G.Offset(hSep * (srcr + 1).toFloat(), 0.0);
           elements.push(Shape.MoveTo(srcOffset));
           elements.push(Shape.LineTo(src2Offset));
-          // TODO: Get the good x offset (relative to layer width)
-          (up, to, !crossing, !lcrossing) = this.manageCrossedLayer(
+          target = G.Offset(expanded.left - ((ii + 1).toFloat() * hSep), dstY);
+          (from, to, !crossing, !lcrossing) = this.manageCrossedLayer(
             elements,
             getBounds,
             expandeds,
             G.Offset(src2Offset.dx, dstY),
-            G.Offset(expanded.left, dstY),
+            target,
             i,
             srcl,
             crossing,
@@ -551,9 +552,15 @@ class GraphMetrics<T: Hashable & Equality>(
             lsize,
             vSep,
             hSep,
+            false
           );
-          elements.push(Shape.LineTo(up));
+          elements.push(Shape.LineTo(from));
           elements.push(Shape.LineTo(to));
+          if (!target.like(to))
+            elements.push(Shape.LineTo(target));
+          dstOffset = G.Offset(bounds.left, dstY);
+          if (!target.like(dstOffset))
+            elements.push(Shape.LineTo(dstOffset));
           path = Shape.Path{elements => elements.toArray()};
           cleaned = path.clean();
           egdes.push(Edge(src.id, e, cleaned));
@@ -567,7 +574,7 @@ class GraphMetrics<T: Hashable & Equality>(
     elements: mutable Vector<Shape.PathElement>,
     getBounds: (Int, Int) -> G.Rect,
     expandeds: Array<?G.Rect>,
-    up: G.Offset,
+    from: G.Offset,
     to: G.Offset,
     currentLayer: Int,
     srcLayer: Int,
@@ -576,12 +583,13 @@ class GraphMetrics<T: Hashable & Equality>(
     layerSize: Int,
     vSep: Float,
     hSep: Float,
+    direct: Bool,
   ): (G.Offset, G.Offset, Int, Int) {
     while (currentLayer - srcLayer > 1) {
       crossedLayer = this.layers[srcLayer + 1];
       optCrossed = for (crossedRow in Range(0, crossedLayer.size())) {
         crossedBounds = getBounds(srcLayer + 1, crossedRow);
-        if (crossedBounds.intersectSegment(up, to)) {
+        if (crossedBounds.intersectSegment(from, to)) {
           break Some(crossedBounds)
         }
       } else {
@@ -591,15 +599,20 @@ class GraphMetrics<T: Hashable & Equality>(
         expanded = expandeds[srcLayer + 1].fromSome();
         dy = crossed.bottom + (crossing + 1).toFloat() * vSep;
         dx = expanded.right + (layerSize + layerCrossing + 1).toFloat() * hSep;
-        elements.push(Shape.LineTo(G.Offset(up.dx, dy)));
+        elements.push(Shape.LineTo(G.Offset(from.dx, dy)));
         elements.push(Shape.LineTo(G.Offset(dx, dy)));
-        !up = G.Offset(dx, to.dy);
+        if (direct) {
+          !from = G.Offset(dx, to.dy);
+        } else {
+          !from = G.Offset(dx, dy);
+          !to = G.Offset(to.dx, dy);
+        }
       });
       !layerCrossing = layerCrossing + 1;
       !crossing = crossing + 1;
       !srcLayer = srcLayer + 1;
     };
-    (up, to, crossing, layerCrossing)
+    (from, to, crossing, layerCrossing)
   }
 }
 
