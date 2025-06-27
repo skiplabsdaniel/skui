@@ -249,6 +249,12 @@ fun test_simple_map(): void {
   )
 }
 
+/*
+  code:
+    ```
+      cs.input1.map(SizeMapper, cs.input2)
+    ```
+ */
 @test
 fun test_map_with_read(): void {
   test(

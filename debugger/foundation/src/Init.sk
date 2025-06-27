@@ -63,11 +63,7 @@ base class Environment(uri: String, wId: Int) extends SK.File {
   ): SK.Future<FetchResult> {
     this.fetch(
       context,
-      Fetch(
-        `${this.uri}/v1/instances/${resource}`,
-        time,
-        SKFetch.Get(),
-      ),
+      Fetch(`${this.uri}/v1/instances/${resource}`, time, SKFetch.Get()),
     );
   }
 }

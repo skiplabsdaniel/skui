@@ -1,0 +1,11 @@
+{
+  "name": "@skui/dbgserver",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": "./server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.1"
+  }
+}
