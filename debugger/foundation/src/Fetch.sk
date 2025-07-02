@@ -41,7 +41,7 @@ fun initFetchCall(
     (ctx, _self, key) ~> {
       (ctx.maybeGetLazyDir(dirName) match {
       | Some(ldir) ->
-        ldir.unsafeMaybeGet(key) match {
+        ldir.typed().unsafeMaybeGet(key) match {
         | Some(SK.LDefined(values, _)) ->
           invariant(
             values.size() == 1,
@@ -143,7 +143,8 @@ class LHandleWriter(dirName: SK.DirName) extends FetchWriter {
     );
     context.maybeGetLazyDir(this.dirName) match {
     | Some(ldir) ->
-      reads = ldir.unsafeGet(key) match {
+      tdir = ldir.typed();
+      reads = tdir.unsafeGet(key) match {
       | SK.LDefined(values, reads) ->
         invariant(
           values.size() == 1,
@@ -153,7 +154,7 @@ class LHandleWriter(dirName: SK.DirName) extends FetchWriter {
       | SK.LRemoved(reads) -> reads
       | _ -> invariant_violation("Must be defined")
       };
-      ldir.writeArray(context, key, Array[loadable], reads)
+      tdir.writeArray(context, key, Array[loadable], reads)
     | _ -> invariant_violation(`No lazy dir ${this.dirName} found`)
     };
     context.updateIfRoot()
