@@ -28,7 +28,7 @@ base class Node {
   fun getParamOffset(Int): G.Offset;
 }
 
-base class TNode uses Hashable, Equality {
+base class TNode uses Hashable, Equality, Show {
   children =
   | TInput(name: Name)
   | TOutput(name: Name)
@@ -176,9 +176,9 @@ base class GMetrics extends SK.File uses Unsafe.Downcastable {
   }
 }
 
-class GraphMetrics<T: Hashable & Equality>(
+class GraphMetrics<T: Hashable & Equality & Show>(
   layers: Array<Array<Int>>,
-  arrowsTo: Map<Extremity<Int>, Extremity<Int>>,
+  arrowsFrom: Map<Extremity<Int>, Extremity<Int>>,
   edges: Array<(Int, Int)>,
   idToData: Array<T>,
   idToLayerRow: Array<(Int, Int)>,
@@ -190,13 +190,13 @@ class GraphMetrics<T: Hashable & Equality>(
     invariant_violation("Cannot be used.")
   }
 
-  static fun compute<T1: Hashable & Equality>(
+  static fun compute<T1: Hashable & Equality & Show>(
     graph: Graph,
     factory: Factory<T1>,
   ): GraphMetrics<T1> {
     maxLayer: Int = 0;
     entitiesLayer = mutable Map<T1, Int>[];
-    arrowsTo = mutable Map<Extremity<T1>, Extremity<T1>>[];
+    arrowsFrom = mutable Map<Extremity<T1>, Extremity<T1>>[];
     edges = mutable Vector<(T1, T1)>[];
     inputsByName = mutable Map<String, T1>[];
     outputsByName = mutable Map<String, T1>[];
@@ -220,12 +220,12 @@ class GraphMetrics<T: Hashable & Equality>(
       | Some(i) ->
         edges.push((i, output));
         entitySources.add(output, (Array[], Array[i]));
-        arrowsTo.add(Extremity(output, 0), Extremity(i, 0))
+        arrowsFrom.add(Extremity(output, 0), Extremity(i, 0))
       | None() ->
         operatorsByName.maybeGet(o.name).each(operator -> {
           edges.push((operator, output));
           entitySources.add(output, (Array[], Array[operator]));
-          arrowsTo.add(Extremity(output, 0), Extremity(operator, 0));
+          arrowsFrom.add(Extremity(output, 0), Extremity(operator, 0));
           entitiesLayer.set(operator, 0);
           layer.insert(o.name)
         })
@@ -252,7 +252,7 @@ class GraphMetrics<T: Hashable & Equality>(
           entitySources.add(operator, (reads, inputs));
           reads.reversed().concat(inputs).eachWithIndex((idx, i) -> {
             edges.push((i, operator));
-            arrowsTo.add(Extremity(operator, idx), Extremity(i, 0));
+            arrowsFrom.add(Extremity(operator, idx), Extremity(i, 0));
             if (!factory.isInput(i)) {
               !maxLayer = Math.max(maxLayer, depth + 1);
               entitiesLayer.set(i, depth + 1);
@@ -273,16 +273,16 @@ class GraphMetrics<T: Hashable & Equality>(
     layout = static::make(
       layers.toArray().filter(l -> !l.isEmpty()),
       edges.toArray().reversed(),
-      arrowsTo.chill(),
+      arrowsFrom.chill(),
       entitySources.chill(),
     );
     layout
   }
 
-  static fun make<T: Hashable & Equality>(
+  static fun make<T: Hashable & Equality & Show>(
     layers: Array<Array<T>>,
     edges: Array<(T, T)>,
-    arrowsTo: Map<Extremity<T>, Extremity<T>> = Map[],
+    arrowsFrom: Map<Extremity<T>, Extremity<T>> = Map[],
     sources: Map<T, (Array<T>, Array<T>)> = Map[],
   ): GraphMetrics<T> {
     nameToId = mutable Map<T, Int>[];
@@ -306,7 +306,7 @@ class GraphMetrics<T: Hashable & Equality>(
       })
     );
     intEdges = edges.map(v -> (encode(v.i0), encode(v.i1)));
-    intArrowsTo = arrowsTo.mapItems((to, from) ->
+    intArrowsTo = arrowsFrom.mapItems((to, from) ->
       (to.convert(encode), from.convert(encode))
     );
     GraphMetrics(
@@ -359,8 +359,7 @@ class GraphMetrics<T: Hashable & Equality>(
     mlayers = this.layers.map(a -> a.clone());
     (up, down) = buildMaps();
 
-    sweep = (direction) -> {
-      isDown = direction == "down";
+    sweep = (isDown) -> {
       map = if (isDown) up else down;
       range = if (isDown) Range(0, this.layers.size() - 1) else {
         Range(1, this.layers.size()).reversed()
@@ -386,8 +385,8 @@ class GraphMetrics<T: Hashable & Equality>(
     };
 
     for (_i in Range(0, iterations)) {
-      sweep("down");
-      sweep("up");
+      sweep(true);
+      sweep(false);
     };
 
     !this.layers = mlayers.map(a -> a.chill());
@@ -461,7 +460,7 @@ class GraphMetrics<T: Hashable & Equality>(
     hSep: Float,
     vSep: Float,
   ): Array<Edge> {
-    egdes = mutable Vector[];
+    edges = mutable Vector[];
     crossing = 0;
     default: ?G.Rect = None();
     expandeds = this.layers.mapWithIndex((i, l) ->
@@ -490,7 +489,7 @@ class GraphMetrics<T: Hashable & Equality>(
           elements = mutable Vector<Shape.PathElement>[];
           dstX = expanded.right - ((index + 1).toFloat() * lHSep);
           dstYUp = bounds.top - (reads.size() - index).toFloat() * vSep;
-          src = this.arrowsTo.get(Extremity(e, index));
+          src = this.arrowsFrom.get(Extremity(e, index));
           (srcl, srcr) = this.idToLayerRow[src.id];
           srcBounds = getBounds(srcl, srcr);
           srcExpanded = expandeds[srcl].fromSome("Must have at lest one node.");
@@ -513,14 +512,14 @@ class GraphMetrics<T: Hashable & Equality>(
             lsize,
             vSep,
             hSep,
-            true
+            true,
           );
           elements.push(Shape.LineTo(from));
           elements.push(Shape.LineTo(to));
           elements.push(Shape.LineTo(G.Offset(dstX, bounds.top)));
           path = Shape.Path{elements => elements.toArray()}.clean();
           cleaned = path.clean();
-          egdes.push(Edge(src.id, e, cleaned));
+          edges.push(Edge(src.id, e, cleaned));
         });
         offset = reads.size();
         lVSep = bounds.height() / (inputs.size() + 1).toFloat();
@@ -528,7 +527,7 @@ class GraphMetrics<T: Hashable & Equality>(
           index = ii + offset;
           elements = mutable Vector<Shape.PathElement>[];
           dstY = bounds.top + ((ii + 1).toFloat() * lVSep);
-          src = this.arrowsTo.get(Extremity(e, index));
+          src = this.arrowsFrom.get(Extremity(e, index));
           (srcl, srcr) = this.idToLayerRow[src.id];
           srcBounds = getBounds(srcl, srcr);
           srcExpanded = expandeds[srcl].fromSome("Must hava at lest one node.");
@@ -552,22 +551,89 @@ class GraphMetrics<T: Hashable & Equality>(
             lsize,
             vSep,
             hSep,
-            false
+            false,
           );
           elements.push(Shape.LineTo(from));
           elements.push(Shape.LineTo(to));
-          if (!target.like(to))
-            elements.push(Shape.LineTo(target));
+          if (!target.like(to)) elements.push(Shape.LineTo(target));
           dstOffset = G.Offset(bounds.left, dstY);
-          if (!target.like(dstOffset))
-            elements.push(Shape.LineTo(dstOffset));
+          if (!target.like(dstOffset)) elements.push(Shape.LineTo(dstOffset));
           path = Shape.Path{elements => elements.toArray()};
           cleaned = path.clean();
-          egdes.push(Edge(src.id, e, cleaned));
+          edges.push(Edge(src.id, e, cleaned));
         })
       })
     };
-    egdes.toArray()
+    edges.toArray()
+  }
+
+  fun split(): Array<GraphMetrics<T>> {
+    outputs = this.layers.last();
+    aliases = mutable Map[];
+    groupForElement = mutable Map[];
+    group = 0;
+    outputs.each(output -> {
+      this.assignGroup(output, group, groupForElement, aliases);
+      !group = group + 1;
+    });
+    max = 0;
+    groups_ = groupForElement.map((_, v) -> {
+      g = aliases.maybeGet(v) match {
+      | Some(g) -> g
+      | _ -> v
+      };
+      !max = Math.max(max, g);
+      g
+    });
+    if (max == 0) return Array[this];
+    groups = Array::fillBy(max + 1, _ -> mutable Vector<Int>[]);
+    groups_.each((k, v) -> groups[v].push(k));
+    groups.map(elems -> this.filter(Set::createFromItems(elems)));
+  }
+
+  private fun filter(elements: Set<Int>): GraphMetrics<T> {
+    layers = this.layers.map(l -> l.filter(elements.contains))
+      .filter(l -> !l.isEmpty())
+      .map(l -> l.map(this.idToData.get));
+    edges = this.edges.filter(egde ->
+      elements.contains(egde.i0) && elements.contains(egde.i1)
+    ).map(egde -> (this.idToData.get(egde.i0), this.idToData.get(egde.i1)));
+    arrowsFrom = this.arrowsFrom.filter((k, v) ->
+      elements.contains(k.id) || elements.contains(v.id)
+    ).mapItems((k, v) ->
+      (k.convert(this.idToData.get), v.convert(this.idToData.get))
+    );
+    sources = mutable Map[];
+    elements.each(id -> {
+      this.sources[id].each(t -> {
+        (reads, inputs) = (
+          t.i0.filter(elements.contains).map(this.idToData.get),
+          t.i1.filter(elements.contains).map(this.idToData.get),
+        );
+        if (!reads.isEmpty() || !inputs.isEmpty()) {
+          sources.add(this.idToData.get(id), (reads, inputs))
+        }
+      })
+    });
+    static::make(layers, edges, arrowsFrom, sources.chill())
+  }
+
+  private fun assignGroup(
+    element: Int,
+    group: Int,
+    groupForElement: mutable Map<Int, Int>,
+    aliases: mutable Map<Int, Int>,
+  ): void {
+    groupForElement.maybeGet(element) match {
+    | Some(g) -> if (group != g) aliases.set(group, g)
+    | _ ->
+      groupForElement.add(element, group);
+      (reads, inputs) = this.sources.get(element).default((Array[], Array[]));
+      reads.reversed().concat(inputs).eachWithIndex((idx, _i) -> {
+        src = this.arrowsFrom.get(Extremity(element, idx));
+        this.assignGroup(src.id, group, groupForElement, aliases)
+      })
+    }
   }
 
   private fun manageCrossedLayer(
@@ -635,10 +701,11 @@ class GraphMetrics<T: Hashable & Equality>(
  * @note The final size of the layout includes extra space for the specified horizontal and vertical spacing
  *       between the layers of nodes.
  */
-fun layout(
+private fun layout_(
   nodes: Array<Array<G.Size>>,
   hSpace: Float,
   vSpace: Float,
+  vOffset: Float = 0.0,
 ): (G.Size, Array<Array<G.Rect>>) {
   szero = G.Size(0.0, 0.0);
   sizes = nodes.map(l ->
@@ -669,7 +736,7 @@ fun layout(
     nodes.mapWithIndex((layer, lnodes) -> {
       lsize = sizes[layer];
       sep = (size.height - lsize.height) / (lnodes.size() + 1).toFloat();
-      y = sep;
+      y = vOffset + sep;
       res = lnodes.map(s -> {
         offset = if (layer == 0) {
           G.Offset(x + lsize.width - s.width, y)
@@ -687,12 +754,27 @@ fun layout(
   )
 }
 
+fun layout(
+  nodes: Array<Array<Array<G.Size>>>,
+  spaces: Int -> (Float, Float),
+): (G.Size, Array<Array<Array<G.Rect>>>) {
+  size = G.Size::zero;
+  vOffset = 0.0;
+  bounds = nodes.mapWithIndex((idx, ns) -> {
+    (hSpace, vSpace) = spaces(idx);
+    (s, nbs) = layout_(ns, hSpace, vSpace, vOffset);
+    !vOffset = vOffset + s.height;
+    !size = G.Size(Math.max(size.width, s.width), size.height + s.height);
+    nbs
+  });
+  (size, bounds)
+}
+
 class GraphController(
   open: (mutable SK.Context, Ui.Path) ~> void,
   dataPath: Ui.Path,
   path: Ui.Path,
-  metrics: GraphMetrics<TNode>,
-  separators: (Int, Int),
+  metrics: Array<GraphMetrics<TNode>>,
   space: Float = 10.0,
   thickness: Float = 2.0,
 ) extends Controller {
@@ -701,30 +783,24 @@ class GraphController(
     open: (mutable SK.Context, Ui.Path) ~> void,
     dataPath: Ui.Path,
     path: Ui.Path,
-    metrics: GraphMetrics<TNode>,
+    metrics: Array<GraphMetrics<TNode>>,
     space: Float = 10.0,
   ): GraphController {
-    GraphController(
-      open,
-      dataPath,
-      path,
-      metrics,
-      metrics.computeSeparators(),
-      space,
-    )
+    GraphController(open, dataPath, path, metrics, space)
   }
 
-  fun getLayers(_context: mutable SK.Context): Array<Int> {
-    this.metrics.layers.map(l -> l.size())
+  fun getLayers(_context: mutable SK.Context): Array<Array<Int>> {
+    this.metrics.map(metric -> metric.layers.map(l -> l.size()))
   }
 
   fun buildWidget(
     context: mutable SK.Context,
+    metric: Int,
     layer: Int,
     row: Int,
   ): Ui.Widget {
-    id = this.metrics.layers[layer][row];
-    node = this.metrics.idToData[id];
+    id = this.metrics[metric].layers[layer][row];
+    node = this.metrics[metric].idToData[id];
     path = this.path.makeChild(node.getId());
     (color, fill, withValues) = node match {
     | TInput _ ->
@@ -858,15 +934,20 @@ class GraphController(
 
   fun buildEdges(
     _ctx: mutable SK.Context,
-    bounds: Array<Array<G.Rect>>,
+    bounds: Array<Array<Array<G.Rect>>>,
   ): Array<Edge> {
-    this.metrics.buildEdges((i, j) -> bounds[i][j], this.space, this.space)
+    Arrays.mergeAll(
+      this.metrics.mapWithIndex((idx, m) ->
+        m.buildEdges((i, j) -> bounds[idx][i][j], this.space, this.space)
+      ),
+    )
   }
 
-  fun getSpaces(_ctx: mutable SK.Context): (Float, Float) {
+  fun getSpaces(_ctx: mutable SK.Context, metric: Int): (Float, Float) {
+    separators = this.metrics[metric].computeSeparators();
     (
-      (this.separators.i0 + 1).toFloat() * this.space,
-      (this.separators.i1 + 1).toFloat() * this.space,
+      (separators.i0 + 1).toFloat() * this.space,
+      (separators.i1 + 1).toFloat() * this.space,
     )
   }
 

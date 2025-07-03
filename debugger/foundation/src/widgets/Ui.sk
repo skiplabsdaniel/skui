@@ -33,14 +33,14 @@ class UserData(edges: Array<Edge>) extends Ui.UserData
 class DrawInfo(edges: Array<Edge>) extends Ui.DrawInfo
 
 base class Controller {
-  fun getLayers(mutable SK.Context): Array<Int>;
-  fun buildWidget(mutable SK.Context, Int, Int): Ui.Widget;
-  fun buildEdges(mutable SK.Context, Array<Array<G.Rect>>): Array<Edge>;
-  fun getSpaces(mutable SK.Context): (Float, Float);
+  fun getLayers(mutable SK.Context): Array<Array<Int>>;
+  fun buildWidget(mutable SK.Context, Int, Int, Int): Ui.Widget;
+  fun buildEdges(mutable SK.Context, Array<Array<Array<G.Rect>>>): Array<Edge>;
+  fun getSpaces(mutable SK.Context, Int): (Float, Float);
   fun getEdgeStyle(mutable SK.Context): EdgeStyle;
 }
 
-class LayerRow(layer: Int, row: Int) extends SK.Key
+class LayerRow(metric: Int, layer: Int, row: Int) extends SK.Key
 
 class Parameters{controller: Controller} extends Ui.Parameters {}
 
@@ -75,15 +75,17 @@ class UiGraph protected {
         widgetDirName(path),
         (context, writer, _, _) ~> {
           layers = params.controller.getLayers(context);
-          layers.eachWithIndex((lidx, lsize) ->
-            for (ridx in Range(0, lsize)) {
-              writer.set(
-                LayerRow(lidx, ridx),
-                Ui.WidgetFile(
-                  params.controller.buildWidget(context, lidx, ridx),
-                ),
-              )
-            }
+          layers.eachWithIndex((midx, metric) ->
+            metric.eachWithIndex((lidx, lsize) ->
+              for (ridx in Range(0, lsize)) {
+                writer.set(
+                  LayerRow(midx, lidx, ridx),
+                  Ui.WidgetFile(
+                    params.controller.buildWidget(context, midx, lidx, ridx),
+                  ),
+                )
+              }
+            )
           );
         },
       );
@@ -123,20 +125,25 @@ class UiGraph protected {
   ): Ui.Node {
     noConstraints = Ui.BoxConstraints::new();
     layers = this.controller.getLayers(context);
-    nodes = layers.mapWithIndex((lidx, lsize) ->
-      Array::fillBy(lsize, ridx ->
-        this.nodesHdl.get(context, LayerRow(lidx, ridx))
+    nodes = layers.mapWithIndex((gidx, group) ->
+      group.mapWithIndex((lidx, lsize) ->
+        Array::fillBy(lsize, ridx ->
+          this.nodesHdl.get(context, LayerRow(gidx, lidx, ridx))
+        )
       )
     );
-    nodeSizes = nodes.map(l -> l.map(n -> n.size));
-    (hSpace, vSpace) = this.controller.getSpaces(context);
-    (size, nodeBounds) = layout(nodeSizes, hSpace, vSpace);
+    nodeSizes = nodes.map(g -> g.map(l -> l.map(n -> n.size)));
+    (size, nodeBounds) = layout(nodeSizes, idx ->
+      this.controller.getSpaces(context, idx)
+    );
     edges = this.controller.buildEdges(context, nodeBounds);
     children_ = mutable Vector<Ui.NChild>[];
-    nodes.eachWithIndex((i, l) ->
-      l.eachWithIndex((j, n) ->
-        children_.push(
-          Ui.CNode::create(n, nodeBounds[i][j].topLeft(), noConstraints),
+    nodes.eachWithIndex((gi, g) ->
+      g.eachWithIndex((i, l) ->
+        l.eachWithIndex((j, n) ->
+          children_.push(
+            Ui.CNode::create(n, nodeBounds[gi][i][j].topLeft(), noConstraints),
+          )
         )
       )
     );

@@ -374,7 +374,7 @@ fun env(
                 env.open,
                 key,
                 path,
-                metrics,
+                metrics.split(),
                 space,
               );
               graph = UiGraph::createForController(ctx, path, controller);

@@ -5,7 +5,7 @@ module alias S = Shape;
 
 module TestComputeLayers;
 
-base class TNode uses Hashable, Equality {
+base class TNode uses Hashable, Equality, Show {
   children =
   | TInput(name: String)
   | TOutput(name: String)
@@ -18,6 +18,10 @@ base class TNode uses Hashable, Equality {
   | TOperator(name) ->
     name
   | TConst(value) -> value.toString()
+
+  fun toString(): String {
+    this.getId()
+  }
 }
 
 class TNodeFactory() extends D.Factory<TNode> {
@@ -95,10 +99,10 @@ fun test(
   nodes = got.layers.map(l -> l.map(_ -> G.Size(100.0, 50.0)));
   hSpace = ((separators.i0 + 1) * 10).toFloat();
   vSpace = ((separators.i1 + 1) * 10).toFloat();
-  (aSize, aBounds) = D.layout(nodes, hSpace, vSpace);
+  (aSize, aBounds) = D.layout(Array[nodes], _idx -> (hSpace, vSpace));
   T.expectEq(aSize, size);
-  T.expectEq(aBounds, bounds);
-  aEdges = got.buildEdges((l, r) -> aBounds[l][r], 10.0, 10.0);
+  T.expectEq(aBounds, Array[bounds]);
+  aEdges = got.buildEdges((l, r) -> aBounds[0][l][r], 10.0, 10.0);
   expectLike(aEdges, edges, 10e-6);
 }
 
