@@ -75,28 +75,31 @@ fun getReads<T: Hashable & Equality>(
   reads = Set::mcreateFromItems(entity.reads.filter(r -> r != entity.name));
   params = Arrays.mergeAll(
     entity.getParameters().map(ps ->
-      ps.map(p ->
-        p.type match {
-        | PData() -> factory.constant(p.value)
-        | PCollection() ->
-          name = p.value.expectString();
-          reads.remove(name);
-          inputs.maybeGet(name) match {
-          | Some(n) -> n
-          | _ -> operators.get(name)
+      ps
+        .map(p ->
+          p.type match {
+          | PData() -> Some(factory.constant(p.value))
+          | PCollection() ->
+            name = p.value.expectString();
+            _ = reads.maybeRemove(name);
+            inputs.maybeGet(name) match {
+            | Some(n) -> Some(n)
+            | _ -> operators.maybeGet(name)
+            }
           }
-        }
-      )
+        )
+        .filterNone()
     ),
   );
   remaining = reads
     .map(name ->
       inputs.maybeGet(name) match {
-      | Some(n) -> n
-      | _ -> operators.get(name)
+      | Some(n) -> Some(n)
+      | _ -> operators.maybeGet(name)
       }
     )
-    .collect(Array);
+    .collect(Array)
+    .filterNone();
   params.concat(remaining)
 }
 
