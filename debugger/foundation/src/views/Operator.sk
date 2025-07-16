@@ -2,7 +2,7 @@ module SkDebugViews;
 
 class DOperator(
   fill: Ui.Paint,
-  stroke: Ui.Paint,
+  stroke: Ui.Getter<Ui.Paint>,
   width: Float,
   thickness: Float,
 ) extends Ui.Decoration {
@@ -12,7 +12,7 @@ class DOperator(
   }
 
   fun fillDrawables(
-    _context: mutable SKStore.Context,
+    context: mutable SKStore.Context,
     support: Ui.DrawableSupport,
     offset: Geometry.Offset,
     size: Geometry.Size,
@@ -45,7 +45,7 @@ class DOperator(
     );
     strokePath = Shape.Path::polyline(offsets, true);
     drawables.push(support.shape(fillPath, this.fill));
-    drawables.push(support.shape(strokePath, this.stroke))
+    drawables.push(support.shape(strokePath, this.stroke(context)))
   }
 }
 

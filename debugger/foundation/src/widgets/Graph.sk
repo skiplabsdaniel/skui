@@ -774,7 +774,8 @@ fun layout(
 }
 
 class GraphController(
-  open: (mutable SK.Context, Ui.Path) ~> void,
+  open: (mutable SK.Context, Ui.Path, TNode) ~> void,
+  isOpened: (mutable SK.Context, Ui.Path, TNode) ~> Bool,
   dataPath: Ui.Path,
   path: Ui.Path,
   metrics: Array<GraphMetrics<TNode>>,
@@ -783,13 +784,14 @@ class GraphController(
 ) extends Controller {
   //
   static fun make(
-    open: (mutable SK.Context, Ui.Path) ~> void,
+    open: (mutable SK.Context, Ui.Path, TNode) ~> void,
+    isOpened: (mutable SK.Context, Ui.Path, TNode) ~> Bool,
     dataPath: Ui.Path,
     path: Ui.Path,
     metrics: Array<GraphMetrics<TNode>>,
     space: Float = 10.0,
   ): GraphController {
-    GraphController(open, dataPath, path, metrics, space)
+    GraphController(open, isOpened, dataPath, path, metrics, space)
   }
 
   fun getLayers(_context: mutable SK.Context): Array<Array<Int>> {
@@ -820,12 +822,26 @@ class GraphController(
     | TOutput _ ->
       SkDebugViews.DInOut(
         color,
-        fill,
+        ctx ~> {
+          if (this.isOpened(ctx, this.dataPath, node)) Colors.green() else {
+            fill
+          }
+        },
         20.0,
         this.thickness,
         Geometry.Insets::all(4.0),
       )
-    | TOperator _ -> SkDebugViews.DOperator(color, fill, 20.0, this.thickness)
+    | TOperator _ ->
+      SkDebugViews.DOperator(
+        color,
+        ctx ~> {
+          if (this.isOpened(ctx, this.dataPath, node)) Colors.green() else {
+            fill
+          }
+        },
+        20.0,
+        this.thickness,
+      )
     | TConst _ ->
       Ui.Nested(
         Array[
@@ -848,63 +864,7 @@ class GraphController(
             text => Ui.default(Some(!node.toString())),
             kind => Ui.default(UiButton.Regular()),
             mode => Ui.default(UiButton.Flat()),
-            onFire => (ctx, _) ~> {
-              node match {
-              | TInput(name) ->
-                this.dataPath match {
-                | Ui.Path("service", None()) ->
-                  this.open(
-                    ctx,
-                    name.alias match {
-                    | Some(alias) -> Ui.Path("inputs", None()).makeChild(alias)
-                    | _ ->
-                      this.dataPath.makeChild(node.toString())
-                        .makeChild("collection")
-                        .makeChild(name.name, false)
-                    },
-                  )
-                | _ ->
-                  display = name.alias match {
-                  | Some(alias) -> `Collection: ${alias}`
-                  | _ -> node.toString()
-                  };
-                  this.open(
-                    ctx,
-                    this.dataPath.makeChild(display)
-                      .makeChild("collection")
-                      .makeChild(name.name, false),
-                  )
-                }
-              | TOutput(name) ->
-                this.dataPath match {
-                | Ui.Path("service", None()) ->
-                  this.open(
-                    ctx,
-                    name.alias match {
-                    | Some(alias) ->
-                      Ui.Path("collections", None()).makeChild(alias)
-                    | _ ->
-                      this.dataPath.makeChild(node.toString())
-                        .makeChild("collection")
-                        .makeChild(name.name)
-                    },
-                  )
-                | _ ->
-                  this.open(
-                    ctx,
-                    this.dataPath.makeChild(node.toString()).makeChild(
-                      "output",
-                    ),
-                  )
-                }
-              | TOperator _ ->
-                toOpen = this.dataPath.makeChild(node.toString())
-                  .makeChild("collection")
-                  .makeChild(node.getId(), false);
-                this.open(ctx, toOpen)
-              | TConst _ -> void
-              }
-            },
+            onFire => (ctx, _) ~> this.open(ctx, this.dataPath, node),
           },
           state,
         ),

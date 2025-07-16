@@ -235,7 +235,10 @@ app.post("/v1/resource/:resource", (req, res) => {
 
 app.post("/v1/values", (req, res) => {
   try {
-    const entries = service.values(req.body);
+    const entries = [
+      ["key0", ["v1", "v2"]],
+      ["key1", ["v3", "v4"]],
+    ];
     res.status(200).json(entries);
   } catch (e) {
     console.log(e);
