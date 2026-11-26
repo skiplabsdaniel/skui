@@ -122,12 +122,19 @@ The display is created with `eglGetPlatformDisplay(EGL_PLATFORM_ANGLE_ANGLE,
 ### 3.2 Windows and events: SDL
 
 SDL creates the window and the graphics surface, and delivers events in the
-same way on every platform. SDL can create an OpenGL ES context through
-ANGLE's EGL: `SDL_HINT_OPENGL_ES_DRIVER` (`SDL_OPENGL_ES_DRIVER=1`) forces
-SDL to load an EGL/GLES library instead of asking the desktop GL driver for
-an ES profile, and `SDL_HINT_EGL_LIBRARY` / `SDL_HINT_OPENGL_LIBRARY` point
-it to ANGLE's `libEGL` and `libGLESv2`. Without the first hint, SDL may
-silently use the system driver instead of ANGLE.
+same way on every platform. SDL creates the OpenGL ES context through
+ANGLE's EGL with four hints, set before `SDL_Init` (checked with SDL 3.4.20
+on X11, see `views/docker/check.c`):
+
+- `SDL_HINT_VIDEO_FORCE_EGL`: on X11, SDL otherwise starts with GLX, loading
+  the library of `SDL_HINT_OPENGL_LIBRARY` as a GLX library, which fails
+  with ANGLE ("Could not retrieve OpenGL functions");
+- `SDL_HINT_OPENGL_ES_DRIVER`: load an EGL/GLES library instead of asking
+  the desktop GL driver for an ES profile;
+- `SDL_HINT_EGL_LIBRARY` and `SDL_HINT_OPENGL_LIBRARY`: the paths of
+  ANGLE's `libEGL` and `libGLESv2`.
+
+Without them, SDL silently uses the system driver instead of ANGLE.
 
 skui uses SDL 3 (see 3.3); the table below uses SDL 3 names.
 
@@ -135,7 +142,7 @@ skui uses SDL 3 (see 3.3); the table below uses SDL 3 names.
 |---|---|---|
 | Window, resize | `XCreateWindow`, `ConfigureNotify` | `SDL_CreateWindow`, `SDL_EVENT_WINDOW_RESIZED` |
 | GL context, swap | GLX | `SDL_GL_CreateContext` (ES 3 via ANGLE), `SDL_GL_SwapWindow` |
-| Pixel ratio | `Xft.dpi / 96`, read once | `SDL_GetWindowPixelDensity`, `SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED` (follows the screen the window is on) |
+| Pixel ratio | `Xft.dpi / 96`, read once | `SDL_GetWindowPixelDensity` × `SDL_GetWindowDisplayScale`, `SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED` and `SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED` (follow the screen the window is on) |
 | Mouse | `MotionNotify`, `ButtonPress` | `SDL_EVENT_MOUSE_MOTION`, `SDL_EVENT_MOUSE_BUTTON_*`, `SDL_EVENT_MOUSE_WHEEL` |
 | Keys | X11 key codes and keysyms, 3000 lines of tables | `SDL_Scancode` (physical, maps to web `code`) and `SDL_Keycode` (layout, maps to web `key`): two small tables |
 | Text input, accents, IME | XIM, `Xutf8LookupString`, dead keys table | `SDL_EVENT_TEXT_INPUT`, `SDL_EVENT_TEXT_EDITING` (composition) |
@@ -149,6 +156,15 @@ Text input is the main improvement: SDL uses the platform input methods
 (IBus/Fcitx on Linux, the macOS text input system, TSF on Windows), which
 gives accents, compose keys and Asian input methods everywhere.
 
+The pixel ratio skui needs is the number of device pixels per logical
+pixel: the product of the two SDL 3 values. On macOS and Wayland, the window
+size is in logical pixels and the pixel density gives the ratio (2 on a
+Retina screen). On X11, windows are in device pixels: the pixel density
+stays 1 and the display scale carries the ratio (checked under Xvfb:
+`GDK_SCALE=2` or `SDL_VIDEO_X11_SCALING_FACTOR=2` give a display scale of 2
+and a pixel density of 1). On X11, skui must then also convert the window
+size and mouse positions to logical pixels, as it does today.
+
 ### 3.3 SDL 3, not SDL 2
 
 Decision: skui uses SDL 3 only. The comparison below is the reason.
@@ -158,7 +174,7 @@ Decision: skui uses SDL 3 only. The comparison below is the reason.
 | Status | maintenance only | current version (3.2, January 2025) |
 | Ubuntu 24.04 | `libsdl2-dev` 2.30 | not packaged (Ubuntu 25.04 and later, Debian 13); build from source with CMake |
 | macOS, Windows | Homebrew, prebuilt releases | Homebrew (`sdl3`), prebuilt releases |
-| Pixel ratio | `SDL_WINDOW_ALLOW_HIGHDPI` and `SDL_GL_GetDrawableSize` / `SDL_GetWindowSize`: works on macOS, but on X11 the ratio is always 1 (skui must keep reading `Xft.dpi`) | `SDL_GetWindowPixelDensity` and `SDL_GetWindowDisplayScale`, including on X11 (`Xft.dpi`, `GDK_SCALE`) and Wayland, with a change event |
+| Pixel ratio | `SDL_WINDOW_ALLOW_HIGHDPI` and `SDL_GL_GetDrawableSize` / `SDL_GetWindowSize`: works on macOS, but on X11 the ratio is always 1 (skui must keep reading `Xft.dpi`) | `SDL_GetWindowPixelDensity` and `SDL_GetWindowDisplayScale`, including on X11 (`Xft.dpi`, `GDK_SCALE`) and Wayland, with change events |
 | Wayland | supported, X11 preferred by default | preferred by default when available |
 | Text input | global `SDL_StartTextInput()` | per window, `SDL_StartTextInput(window)`, with IME candidate area |
 
@@ -223,6 +239,14 @@ pinned to one release, and shipped with the application, with an rpath (or
 `skui_build__links`) only needs the include directories and the libraries
 to link. Building ANGLE in CI remains possible if the prebuilt project stops
 publishing releases.
+
+### Docker image
+
+`views/docker/Dockerfile` builds an Ubuntu 24.04 image with SDL 3 (built from
+source, in `/opt/sdl3`) and ANGLE (prebuilt, in `/opt/angle`), with Xvfb and
+the VNC servers of VNC.md. Its build fails if SDL 3 cannot open a window
+with an ANGLE OpenGL ES 3 context (`views/docker/check.c`, run under Xvfb).
+It can be built on top of the Skip toolchain image with `--build-arg BASE`.
 
 ## 5. Steps
 
