@@ -294,6 +294,125 @@ fun animation(ctx: GL.Ctx, width: Int, height: Int): Context {
   Context(handles.chill())
 }
 
+// A card: its shadow, then the card itself.
+fun card(
+  x: Float,
+  y: Float,
+  w: Float,
+  h: Float,
+  color: .Color,
+  radius: Float,
+  shadows: Array<(Float, .Color, Geometry.Offset, Float)>,
+  clip: Bool = false,
+): Array<GLDrawable> {
+  drawables = mutable Vector<GLDrawable>[];
+  shadows.each(shadow -> {
+    (sigma, shadowColor, shadowOffset, spread) = shadow;
+    drawables.push(
+      GLDrawable.BoxShadow::create{
+        offset => Geometry.Offset(x, y),
+        size => Geometry.Size(w, h),
+        sigma,
+        color => shadowColor,
+        radius,
+        shadowOffset,
+        spread,
+        clip,
+      },
+    )
+  });
+  drawables.push(
+    GLDrawable.RoundedRectangle(color, radius, 1.0, None(), rect(x, y, w, h)),
+  );
+  drawables.toArray()
+}
+
+fun shadows(ctx: GL.Ctx, width: Int, height: Int): Context {
+  white = rgb(255, 255, 255);
+  drawables = mutable Vector<GLDrawable>[
+    background(width, height, rgb(236, 239, 244)),
+  ];
+  push = (ds: Array<GLDrawable>) -> ds.each(drawables.push);
+  down = (dy: Float) -> Geometry.Offset(0.0, dy);
+  // Material-like elevations: the higher, the larger and softer.
+  elevations = Array[
+    Array[(1.5, rgb(0, 0, 0, 60), down(1.0), 0.0)],
+    Array[
+      (3.0, rgb(0, 0, 0, 50), down(3.0), 0.0),
+      (1.0, rgb(0, 0, 0, 40), down(1.0), 0.0),
+    ],
+    Array[
+      (6.0, rgb(0, 0, 0, 45), down(6.0), 0.0),
+      (2.0, rgb(0, 0, 0, 35), down(2.0), 0.0),
+    ],
+    Array[
+      (12.0, rgb(0, 0, 0, 45), down(12.0), -2.0),
+      (4.0, rgb(0, 0, 0, 30), down(4.0), 0.0),
+    ],
+    Array[
+      (20.0, rgb(0, 0, 0, 50), down(20.0), -4.0),
+      (6.0, rgb(0, 0, 0, 30), down(6.0), 0.0),
+    ],
+  ];
+  elevations.eachWithIndex((i, layers) ->
+    push(
+      card(30.0 + i.toFloat() * 152.0, 40.0, 125.0, 110.0, white, 12.0, layers),
+    )
+  );
+  // Square corners, round corners, a pill and a circle.
+  soft = Array[(10.0, rgb(0, 0, 0, 70), down(6.0), 0.0)];
+  push(card(40.0, 210.0, 150.0, 100.0, white, 0.0, soft));
+  push(card(230.0, 210.0, 150.0, 100.0, white, 24.0, soft));
+  push(card(420.0, 235.0, 180.0, 50.0, rgb(52, 152, 219), 25.0, soft));
+  push(card(650.0, 210.0, 100.0, 100.0, rgb(231, 76, 60), 50.0, soft));
+  // Colored glows, centered (no offset), with spread.
+  glows = Array[
+    (rgb(255, 0, 150), rgb(255, 0, 150, 160)),
+    (rgb(0, 200, 255), rgb(0, 200, 255, 160)),
+    (rgb(120, 220, 60), rgb(120, 220, 60, 160)),
+  ];
+  drawables.push(
+    GLDrawable.RoundedRectangle(
+      rgb(28, 30, 40),
+      20.0,
+      1.0,
+      None(),
+      rect(30.0, 360.0, 420.0, 210.0),
+    ),
+  );
+  glows.eachWithIndex((i, glow) -> {
+    (color, shadow) = glow;
+    push(
+      card(
+        70.0 + i.toFloat() * 130.0,
+        420.0,
+        90.0,
+        90.0,
+        color,
+        18.0,
+        Array[(14.0, shadow, Geometry.Offset::zero, 4.0)],
+      ),
+    )
+  });
+  // A translucent card: without clip the shadow shows through it, with
+  // clip it does not.
+  stripes = rgb(255, 200, 40);
+  for (i in Range(0, 6)) {
+    drawables.push(
+      GLDrawable.rectangle(
+        Geometry.Offset(480.0 + i.toFloat() * 48.0, 350.0),
+        Geometry.Size(24.0, 230.0),
+        stripes,
+      ),
+    )
+  };
+  glass = rgb(255, 255, 255, 120);
+  strong = Array[(12.0, rgb(0, 0, 0, 140), down(10.0), 0.0)];
+  push(card(495.0, 380.0, 115.0, 150.0, glass, 16.0, strong));
+  push(card(640.0, 380.0, 115.0, 150.0, glass, 16.0, strong, true));
+  initDrawables(ctx, drawables.chill())
+}
+
 const msdfSize: Float = 45.0;
 
 fun glyphAt(font: TrueType.Font, size: Float, c: Char): ?Font.Glyph {

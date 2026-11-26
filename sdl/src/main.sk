@@ -15,6 +15,7 @@ fun main(): void {
     ("shapes", SkuiSdl.shapes),
     ("animation", SkuiSdl.animation),
     ("text", SkuiSdl.text),
+    ("shadows", SkuiSdl.shadows),
   ];
   perform(available);
 }
