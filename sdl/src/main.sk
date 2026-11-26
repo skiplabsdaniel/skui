@@ -11,6 +11,10 @@ fun main(): void {
     ("ellipsoide", SkuiSdl.ellipsoide),
     ("button1", SkuiSdl.button1),
     ("tex_button1", SkuiSdl.tex_button1),
+    ("gradients", SkuiSdl.gradients),
+    ("shapes", SkuiSdl.shapes),
+    ("animation", SkuiSdl.animation),
+    ("text", SkuiSdl.text),
   ];
   perform(available);
 }

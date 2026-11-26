@@ -1,0 +1,553 @@
+module SkuiSdl;
+
+// Visual examples of the GL drawables, in a 800 x 600 logical window.
+
+fun rgb(r: Int, g: Int, b: Int, a: Int = 255): .Color {
+  .Color::rgbaInt(r, g, b, a)
+}
+
+fun rect(x: Float, y: Float, w: Float, h: Float): Geometry.Rect {
+  Geometry.Rect::fromOffsetSize(Geometry.Offset(x, y), Geometry.Size(w, h))
+}
+
+fun background(width: Int, height: Int, color: .Color): GLDrawable {
+  GLDrawable.rectangle(
+    Geometry.Offset(0.0, 0.0),
+    Geometry.Size(width.toFloat(), height.toFloat()),
+    color,
+  )
+}
+
+fun linear(
+  start: Geometry.Offset,
+  end: Geometry.Offset,
+  colors: Array<.Color>,
+): Ui.LinearGradient {
+  last = (colors.size() - 1).toFloat();
+  Ui.LinearGradient(
+    start,
+    end,
+    colors.mapWithIndex((i, c) -> Ui.Stop(i.toFloat() / last, c)),
+  )
+}
+
+fun radial(
+  center: Geometry.Offset,
+  radius: Float,
+  colors: Array<.Color>,
+): Ui.RadialGradient {
+  last = (colors.size() - 1).toFloat();
+  Ui.RadialGradient(
+    center,
+    radius,
+    colors.mapWithIndex((i, c) -> Ui.Stop(i.toFloat() / last, c)),
+  )
+}
+
+fun gradients(ctx: GL.Ctx, width: Int, height: Int): Context {
+  sunset = Array[rgb(255, 94, 98), rgb(255, 153, 102), rgb(255, 220, 128)];
+  ocean = Array[rgb(18, 40, 90), rgb(30, 110, 180), rgb(120, 220, 230)];
+  forest = Array[rgb(20, 60, 40), rgb(60, 140, 80), rgb(190, 230, 120)];
+  neon = Array[rgb(255, 0, 150), rgb(120, 0, 255), rgb(0, 200, 255)];
+  drawables = mutable Vector<GLDrawable>[
+    background(width, height, rgb(24, 26, 32)),
+    // Horizontal, vertical and diagonal linear gradients.
+    GLDrawable.rectangle(
+      Geometry.Offset(30.0, 30.0),
+      Geometry.Size(230.0, 160.0),
+      linear(Geometry.Offset(0.0, 0.0), Geometry.Offset(230.0, 0.0), sunset),
+    ),
+    GLDrawable.rectangle(
+      Geometry.Offset(285.0, 30.0),
+      Geometry.Size(230.0, 160.0),
+      linear(Geometry.Offset(0.0, 0.0), Geometry.Offset(0.0, 160.0), ocean),
+    ),
+    GLDrawable.rectangle(
+      Geometry.Offset(540.0, 30.0),
+      Geometry.Size(230.0, 160.0),
+      linear(Geometry.Offset(0.0, 0.0), Geometry.Offset(230.0, 160.0), neon),
+    ),
+    // Radial gradients: a glow, a sun and a planet lit from the top left.
+    GLDrawable.rectangle(
+      Geometry.Offset(30.0, 215.0),
+      Geometry.Size(230.0, 200.0),
+      radial(
+        Geometry.Offset(115.0, 100.0),
+        150.0,
+        Array[rgb(255, 255, 255), rgb(120, 200, 255), rgb(24, 26, 32)],
+      ),
+    ),
+    GLDrawable.rectangle(
+      Geometry.Offset(285.0, 215.0),
+      Geometry.Size(230.0, 200.0),
+      radial(
+        Geometry.Offset(115.0, 100.0),
+        150.0,
+        Array[rgb(255, 250, 200), rgb(255, 170, 40), rgb(120, 20, 40)],
+      ),
+    ),
+    GLDrawable.rectangle(
+      Geometry.Offset(540.0, 215.0),
+      Geometry.Size(230.0, 200.0),
+      radial(
+        Geometry.Offset(70.0, 60.0),
+        220.0,
+        Array[rgb(190, 230, 255), rgb(40, 90, 200), rgb(8, 10, 30)],
+      ),
+    ),
+  ];
+  // Gradient triangles, pointing to each side.
+  sides: Array<.UiSide> = Array[
+    UiSide.Top(),
+    UiSide.Right(),
+    UiSide.Bottom(),
+    UiSide.Left(),
+  ];
+  palettes = Array[sunset, ocean, forest, neon];
+  sides.eachWithIndex((i, side) -> {
+    x = 40.0 + i.toFloat() * 190.0;
+    drawables.push(
+      GLDrawable.triangle(
+        Geometry.Offset(x, 440.0),
+        Geometry.Size(140.0, 130.0),
+        linear(
+          Geometry.Offset(0.0, 0.0),
+          Geometry.Offset(140.0, 130.0),
+          palettes[i],
+        ),
+        side,
+      ),
+    )
+  });
+  initDrawables(ctx, drawables.chill())
+}
+
+fun shapes(ctx: GL.Ctx, width: Int, height: Int): Context {
+  palette = Array[
+    rgb(231, 76, 60),
+    rgb(230, 126, 34),
+    rgb(241, 196, 15),
+    rgb(46, 204, 113),
+    rgb(26, 188, 156),
+    rgb(52, 152, 219),
+    rgb(155, 89, 182),
+  ];
+  drawables = mutable Vector<GLDrawable>[
+    background(width, height, rgb(245, 246, 250)),
+  ];
+  // Cards: rounded rectangles of increasing radius, with borders.
+  palette.eachWithIndex((i, color) -> {
+    x = 25.0 + i.toFloat() * 110.0;
+    drawables.push(
+      GLDrawable.RoundedRectangle(
+        color,
+        4.0 + i.toFloat() * 7.0,
+        1.0,
+        Some(Ui.Border(rgb(40, 40, 60), 1.0 + (i % 3).toFloat())),
+        rect(x, 30.0, 95.0, 95.0),
+      ),
+    )
+  });
+  // Concentric rings.
+  for (i in Range(0, 7)) {
+    side = 260.0 - i.toFloat() * 34.0;
+    offset = (260.0 - side) / 2.0;
+    drawables.push(
+      GLDrawable.SolidDisk(
+        palette[i],
+        10.0,
+        0.5,
+        rect(40.0 + offset, 160.0 + offset, side, side),
+      ),
+    )
+  };
+  // Bubbles: overlapping translucent ellipses.
+  for (i in Range(0, 12)) {
+    angle = i.toFloat() * 0.52;
+    cx = 470.0 + Math.cos(angle) * (60.0 + i.toFloat() * 6.0);
+    cy = 290.0 + Math.sin(angle) * (60.0 + i.toFloat() * 6.0);
+    radius = 22.0 + (i % 4).toFloat() * 8.0;
+    color = palette[i % palette.size()];
+    drawables.push(
+      GLDrawable.SolidEllipse(
+        .Color::new(color.red, color.green, color.blue, 0.65),
+        0.5,
+        rect(cx - radius, cy - radius, radius * 2.0, radius * 2.0),
+      ),
+    )
+  };
+  // An ellipse that is not a circle, and a pill.
+  drawables.push(
+    GLDrawable.SolidEllipse(
+      rgb(52, 73, 94),
+      0.5,
+      rect(640.0, 170.0, 140.0, 70.0),
+    ),
+  );
+  drawables.push(
+    GLDrawable.RoundedRectangle(
+      rgb(46, 204, 113),
+      25.0,
+      1.0,
+      None(),
+      rect(640.0, 260.0, 140.0, 50.0),
+    ),
+  );
+  // A row of arrows.
+  sides: Array<.UiSide> = Array[
+    UiSide.Left(),
+    UiSide.Top(),
+    UiSide.Bottom(),
+    UiSide.Right(),
+  ];
+  for (i in Range(0, 12)) {
+    drawables.push(
+      GLDrawable.triangle(
+        Geometry.Offset(30.0 + i.toFloat() * 62.0, 470.0),
+        Geometry.Size(44.0, 44.0),
+        palette[i % palette.size()],
+        sides[i % sides.size()],
+      ),
+    )
+  };
+  initDrawables(ctx, drawables.chill())
+}
+
+// Draws, at each frame, the drawables of one of the steps, changing every
+// `period` frames.
+fun animated(
+  ctx: GL.Ctx,
+  steps: Array<Vector<GLDrawable>>,
+  period: Int,
+): Ui.Handle {
+  contexts = steps.map(drawables -> initDrawables(ctx, drawables));
+  Ui.LambdaHandle((shift, window, height, ratio, frame) ~> {
+    current = contexts[(frame / period) % contexts.size()];
+    current.handles.each(h -> h.draw(shift, window, height, ratio, frame))
+  })
+}
+
+fun animation(ctx: GL.Ctx, width: Int, height: Int): Context {
+  handles = mutable Vector<Ui.Handle>[];
+  initDrawables(
+    ctx,
+    Vector[
+      background(width, height, rgb(20, 22, 30)),
+      GLDrawable.RoundedRectangle(
+        rgb(34, 38, 52),
+        18.0,
+        1.0,
+        None(),
+        rect(30.0, 30.0, 740.0, 240.0),
+      ),
+      GLDrawable.RoundedRectangle(
+        rgb(34, 38, 52),
+        18.0,
+        1.0,
+        None(),
+        rect(30.0, 300.0, 740.0, 270.0),
+      ),
+    ],
+  ).handles.each(handles.push);
+  // Spinners of several sizes and colors.
+  spinnerColors = Array[
+    (rgb(80, 90, 120), rgb(0, 200, 255)),
+    (rgb(80, 60, 90), rgb(255, 80, 160)),
+    (rgb(60, 80, 60), rgb(120, 255, 120)),
+    (rgb(90, 80, 50), rgb(255, 200, 40)),
+  ];
+  spinnerColors.eachWithIndex((i, colors) -> {
+    (off, on) = colors;
+    side = 60.0 + i.toFloat() * 25.0;
+    x = 70.0 + i.toFloat() * 175.0;
+    y = 150.0 - side / 2.0;
+    steps = Array::fillBy(8, step ->
+      Vector<GLDrawable>[
+        GLDrawable.Loading(off, on, step, rect(x, y, side, side)),
+      ]
+    );
+    handles.push(animated(ctx, steps, 6 - i))
+  });
+  // Progress rings filling up at different speeds.
+  progressColors = Array[
+    rgb(0, 200, 255),
+    rgb(255, 80, 160),
+    rgb(120, 255, 120),
+    rgb(255, 200, 40),
+  ];
+  progressColors.eachWithIndex((i, color) -> {
+    side = 140.0;
+    x = 60.0 + i.toFloat() * 180.0;
+    steps = Array::fillBy(41, step ->
+      Vector<GLDrawable>[
+        GLDrawable.Progress(
+          step.toFloat() * 2.5,
+          color,
+          rgb(60, 64, 80),
+          10.0 + i.toFloat() * 4.0,
+          rect(x, 365.0, side, side),
+        ),
+      ]
+    );
+    handles.push(animated(ctx, steps, 2 + i))
+  });
+  Context(handles.chill())
+}
+
+const msdfSize: Float = 45.0;
+
+fun glyphAt(font: TrueType.Font, size: Float, c: Char): ?Font.Glyph {
+  TrueType.Face::make(font, Font.Options{size, dpi => 72.0}).getGlyph(c)
+}
+
+// The drawables of a line of text whose baseline starts at (left, baseline).
+fun textLine(
+  font: TrueType.Font,
+  text: String,
+  size: Float,
+  left: Float,
+  baseline: Float,
+  color: .Color,
+  effects: Ui.TextEffects = Ui.TextEffects::none,
+): Array<GLDrawable> {
+  // The MSDF range must cover the effects (see Font.GlyphID.msdfID).
+  reach = effects.extent() * msdfSize / size;
+  pxRange = Math.max(8, ((2 * Math.ceil(reach + 2.0).toInt() + 7) / 8) * 8);
+  pen = left;
+  drawables = mutable Vector<GLDrawable>[];
+  for (c in text.chars()) {
+    (glyphAt(font, size, c), glyphAt(font, msdfSize, c)) match {
+    | (Some(glyph), Some(reference)) ->
+      (glyph.optPath, reference.optPath) match {
+      | (Some _, Some(path)) ->
+        (image, place) = MTSDF.toMSDF{
+          shape => MTSDF.Shape::fromPath(path.translate(reference.topLeft())),
+          pxRange,
+          trueDistance => true,
+        };
+        topLeft = glyph.topLeft();
+        imageSize = Geometry.Size(
+          glyph.imageWidth().toFloat(),
+          glyph.imageHeight().toFloat(),
+        );
+        drawables.push(
+          GLDrawable.Msdf::create(
+            ctx ~> SKUI.pictureToTexturable(image).map(t -> t.asTexture(ctx)),
+            r ~> {
+              ratio = r.width() / imageSize.width;
+              place(
+                Geometry.Rect::fromOffsetSize(
+                  r.topLeft() - topLeft * ratio,
+                  Geometry.Size(0.0, 0.0),
+                ),
+                size * ratio / msdfSize,
+              )
+            },
+            pxRange,
+            color,
+            0.0,
+            Geometry.Offset(pen, baseline) + topLeft,
+            imageSize,
+            effects,
+          ),
+        )
+      | _ -> void
+      };
+      !pen = pen + glyph.advance()
+    | _ -> void
+    }
+  };
+  drawables.toArray()
+}
+
+// A smiley in a 100 x 100 box, as the layers of a color glyph (COLR):
+// face, highlight, eyes and mouth, bottom to top.
+fun smileyLayers(): Array<(Shape.Path, .Color)> {
+  mouth = Shape.Path{
+    elements => Array[
+      Shape.MoveTo(Geometry.Offset(28.0, 58.0)),
+      Shape.CubicCurveTo(
+        Geometry.Offset(72.0, 58.0),
+        Geometry.Offset(38.0, 84.0),
+        Geometry.Offset(62.0, 84.0),
+      ),
+      Shape.CubicCurveTo(
+        Geometry.Offset(28.0, 58.0),
+        Geometry.Offset(64.0, 74.0),
+        Geometry.Offset(36.0, 74.0),
+      ),
+      Shape.ClosePath(),
+    ],
+  };
+  eyes = Shape.Path{
+    elements => Arrays.merge(
+      Shape.Path::circleElements(Geometry.Offset(36.0, 40.0), 7.0),
+      Shape.Path::circleElements(Geometry.Offset(64.0, 40.0), 7.0),
+    ),
+  };
+  Array[
+    (Shape.Path::circle(Geometry.Offset(50.0, 50.0), 46.0), rgb(250, 200, 40)),
+    (
+      Shape.Path::circle(Geometry.Offset(38.0, 30.0), 12.0),
+      rgb(255, 240, 170, 200),
+    ),
+    (eyes, rgb(70, 45, 20)),
+    (mouth, rgb(150, 40, 30)),
+  ]
+}
+
+// A color icon drawn from one MSDF per layer, in a side x side box.
+fun icon(
+  layers: Array<(Shape.Path, .Color)>,
+  left: Float,
+  top: Float,
+  side: Float,
+): Array<GLDrawable> {
+  scale = side / 100.0;
+  layers.map(layer -> {
+    (path, color) = layer;
+    (image, place) = MTSDF.toMSDF{
+      shape => MTSDF.Shape::fromPath(path),
+      pxRange => 8,
+      trueDistance => true,
+    };
+    drawable: GLDrawable = GLDrawable.Msdf::create(
+      ctx ~> SKUI.pictureToTexturable(image).map(t -> t.asTexture(ctx)),
+      r ~> {
+        ratio = r.width() / side;
+        place(
+          Geometry.Rect::fromOffsetSize(r.topLeft(), Geometry.Size(0.0, 0.0)),
+          scale * ratio,
+        )
+      },
+      8,
+      color,
+      0.0,
+      Geometry.Offset(left, top),
+      Geometry.Size(side, side),
+    );
+    drawable
+  })
+}
+
+fun text(ctx: GL.Ctx, width: Int, height: Int): Context {
+  bold = TrueType.parse(Base64.decode(Roboto.boldB64()));
+  regular = TrueType.parse(Base64.decode(Roboto.regularB64()));
+  drawables = mutable Vector<GLDrawable>[
+    GLDrawable.rectangle(
+      Geometry.Offset(0.0, 0.0),
+      Geometry.Size(width.toFloat(), height.toFloat()),
+      linear(
+        Geometry.Offset(0.0, 0.0),
+        Geometry.Offset(0.0, height.toFloat()),
+        Array[rgb(30, 30, 60), rgb(70, 40, 90), rgb(180, 90, 90)],
+      ),
+    ),
+  ];
+  push = (ds: Array<GLDrawable>) -> ds.each(drawables.push);
+  // A game-like title: gold, dark outline and soft shadow.
+  push(
+    textLine(
+      bold,
+      "SKUI on SDL",
+      72.0,
+      40.0,
+      110.0,
+      rgb(255, 210, 60),
+      Ui.TextEffects{
+        optOutline => Some(Ui.TextOutline(rgb(60, 20, 0), 3.0)),
+        optShadow => Some(
+          Ui.TextShadow(rgb(0, 0, 0, 160), Geometry.Offset(5.0, 5.0), 5.0),
+        ),
+      },
+    ),
+  );
+  // Neon: a bright outline around dark text.
+  push(
+    textLine(
+      bold,
+      "Neon outline",
+      48.0,
+      40.0,
+      200.0,
+      rgb(30, 10, 40),
+      Ui.TextEffects{
+        optOutline => Some(Ui.TextOutline(rgb(255, 60, 200), 2.5)),
+        optShadow => Some(
+          Ui.TextShadow(rgb(255, 60, 200, 120), Geometry.Offset(0.0, 0.0), 8.0),
+        ),
+      },
+    ),
+  );
+  // A card with a soft drop shadow on its title.
+  drawables.push(
+    GLDrawable.RoundedRectangle(
+      rgb(250, 248, 245),
+      16.0,
+      1.0,
+      None(),
+      rect(40.0, 240.0, 470.0, 150.0),
+    ),
+  );
+  push(
+    textLine(
+      bold,
+      "Card title",
+      32.0,
+      65.0,
+      290.0,
+      rgb(40, 40, 50),
+      Ui.TextEffects{
+        optShadow => Some(
+          Ui.TextShadow(rgb(0, 0, 0, 70), Geometry.Offset(2.0, 2.0), 2.0),
+        ),
+      },
+    ),
+  );
+  push(
+    textLine(
+      regular,
+      "Text drawn from multi-channel signed",
+      18.0,
+      65.0,
+      330.0,
+      rgb(90, 90, 100),
+    ),
+  );
+  push(
+    textLine(
+      regular,
+      "distance fields, sharp at any size.",
+      18.0,
+      65.0,
+      356.0,
+      rgb(90, 90, 100),
+    ),
+  );
+  // Sizes from 10 to 40.
+  pen = 40.0;
+  for (size in Array[10.0, 14.0, 18.0, 24.0, 32.0, 40.0]) {
+    push(textLine(regular, "Aa", size, pen, 470.0, rgb(240, 240, 250)));
+    !pen = pen + size * 1.6
+  };
+  // White text with a dark outline, readable on any background.
+  push(
+    textLine(
+      bold,
+      "Outlined",
+      40.0,
+      40.0,
+      550.0,
+      rgb(255, 255, 255),
+      Ui.TextEffects{optOutline => Some(Ui.TextOutline(rgb(20, 30, 60), 2.0))},
+    ),
+  );
+  // A color glyph at three sizes.
+  push(icon(smileyLayers(), 560.0, 250.0, 180.0));
+  push(icon(smileyLayers(), 560.0, 450.0, 90.0));
+  push(icon(smileyLayers(), 670.0, 470.0, 50.0));
+  push(icon(smileyLayers(), 735.0, 485.0, 24.0));
+  initDrawables(ctx, drawables.chill())
+}
+
+module end;

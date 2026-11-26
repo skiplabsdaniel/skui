@@ -5,6 +5,7 @@ version = "0.1.0"
 [dependencies]
 skui_opengl = { "path" = "../opengl" }
 cli = { path = "../skip/skiplang/cli" }
+roboto = { "path" = "../framework/fonts/Roboto" }
 
 [build-dependencies]
 skui_build = { path = "../builder" }
