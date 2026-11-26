@@ -34,11 +34,16 @@ fun expectPixel(
   y: Int,
   expected: (Int, Int, Int),
   msg: String,
+  tolerance: Int = 2,
 ): void {
   actual = pixel(image, x, y);
   (r, g, b) = actual;
   (er, eg, eb) = expected;
-  if (Math.abs(r - er) > 2 || Math.abs(g - eg) > 2 || Math.abs(b - eb) > 2) {
+  if (
+    Math.abs(r - er) > tolerance ||
+    Math.abs(g - eg) > tolerance ||
+    Math.abs(b - eb) > tolerance
+  ) {
     throw T.ExpectationError(
       `${msg} at (${x}, ${y})`,
       `${expected}`,
@@ -128,6 +133,38 @@ fun roundedRectangle(): void {
   expectPixel(image, 20, 1, red, "top edge");
   expectPixel(image, 1, 20, red, "left edge");
   expectPixel(image, 20, 20, red, "center");
+}
+
+@test
+fun radialGradient(): void {
+  // Center (60, 50) in the window, radius 50: red at the center, green at 25
+  // pixels and blue from 50 pixels, in every direction.
+  image = render(
+    "radial",
+    Array[
+      GLDrawable.rectangle(
+        Geometry.Offset(10.0, 10.0),
+        Geometry.Size(100.0, 80.0),
+        Ui.RadialGradient(
+          Geometry.Offset(50.0, 40.0),
+          50.0,
+          Array[
+            Ui.Stop(0.0, Colors.red()),
+            Ui.Stop(0.5, Colors.lime()),
+            Ui.Stop(1.0, Colors.blue()),
+          ],
+        ),
+      ),
+    ],
+    120,
+    100,
+  );
+  expectPixel(image, 60, 50, (255, 0, 0), "center", 10);
+  expectPixel(image, 85, 50, (0, 255, 0), "right", 10);
+  expectPixel(image, 35, 50, (0, 255, 0), "left", 10);
+  expectPixel(image, 60, 75, (0, 255, 0), "below", 10);
+  expectPixel(image, 109, 89, (0, 0, 255), "corner", 10);
+  expectPixel(image, 5, 5, white, "outside");
 }
 
 // Text, drawn as the framework does it: glyph MSDFs generated once at

@@ -6,8 +6,11 @@ fun radialGradientFramentShader(stops: Int): String {
       "precision highp float;",
       `uniform vec4 u_stop_colors[${stops}];`,
       `uniform float u_stop_offsets[${stops}];`,
+      // Center and radius in pixels, and the size of the rectangle in
+      // pixels: v_position is normalized to the rectangle.
       "uniform vec2 u_center;",
       "uniform float u_radius;",
+      "uniform vec2 u_size;",
       "varying vec2 v_position;",
       "float getOffset(int index) {",
       `  for (int i=0; i<${stops}; i++) {`,
@@ -46,7 +49,7 @@ fun radialGradientFramentShader(stops: Int): String {
       `  return u_stop_colors[${stops - 1}];`,
       "}",
       "void main() {",
-      "  float distance = length(v_position - u_center);",
+      "  float distance = length(v_position * u_size - u_center);",
       "  if (distance <= u_radius * u_stop_offsets[0])",
       "  {",
       "     gl_FragColor = u_stop_colors[0];",
@@ -89,6 +92,7 @@ class RadialGradientShader(stops: Int) extends FragmentShaderBuilder {
     radiusLocation = program.getIdxUniformLocation(uRadius);
     colorsLocation = program.getIdxUniformLocation(uStopColors);
     offsetsLocation = program.getIdxUniformLocation(uStopOffsets);
+    sizeLocation = program.getIdxUniformLocation(uSize);
     LambdaFragmentShader((parameters, _) ~> {
       ctx = program.context();
       lgps = RadialGradientParameters::fromParams(parameters);
@@ -99,13 +103,13 @@ class RadialGradientShader(stops: Int) extends FragmentShaderBuilder {
       stopColors = Ui.flatColors(lgps.radialGradient.stops);
       stopOffsets = Ui.flatOffset(lgps.radialGradient.stops);
       size = lgps.rect.size();
-      nCenter = lgps.radialGradient.center.divSize(size);
-      nRadius = lgps.radialGradient.radius / size.distance();
+      center = lgps.radialGradient.center;
       count = UInt32::truncate(this.stops);
       ctx.uniform4fv(colorsLocation, count, stopColors);
       ctx.uniform1fv(offsetsLocation, count, stopOffsets);
-      ctx.uniform2f(centerLocation, nCenter.dx, nCenter.dy);
-      ctx.uniform1f(radiusLocation, nRadius);
+      ctx.uniform2f(centerLocation, center.dx, center.dy);
+      ctx.uniform1f(radiusLocation, lgps.radialGradient.radius);
+      ctx.uniform2f(sizeLocation, size.width, size.height);
     })
   }
 }

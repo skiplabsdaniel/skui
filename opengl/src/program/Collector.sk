@@ -12,7 +12,7 @@ class Supplier(programs: GetProgram) {
   }
 
   fun radialGradientRectangle(count: Int): ?TriangleProgram {
-    this.programs(`FWK.RadialGradientRectangle.${count}`);
+    this.programs(`FWK.RadialGradientRectangleDrawer.${count}`);
   }
 
   fun textureDrawer(flipped: Bool = false): ?TriangleProgram {
