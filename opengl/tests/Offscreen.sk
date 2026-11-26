@@ -167,6 +167,170 @@ fun radialGradient(): void {
   expectPixel(image, 5, 5, white, "outside");
 }
 
+// The opacity of the shadow of the rectangle [x0, x1] x [y0, y1], blurred
+// with a gaussian of standard deviation sigma, at (x, y): the exact value
+// for square corners.
+fun shadowCoverage(
+  x: Float,
+  y: Float,
+  box: (Float, Float, Float, Float),
+  sigma: Float,
+): Float {
+  (x0, y0, x1, y1) = box;
+  cdf = (t: Float) -> 0.5 * (1.0 + erf(t / (sigma * Math.sqrt(2.0))));
+  (cdf(x - x0) - cdf(x - x1)) * (cdf(y - y0) - cdf(y - y1))
+}
+
+// The error function (Abramowitz and Stegun 7.1.26, error below 1.5e-7).
+fun erf(x: Float): Float {
+  sign = if (x < 0.0) -1.0 else 1.0;
+  a = Math.abs(x);
+  t = 1.0 / (1.0 + 0.3275911 * a);
+  y =
+    1.0 -
+    (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) *
+      t +
+      0.254829592) *
+      t *
+      Math.exp(-a * a);
+  sign * y
+}
+
+// The red channel expected for a black shadow of opacity alpha on white.
+fun shadowRed(coverage: Float, alpha: Float): Int {
+  Math.round(255.0 * (1.0 - alpha * coverage)).toInt()
+}
+
+fun shadowImage(
+  name: String,
+  shadow: GLDrawable,
+  ratio: Float = 1.0,
+): Ui.Image {
+  render(name, Array[shadow], 160, 110, ratio)
+}
+
+@test
+fun boxShadowSquare(): void {
+  // Without radius, the shadow is the exact gaussian blur of the box.
+  sigma = 8.0;
+  alpha = 160.0 / 255.0;
+  shadow = GLDrawable.BoxShadow::create{
+    offset => Geometry.Offset(40.0, 30.0),
+    size => Geometry.Size(80.0, 50.0),
+    sigma,
+    color => Color::rgbaInt(0, 0, 0, 160),
+  };
+  for (ratio in Array[1.0, 2.0]) {
+    image = shadowImage(`shadow_square_x${ratio.toInt()}`, shadow, ratio);
+    for (x in Array[20, 34, 40, 46, 60, 80, 126]) {
+      for (y in Array[18, 30, 55, 76, 90]) {
+        // The center of the pixel, in logical pixels.
+        px = (x.toFloat() * ratio).toInt();
+        py = (y.toFloat() * ratio).toInt();
+        center = (v: Int) -> (v.toFloat() + 0.5) / ratio;
+        expected = shadowRed(
+          shadowCoverage(
+            center(px),
+            center(py),
+            (40.0, 30.0, 120.0, 80.0),
+            sigma,
+          ),
+          alpha,
+        );
+        (r, _, _) = pixel(image, px, py);
+        T.expectEq(
+          Math.abs(r - expected) <= 3,
+          true,
+          `(${x}, ${y}): ${r} ${expected}`,
+        )
+      }
+    }
+  }
+}
+
+@test
+fun boxShadowRounded(): void {
+  // A sharp shadow (sigma 0) is the rounded rectangle itself.
+  image = shadowImage(
+    "shadow_sharp_rounded",
+    GLDrawable.BoxShadow::create{
+      offset => Geometry.Offset(40.0, 30.0),
+      size => Geometry.Size(80.0, 50.0),
+      sigma => 0.0,
+      color => Colors.black(),
+      radius => 20.0,
+    },
+  );
+  expectPixel(image, 80, 55, (0, 0, 0), "center");
+  expectPixel(image, 41, 31, white, "corner");
+  expectPixel(image, 45, 35, white, "inside the corner radius");
+  expectPixel(image, 41, 55, (0, 0, 0), "left edge");
+  expectPixel(image, 80, 31, (0, 0, 0), "top edge");
+  // Blurred, the corner is lighter than with square corners, the middle of
+  // the edges is the same.
+  sigma = 6.0;
+  square = shadowImage(
+    "shadow_blur_square",
+    GLDrawable.BoxShadow::create{
+      offset => Geometry.Offset(40.0, 30.0),
+      size => Geometry.Size(80.0, 50.0),
+      sigma,
+      color => Colors.black(),
+    },
+  );
+  rounded = shadowImage(
+    "shadow_blur_rounded",
+    GLDrawable.BoxShadow::create{
+      offset => Geometry.Offset(40.0, 30.0),
+      size => Geometry.Size(80.0, 50.0),
+      sigma,
+      color => Colors.black(),
+      radius => 20.0,
+    },
+  );
+  (squareCorner, _, _) = pixel(square, 42, 32);
+  (roundedCorner, _, _) = pixel(rounded, 42, 32);
+  T.expectEq(
+    roundedCorner > squareCorner + 40,
+    true,
+    `corner ${squareCorner} ${roundedCorner}`,
+  );
+  for (point in Array[(80, 55), (80, 30), (40, 55), (80, 20)]) {
+    (x, y) = point;
+    (a, _, _) = pixel(square, x, y);
+    (b, _, _) = pixel(rounded, x, y);
+    T.expectEq(Math.abs(a - b) <= 3, true, `edge (${x}, ${y}): ${a} ${b}`)
+  }
+}
+
+@test
+fun boxShadowOffsetSpreadClip(): void {
+  // Offset and spread move and grow the shadow; with clip it is not drawn
+  // below the element.
+  image = shadowImage(
+    "shadow_offset_spread_clip",
+    GLDrawable.BoxShadow::create{
+      offset => Geometry.Offset(40.0, 30.0),
+      size => Geometry.Size(60.0, 40.0),
+      sigma => 0.0,
+      color => Colors.black(),
+      shadowOffset => Geometry.Offset(10.0, 8.0),
+      spread => 4.0,
+      clip => true,
+    },
+  );
+  // The shadow covers [46, 114] x [34, 82] (moved by (10, 8), grown by 4),
+  // minus the element [40, 100] x [30, 70].
+  expectPixel(image, 70, 50, white, "below the element");
+  expectPixel(image, 105, 50, (0, 0, 0), "right of the element");
+  expectPixel(image, 70, 76, (0, 0, 0), "below the element");
+  // Spread rounds the corners by its own value (as CSS box-shadow).
+  expectPixel(image, 110, 78, (0, 0, 0), "near the bottom right corner");
+  expectPixel(image, 113, 81, white, "rounded bottom right corner");
+  expectPixel(image, 116, 50, white, "beyond the spread");
+  expectPixel(image, 44, 76, white, "left of the moved shadow");
+}
+
 // Text, drawn as the framework does it: glyph MSDFs generated once at
 // msdfSize, placed from the glyph origin at the drawn size, and scaled to
 // device pixels at draw time.

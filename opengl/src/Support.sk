@@ -393,11 +393,7 @@ class DrawableSupport(
   ): Ui.Drawable {
     paint match {
     | color @ .Color _ ->
-      GLDrawable.BoxShadow(
-        sigma,
-        color,
-        Geometry.Rect::fromOffsetSize(offset, size),
-      )
+      GLDrawable.BoxShadow::create{offset, size, sigma, color}
     | _ -> invariant_violation("Not implemented; only Color Fill managed")
     }
   }

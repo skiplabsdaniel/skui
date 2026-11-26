@@ -1,34 +1,99 @@
 module GLProgram;
 
+// The shadow of a rounded rectangle: the rectangle convolved with a gaussian
+// of standard deviation sigma, computed per pixel without texture nor blur
+// pass. Along x the integral is exact (error function); along y it is
+// approximated by a few samples of the gaussian. Without radius it is the
+// exact shadow of a rectangle. See Evan Wallace, "Fast rounded rectangle
+// shadows" (https://madebyevan.com/shaders/fast-rounded-rectangle-shadows/).
+//
+// u_box is the shadowed rectangle (left, top, right, bottom) in device
+// pixels, already moved by the offset and grown by the spread; u_clip, when
+// u_clipped is 1, is the rectangle of the element casting the shadow, which
+// hides the shadow below it (for translucent elements).
 const shadowFramentShader: String = source(
   Array[
     "precision highp float;",
     "uniform vec4 u_box;",
     "uniform vec4 u_color;",
     "uniform float u_sigma;",
+    "uniform float u_radius;",
+    "uniform vec4 u_clip;",
+    "uniform float u_clipRadius;",
+    "uniform float u_clipped;",
     "varying vec2 vertex;",
-    "// This approximates the error function, needed for the gaussian integral",
-    "vec4 erf(vec4 x) {",
-    "  vec4 s = sign(x), a = abs(x);",
+    "",
+    "float gaussian(float x, float sigma) {",
+    "  const float pi = 3.141592653589793;",
+    "  return exp(-(x * x) / (2.0 * sigma * sigma)) / (sqrt(2.0 * pi) * sigma);",
+    "}",
+    "",
+    // Abramowitz and Stegun approximation of the error function.
+    "vec2 erf(vec2 x) {",
+    "  vec2 s = sign(x), a = abs(x);",
     "  x = 1.0 + (0.278393 + (0.230389 + 0.078108 * (a * a)) * a) * a;",
     "  x *= x;",
     "  return s - s / (x * x);",
     "}",
-    "// Return the mask for the shadow of a box from lower to upper",
-    "float boxShadow(vec2 lower, vec2 upper, vec2 point, float sigma) {",
-    "  vec4 query = vec4(point - lower, point - upper);",
-    "  vec4 integral = 0.5 + 0.5 * erf(query * (sqrt(0.5) / sigma));",
-    "  return (integral.z - integral.x) * (integral.w - integral.y);",
+    "",
+    // The blurred mask of one row of the rounded rectangle centered on 0,
+    // of half size halfSize: the row is narrower in the corners.
+    "float roundedBoxShadowX(float x, float y, float sigma, float corner,",
+    "                        vec2 halfSize) {",
+    "  float delta = min(halfSize.y - corner - abs(y), 0.0);",
+    "  float curved = halfSize.x - corner + sqrt(max(0.0, corner * corner - delta * delta));",
+    "  vec2 integral = 0.5 + 0.5 * erf((x + vec2(-curved, curved)) * (sqrt(0.5) / sigma));",
+    "  return integral.y - integral.x;",
     "}",
+    "",
+    "float roundedBoxShadow(vec2 lower, vec2 upper, vec2 point, float sigma,",
+    "                       float corner) {",
+    "  vec2 center = (lower + upper) * 0.5;",
+    "  vec2 halfSize = (upper - lower) * 0.5;",
+    "  point -= center;",
+    // The gaussian is negligible beyond 3 sigma.
+    "  float low = point.y - halfSize.y;",
+    "  float high = point.y + halfSize.y;",
+    "  float start = clamp(-3.0 * sigma, low, high);",
+    "  float end = clamp(3.0 * sigma, low, high);",
+    "  float step = (end - start) / 4.0;",
+    "  float y = start + step * 0.5;",
+    "  float value = 0.0;",
+    "  for (int i = 0; i < 4; i++) {",
+    "    value += roundedBoxShadowX(point.x, point.y - y, sigma, corner, halfSize)",
+    "      * gaussian(y, sigma) * step;",
+    "    y += step;",
+    "  }",
+    "  return value;",
+    "}",
+    "",
+    // The coverage of a rounded rectangle, antialiased over one pixel.
+    "float roundedBox(vec2 lower, vec2 upper, vec2 point, float corner) {",
+    "  vec2 center = (lower + upper) * 0.5;",
+    "  vec2 halfSize = (upper - lower) * 0.5;",
+    "  vec2 q = abs(point - center) - halfSize + corner;",
+    "  float distance = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - corner;",
+    "  return clamp(0.5 - distance, 0.0, 1.0);",
+    "}",
+    "",
     "void main() {",
+    "  float alpha;",
+    "  if (u_sigma < 0.01) {",
+    "    alpha = roundedBox(u_box.xy, u_box.zw, vertex, u_radius);",
+    "  } else {",
+    "    alpha = roundedBoxShadow(u_box.xy, u_box.zw, vertex, u_sigma, u_radius);",
+    "  }",
+    "  if (u_clipped > 0.5) {",
+    "    alpha *= 1.0 - roundedBox(u_clip.xy, u_clip.zw, vertex, u_clipRadius);",
+    "  }",
     "  gl_FragColor = u_color;",
-    //"  gl_FragColor.a *= 0.25;",
-    "  gl_FragColor.a *= boxShadow(u_box.xy, u_box.zw, vertex, u_sigma);",
+    "  gl_FragColor.a *= alpha;",
     "}",
     "",
   ],
 );
 
+// The quad covers the shadowed rectangle and the blur around it.
 const shadowVertexShader: String = source(
   Array[
     "precision highp float;",
@@ -38,7 +103,7 @@ const shadowVertexShader: String = source(
     "attribute vec2 a_position;",
     "varying vec2 vertex;",
     "void main() {",
-    "  float padding = 3.0 * u_sigma;",
+    "  float padding = 3.0 * u_sigma + 1.0;",
     "  vertex = mix(u_box.xy - padding, u_box.zw + padding, a_position);",
     "  gl_Position = u_matrix * vec4(vertex, 0.0, 1.0);",
     "}",
@@ -78,10 +143,14 @@ class ShadowVertexShader() extends VertexShaderBuilder {
   }
 }
 
+// box is the shadowed rectangle and optClip the rectangle and corner radius
+// of the element hiding the shadow below it, in device pixels.
 class ShadowParameters(
   box: Geometry.Rect,
   color: .Color,
   sigma: Float,
+  radius: Float = 0.0,
+  optClip: ?(Geometry.Rect, Float) = None(),
 ) extends Parameters {
   static fun fromParams(obj: Parameters): this {
     obj match {
@@ -100,6 +169,10 @@ class ShadowShader() extends FragmentShaderBuilder {
     boxShadowBox = program.getIdxUniformLocation(uBox);
     boxShadowColor = program.getIdxUniformLocation(uColor);
     boxShadowSigma = program.getIdxUniformLocation(uSigma);
+    boxShadowRadius = program.getIdxUniformLocation(uRadius);
+    clipLocation = program.getUniformLocation("u_clip");
+    clipRadiusLocation = program.getUniformLocation("u_clipRadius");
+    clippedLocation = program.getUniformLocation("u_clipped");
 
     LambdaFragmentShader((parameters, _) ~> {
       ctx = program.context();
@@ -119,6 +192,31 @@ class ShadowShader() extends FragmentShaderBuilder {
         sps.color.alpha,
       );
       ctx.uniform1f(boxShadowSigma, sps.sigma);
+      // The corner radius cannot exceed half the shortest side.
+      maxRadius = Math.min(sps.box.width(), sps.box.height()) / 2.0;
+      ctx.uniform1f(
+        boxShadowRadius,
+        Math.max(0.0, Math.min(sps.radius, maxRadius)),
+      );
+      sps.optClip match {
+      | Some((clip, clipRadius)) ->
+        ctx.uniform4f(
+          clipLocation,
+          clip.left,
+          clip.top,
+          clip.right,
+          clip.bottom,
+        );
+        ctx.uniform1f(
+          clipRadiusLocation,
+          Math.max(
+            0.0,
+            Math.min(clipRadius, Math.min(clip.width(), clip.height()) / 2.0),
+          ),
+        );
+        ctx.uniform1f(clippedLocation, 1.0)
+      | None() -> ctx.uniform1f(clippedLocation, 0.0)
+      };
     })
   }
 }

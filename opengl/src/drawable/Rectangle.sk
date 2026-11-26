@@ -144,7 +144,43 @@ class RoundedRectangle(
   }
 }
 
-class BoxShadow(sigma: Float, color: .Color) extends GLRectangleDrawable {
+/**
+ * The shadow of the rectangle bounds with rounded corners of the given
+ * radius, blurred with a gaussian of standard deviation sigma, moved by
+ * offset and grown by spread on each side (as CSS box-shadow), in logical
+ * pixels. With clip, the shadow is not drawn below the rectangle itself,
+ * for translucent elements.
+ */
+class BoxShadow(
+  sigma: Float,
+  color: .Color,
+  radius: Float,
+  offset: Geometry.Offset,
+  spread: Float,
+  clip: Bool,
+) extends GLRectangleDrawable {
+  // The shadow of the rectangle at offset, of the given size.
+  static fun create{
+    offset: Geometry.Offset,
+    size: Geometry.Size,
+    sigma: Float,
+    color: .Color,
+    radius: Float = 0.0,
+    shadowOffset: Geometry.Offset = Geometry.Offset::zero,
+    spread: Float = 0.0,
+    clip: Bool = false,
+  }: this {
+    static(
+      sigma,
+      color,
+      radius,
+      shadowOffset,
+      spread,
+      clip,
+      Geometry.Rect::fromOffsetSize(offset, size),
+    )
+  }
+
   fun prepare(initializer: mutable GLProgram.Initializer): GLProgram.Used {
     initializer.boxShadow();
   }
@@ -157,9 +193,20 @@ class BoxShadow(sigma: Float, color: .Color) extends GLRectangleDrawable {
     buffer = data as GLProgram.Buffer _;
     supplier.boxShadowDrawer().map(drawer ->
       Ui.LambdaHandle((shift, window, _height, ratio, _frame) ~> {
-        box = this.bounds.shift(shift.toOffset()).scale(ratio);
+        element = this.bounds.shift(shift.toOffset());
+        box = element.shift(this.offset).inflate(this.spread).scale(ratio);
         drawer.run(
-          GLProgram.ShadowParameters(box, this.color, this.sigma * ratio),
+          GLProgram.ShadowParameters(
+            box,
+            this.color,
+            this.sigma * ratio,
+            Math.max(0.0, this.radius + this.spread) * ratio,
+            if (this.clip) {
+              Some((element.scale(ratio), this.radius * ratio))
+            } else {
+              None()
+            },
+          ),
           GLProgram.RectangleParameters(box, buffer),
           window.size() * ratio,
         )
@@ -370,9 +417,7 @@ fun pushBoxShadow(
 ): void {
   paint match {
   | color @ .Color _ ->
-    drawables.push(
-      BoxShadow(sigma, color, Geometry.Rect::fromOffsetSize(offset, size)),
-    )
+    drawables.push(BoxShadow::create{offset, size, sigma, color})
   | _ -> invariant_violation("Not implemented; only Color Fill managed")
   }
 }
