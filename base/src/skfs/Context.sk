@@ -65,7 +65,7 @@ native fun .checkMemory(): void;
 extension class Context {
   //
   static fun withoutGc<T>(fn: mutable Context ~> T): T {
-    if (!SKStore.gHasContext()) {
+    if (SKStore.gHasContext()) {
       getWorkingContext() match {
       | Some(context) -> fn(context)
       | _ -> Context::performOnce(fn)
