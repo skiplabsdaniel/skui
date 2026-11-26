@@ -80,19 +80,56 @@ Changes in `opengl`:
    a framebuffer with `glReadPixels`, or copy with `glBlitFramebuffer`.
 2. All shaders move to `#version 300 es`. The GLSL 1.00 ES ones would also
    work in ES 3.0, but one version is simpler and matches WebGL 2.
-3. `Offscreen.cpp` uses EGL with an OpenGL ES 3 context. With ANGLE, its
-   null or SwiftShader back end renders without a GPU, which keeps the
-   rendering tests working in containers and CI.
+3. `Offscreen.cpp` uses EGL with an OpenGL ES 3 context, created through
+   ANGLE like the windows, so the rendering tests run the same code path as
+   the applications.
 
-On Linux, ANGLE is optional: Mesa provides OpenGL ES 3 natively (including
-llvmpipe in containers), so the system `libGLESv2` can be used at first.
+#### ANGLE on Linux
+
+ANGLE is used on Linux too, so that every platform runs the same
+implementation (same GLSL compiler, same ES 3.0 behavior) and the rendering
+tests check what macOS and Windows users see. This was checked in a Linux
+aarch64 container without GPU (Mesa llvmpipe), with the prebuilt ANGLE of
+[sge-angle-natives](https://github.com/kubuszok/sge-angle-natives) (release
+`chromium-7151`):
+
+| Test | ANGLE back end | Result |
+|---|---|---|
+| Surfaceless EGL display, pbuffer, ES 3 context | OpenGL | works: `OpenGL ES 3.0.0 (ANGLE 2.1.25345)` on `llvmpipe` |
+| Same | OpenGL ES (Mesa ES 3.2) | works |
+| X11 window under Xvfb, window surface, swap | OpenGL | works: the cleared color is read back from the window |
+| Surfaceless | Vulkan | fails: no Vulkan driver in the container |
+
+The display is created with `eglGetPlatformDisplay(EGL_PLATFORM_ANGLE_ANGLE,
+...)` and `EGL_PLATFORM_ANGLE_TYPE_ANGLE`; for surfaceless rendering,
+`EGL_PLATFORM_ANGLE_NATIVE_PLATFORM_TYPE_ANGLE` is
+`EGL_PLATFORM_SURFACELESS_MESA`.
+
+- The archive contains only `libEGL.so`, `libGLESv2.so` and the headers
+  (`EGL`, `GLES2`, `GLES3`, `KHR`, with `eglext_angle.h`). The libraries
+  depend on nothing but libc: ANGLE loads the system `libGL.so.1`,
+  `libEGL.so.1` or `libvulkan.so` at run time for its back end.
+- Back end on Linux: OpenGL (over Mesa or the GPU driver) works everywhere
+  today. Vulkan is ANGLE's preferred Linux back end and is worth trying on
+  real GPUs; in containers it needs a CPU Vulkan driver (Mesa lavapipe,
+  `mesa-vulkan-drivers`, or SwiftShader), not tested yet. The back end can be
+  forced with `ANGLE_DEFAULT_PLATFORM` (`gl`, `vulkan`, `swiftshader`) or the
+  `EGL_PLATFORM_ANGLE_TYPE_ANGLE` attribute.
+- The same project publishes Linux x86_64 and aarch64, macOS x86_64 and
+  aarch64, Windows x86_64 and aarch64 builds (BSD-3 license), all from the
+  same ANGLE revision.
 
 ### 3.2 Windows and events: SDL
 
 SDL creates the window and the graphics surface, and delivers events in the
-same way on every platform. SDL 3 is the current version; SDL 2 is in the
-Ubuntu 24.04 packages (2.30). SDL can create an OpenGL ES context through
-ANGLE's EGL (`SDL_HINT_VIDEO_EGL_DRIVER`, `SDL_HINT_OPENGL_ES_DRIVER`).
+same way on every platform. SDL can create an OpenGL ES context through
+ANGLE's EGL: `SDL_HINT_OPENGL_ES_DRIVER` (`SDL_OPENGL_ES_DRIVER=1`) forces
+SDL to load an EGL/GLES library instead of asking the desktop GL driver for
+an ES profile, and `SDL_HINT_EGL_LIBRARY` / `SDL_HINT_OPENGL_LIBRARY` point
+it to ANGLE's `libEGL` and `libGLESv2`. Without the first hint, SDL may
+silently use the system driver instead of ANGLE.
+
+The table below uses SDL 3 names; see 3.3 for SDL 2.
 
 | skui need | Today (X11) | SDL |
 |---|---|---|
@@ -112,7 +149,50 @@ Text input is the main improvement: SDL uses the platform input methods
 (IBus/Fcitx on Linux, the macOS text input system, TSF on Windows), which
 gives accents, compose keys and Asian input methods everywhere.
 
-### 3.3 Package layout
+### 3.3 SDL 2 or SDL 3
+
+| | SDL 2 | SDL 3 |
+|---|---|---|
+| Status | maintenance only | current version (3.2, January 2025) |
+| Ubuntu 24.04 | `libsdl2-dev` 2.30 | not packaged (Ubuntu 25.04 and later, Debian 13); build from source with CMake |
+| macOS, Windows | Homebrew, prebuilt releases | Homebrew (`sdl3`), prebuilt releases |
+| Pixel ratio | `SDL_WINDOW_ALLOW_HIGHDPI` and `SDL_GL_GetDrawableSize` / `SDL_GetWindowSize`: works on macOS, but on X11 the ratio is always 1 (skui must keep reading `Xft.dpi`) | `SDL_GetWindowPixelDensity` and `SDL_GetWindowDisplayScale`, including on X11 (`Xft.dpi`, `GDK_SCALE`) and Wayland, with a change event |
+| Wayland | supported, X11 preferred by default | preferred by default when available |
+| Text input | global `SDL_StartTextInput()` | per window, `SDL_StartTextInput(window)`, with IME candidate area |
+
+#### Supporting both
+
+The two APIs are close: SDL 3 mostly renames things. The scancode values are
+the same in both versions, and the keycodes of printable keys are their
+Unicode characters in both, so the key tables in Skip are shared. The
+differences are confined to the C++ layer:
+
+- event names and fields: `SDL_WINDOWEVENT` with a `window.event`
+  sub-type (SDL 2) instead of one `SDL_EVENT_WINDOW_*` type per event;
+  `event.key.keysym.scancode` instead of `event.key.scancode`; integer
+  mouse positions instead of floats;
+- return values: `0` / negative error codes instead of `bool`;
+- the pixel ratio: computed by skui on SDL 2 (drawable size over window
+  size, and `Xft.dpi` on X11, as today), given by SDL 3;
+- text input start and stop, a few renamed constants (system cursors,
+  hints).
+
+With a `SKUI_SDL2` define and a small header of wrappers
+(`sdlPollEvent`, `sdlPixelRatio`, `sdlStartText`, ...), the event loop
+would be written once and the conditional code would be about 100 to 150
+lines out of an estimated 600 to 800 for the layer. The main cost is not
+the code but keeping both working: two builds to compile and test (two CI
+jobs), and the SDL 2 pixel ratio fallback, which is exactly the X11-specific
+code this design wants to remove.
+
+Recommendation: SDL 3 only. It is the version that solves the pixel ratio
+on every platform, and SDL 2 receives no new features. On Linux distributions
+without the package, SDL 3 is built from source once (CMake, a few minutes)
+or shipped with the application like ANGLE. Supporting SDL 2 can be added
+later behind the define if a target needs it; keeping the SDL calls behind
+the few wrappers above from the start makes that cheap.
+
+### 3.4 Package layout
 
 - `native/` (new package, replaces `x11gl/native` and `x11gl/extra`):
   - `native/src/*.cpp`: SDL window manager and event loop, implementing the
@@ -130,25 +210,26 @@ sizes, mouse locations, web key codes and the pixel ratio at draw time.
 
 | Platform | SDL | OpenGL ES |
 |---|---|---|
-| Linux | system package (`libsdl2-dev`, or SDL 3) | system Mesa `libGLESv2`/`libEGL`, ANGLE optional |
-| macOS | Homebrew (`sdl3`) or built from source | ANGLE built from source, or prebuilt (`libEGL.dylib`, `libGLESv2.dylib`) shipped with the application |
-| Windows | prebuilt release | ANGLE prebuilt DLLs |
+| Linux | SDL 3 package, or built from source | prebuilt ANGLE (`libEGL.so`, `libGLESv2.so`) |
+| macOS | Homebrew (`sdl3`) or built from source | prebuilt ANGLE (`libEGL.dylib`, `libGLESv2.dylib`) |
+| Windows | prebuilt release | prebuilt ANGLE DLLs |
 
-ANGLE is the main build question: it uses Google's build tools (GN, ninja,
-depot_tools), so it should be built once per platform and its binaries
-shipped with the application rather than built by skargo. Some projects
-publish prebuilt ANGLE binaries; this needs checking. The skargo build
-script (`build.sk`, `skui_build__links`) only needs the include
-directories and the libraries to link.
+ANGLE uses Google's build tools (GN, ninja, depot_tools), so it is not built
+by skargo: the prebuilt archives (see 3.1) are downloaded once per platform,
+pinned to one release, and shipped with the application, with an rpath (or
+`@rpath` on macOS) next to the binary. The skargo build script (`build.sk`,
+`skui_build__links`) only needs the include directories and the libraries
+to link. Building ANGLE in CI remains possible if the prebuilt project stops
+publishing releases.
 
 ## 5. Steps
 
 Each step keeps the existing tests passing.
 
-1. **OpenGL ES 3.0 in `GL.cpp`** on Linux with Mesa: replace GLEW and the
+1. **OpenGL ES 3.0 in `GL.cpp`** on Linux with ANGLE: replace GLEW and the
    desktop-only calls, move all shaders to `#version 300 es`, and switch
-   `Offscreen.cpp` to an ES 3 context. The offscreen rendering tests check
-   that the rendering is unchanged.
+   `Offscreen.cpp` to an ANGLE ES 3 context. The offscreen rendering tests
+   check that the rendering is unchanged.
 2. **SDL layer on Linux**: `native` package with the window, events,
    clipboard, cursors and pixel ratio, next to `x11gl`. Check with the views,
    through VNC in a container (see VNC.md).
@@ -161,11 +242,10 @@ Steps 1 and 2 can be done and tested entirely in a Linux container.
 
 ## 6. Open questions
 
-- SDL 2 (packaged everywhere today) or SDL 3 (current API, better pixel
-  density support)?
-- How to get ANGLE binaries for macOS and Windows: build them in CI, or use
-  prebuilt ones?
-- Should applications ship ANGLE on Linux too, for identical rendering on
-  every platform, or use the system OpenGL ES?
+- SDL 3 only, or SDL 2 as well behind a define (see 3.3)?
+- ANGLE back end on Linux: OpenGL (works today) or Vulkan (needs a Vulkan
+  driver, or lavapipe/SwiftShader in containers)?
+- ANGLE binaries: rely on a third-party prebuilt project, or build them in
+  our own CI?
 - Multiple windows: the X11 layer supports several windows (`wId`); SDL does
   too, but the event loop must dispatch by window id.
