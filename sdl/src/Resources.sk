@@ -1,9 +1,9 @@
-module SKIP_SKUIX11Res;
+module SKIP_SKUISDLRes;
 
-@cpp_extern("SKIP_skui_x11_resources_textures_steel_rgba")
+@cpp_extern("SKIP_skui_sdl_resources_textures_steel_rgba")
 native fun steel(): Array<Ui.Pix>;
 
-@cpp_extern("SKIP_skui_x11_resources_textures_wood_rgba")
+@cpp_extern("SKIP_skui_sdl_resources_textures_wood_rgba")
 native fun wood(): Array<Ui.Pix>;
 
 fun steelImage(): Ui.Image {

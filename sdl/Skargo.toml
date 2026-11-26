@@ -1,5 +1,5 @@
 [package]
-name = "skui_x11gl"
+name = "skui_sdl"
 version = "0.1.0"
 
 [dependencies]
@@ -10,5 +10,5 @@ cli = { path = "../skip/skiplang/cli" }
 skui_build = { path = "../builder" }
 
 [[bin]]
-name = "skuix11gl"
-main = "SkuiX11gl.main"
+name = "skuisdl"
+main = "SkuiSdl.main"

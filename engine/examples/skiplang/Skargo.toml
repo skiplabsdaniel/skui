@@ -4,7 +4,7 @@ version = "0.1.0"
 
 [dependencies]
 skui_eng = { "path" = "../.." }
-skui_x11gl = { path = "../../../x11gl" }
+skui_sdl = { path = "../../../sdl" }
 roboto = { "path" = "../../../framework/fonts/Roboto" }
 roboto-mono = { "path" = "../../../framework/fonts/RobotoMono"}
 

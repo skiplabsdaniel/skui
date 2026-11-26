@@ -1,75 +1,53 @@
-#include "GLWManager.h"
-#include "Supplier.h"
+// The window of the GL drawables viewer (skuisdl), without the framework.
+#include "SDLWindow.h"
 #include <iostream>
-
-skui::WindowSupplier supplier;
 
 #define TXT(from, to) std::string to(from, SKIP_String_byteSize(from))
 
 extern "C" {
 uint32_t SKIP_String_byteSize(char *str);
-void *SKIP_SkuiX11gl_performFrame(void *enviroment, uint32_t ctxId,
-                                  void *userContext, uint32_t width,
-                                  uint32_t height, uint32_t ratio,
-                                  uint32_t frames);
+void *SKIP_SkuiSdl_performFrame(void *environment, uint32_t ctxId,
+                                void *userContext, uint32_t width,
+                                uint32_t height, uint32_t ratio,
+                                uint32_t frames);
 }
 
-namespace skui {
+namespace {
 
-class SKIPEventManager : public EventManager {
+class DemoHandler : public skui::EventHandler {
 public:
-  SKIPEventManager() {}
-  void resize(uint32_t, uint32_t, uint32_t, uint32_t) {}
-  void performFrame(void *enviroment, uint32_t ctxId, void *userContext,
-                    uint32_t width, uint32_t height, uint32_t ratio,
-                    uint32_t frames, std::function<void(void *)> onDone) {
-    (void)enviroment;
-    (void)userContext;
-    void *nContext = SKIP_SkuiX11gl_performFrame(enviroment, ctxId, userContext,
-                                                 width, height, ratio, frames);
-    onDone(nContext);
+  explicit DemoHandler(void *environment) : environment(environment) {}
+
+  void performFrame(uint32_t wId, uint32_t width, uint32_t height,
+                    uint32_t ratio, uint32_t frames) override {
+    userContext = SKIP_SkuiSdl_performFrame(environment, wId, userContext,
+                                            width, height, ratio, frames);
   }
 
-  void requestClose(uint32_t wId) { supplier.sendCloseMessage(wId); }
-
-  void manageMouseLocation(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t) {}
-  void manageMouseButton(uint32_t, uint32_t, bool) {}
-  void manageKeyPressed(uint32_t, uint32_t, uint32_t, const std::string &) {}
-  void manageKeyReleased(uint32_t, uint32_t) {}
-  void paste(uint32_t, const std::string &, const std::string &) {};
+private:
+  void *environment;
+  void *userContext = nullptr;
 };
 
-} // namespace skui
-
-Atom kSkuiAnimationFrame;
+} // namespace
 
 extern "C" {
-void SKIP_SkuiX11gl_run(void *environment, uint64_t wId, uint64_t x, uint64_t y,
-                        uint64_t width, uint64_t height, char *skTitle,
-                        uint64_t screen, uint64_t framePerSecond) {
-  TXT(skTitle, strTitle);
-  skui::SKIPEventManager eManager;
-  skui::WindowInfo info{x, y, width, height};
-  skui::GLWindowManager manager(environment, wId, screen, framePerSecond,
-                                &eManager, [](uint64_t, uint64_t) {});
-  XIC xic;
-  Display *display = supplier.init(xic, manager, &info);
-  kSkuiAnimationFrame = XInternAtom(display, "SKUI_ANIMATION_FRAME", False);
-  manager.setTitle(strTitle);
-  manager.customMessages.insert(
-      std::pair<Atom, std::function<void(uint32_t, uint32_t)>>(
-          kSkuiAnimationFrame, [&manager](uint32_t param1, uint32_t) {
-            manager.performFrame(param1);
-          }));
-  manager.initialized(xic, [wId](uint64_t frames) {
-    supplier.sendClientMessage(wId, kSkuiAnimationFrame, (uint32_t)frames, 0);
-  });
-  while (1) {
-    if (supplier.handleWindowEvents(display)) {
-      break;
-    }
+void SKIP_SkuiSdl_run(void *environment, uint64_t wId, uint64_t width,
+                      uint64_t height, char *skTitle,
+                      uint64_t framePerSecond) {
+  TXT(skTitle, title);
+  try {
+    DemoHandler handler(environment);
+    skui::WindowOptions options;
+    options.wId = (uint32_t)wId;
+    options.title = title;
+    options.width = (uint32_t)width;
+    options.height = (uint32_t)height;
+    options.framePerSecond = (uint32_t)framePerSecond;
+    skui::Window window(options, &handler);
+    skui::run([](uint32_t, uint32_t, uint32_t) {});
+  } catch (const std::exception &e) {
+    std::cerr << e.what() << std::endl;
   }
-  manager.print(std::cout);
-  std::cout << std::endl;
 }
 }

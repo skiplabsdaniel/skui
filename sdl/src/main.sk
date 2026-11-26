@@ -1,4 +1,4 @@
-module SkuiX11gl;
+module SkuiSdl;
 
 class Context(handles: Vector<Ui.Handle>)
 
@@ -6,11 +6,11 @@ class Env(fn: (GL.Ctx, Int, Int) ~> Context)
 
 fun main(): void {
   available = mutable Vector[
-    ("rounded", SkuiX11gl.rounded),
-    ("rectangle", SkuiX11gl.rectangle),
-    ("ellipsoide", SkuiX11gl.ellipsoide),
-    ("button1", SkuiX11gl.button1),
-    ("tex_button1", SkuiX11gl.tex_button1),
+    ("rounded", SkuiSdl.rounded),
+    ("rectangle", SkuiSdl.rectangle),
+    ("ellipsoide", SkuiSdl.ellipsoide),
+    ("button1", SkuiSdl.button1),
+    ("tex_button1", SkuiSdl.tex_button1),
   ];
   perform(available);
 }
@@ -18,7 +18,7 @@ fun main(): void {
 fun perform(
   available: readonly Vector<(String, (GL.Ctx, Int, Int) ~> Context)>,
 ): void {
-  command = Cli.Command("skuix11gl")
+  command = Cli.Command("skuisdl")
     .about("Skip UI's GL Shader Viewer")
     .arg(
       Cli.Arg::bool("version")
@@ -36,13 +36,13 @@ fun perform(
   args = command.parseArgs();
   if (args.getBool("version")) {
     git_commit = #env ("GIT_COMMIT_HASH");
-    print_string(`skuix11gl (${git_commit})`)
+    print_string(`skuisdl (${git_commit})`)
   } else {
     args.maybeGetSubcommand() match {
     | Some(subcmd) ->
       available.filter(v -> v.i0 == subcmd).maybeGet(0) match {
       | Some((_, fn)) ->
-        run(Env(fn), 0, 10, 10, 800, 600, "Skip UI's GL Shader Viewer", 0, 60)
+        run(Env(fn), 0, 800, 600, "Skip UI's GL Shader Viewer", 60)
       | _ -> invariant_violation(`Unknown subcommand ${subcmd}`)
       }
     | None() -> print_string(Cli.usage(args.cmd, true))
@@ -54,16 +54,13 @@ fun perform(
 native fun run(
   env: Env,
   wId: Int,
-  x: Int,
-  y: Int,
   width: Int,
   height: Int,
   title: String,
-  screen: Int,
   framePerSecond: Int,
 ): void;
 
-@cpp_export("SKIP_SkuiX11gl_performFrame")
+@cpp_export("SKIP_SkuiSdl_performFrame")
 fun performFrame(
   env: Env,
   cid: Int,

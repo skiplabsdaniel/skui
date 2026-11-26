@@ -60,7 +60,7 @@ if [[ "${SK_CHANGED[mtsdf]:-false}" == "true" ]]; then
 fi
 
 if [[ "${SK_CHANGED[opengl]:-false}" == "true" ]]; then
-  SK_CHANGED[x11gl]=true
+  SK_CHANGED[sdl]=true
   SK_CHANGED[engine]=true
 fi
 
@@ -68,7 +68,7 @@ if [[ "${SK_CHANGED[framework]:-false}" == "true" ]]; then
   SK_CHANGED[engine]=true
 fi
 
-if [[ "${SK_CHANGED[x11gl]:-false}" == "true" ]]; then
+if [[ "${SK_CHANGED[sdl]:-false}" == "true" ]]; then
   SK_CHANGED[views]=true
 fi
 

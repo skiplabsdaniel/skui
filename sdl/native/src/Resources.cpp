@@ -18,12 +18,12 @@ char *createBuffer(unsigned char *source, int len) {
   return buffer;
 }
 
-char *SKIP_skui_x11_resources_textures_wood_rgba() {
+char *SKIP_skui_sdl_resources_textures_wood_rgba() {
   return createBuffer(resources_textures_wood_rgba,
                       resources_textures_wood_rgba_len);
 }
 
-char *SKIP_skui_x11_resources_textures_steel_rgba() {
+char *SKIP_skui_sdl_resources_textures_steel_rgba() {
   return createBuffer(resources_textures_wood_rgba,
                       resources_textures_steel_rgba_len);
 }

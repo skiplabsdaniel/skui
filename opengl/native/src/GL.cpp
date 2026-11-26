@@ -1,6 +1,6 @@
 
 #include "GLUtils.h"
-#include <GL/glew.h>
+#include <GLES3/gl3.h>
 #include <algorithm>
 #include <fstream>
 #include <functional>
@@ -36,7 +36,6 @@ struct Color {
 struct State {
   Color color;
   Viewport viewport;
-  GLboolean texture;
   GLboolean blend;
   GLenum srcAlpha;
 };
@@ -110,6 +109,23 @@ void checkError() {
   }
 }
 
+// OpenGL ES has no glGetTexImage: the texture is attached to a framebuffer
+// and read with glReadPixels. Restores the bound framebuffer.
+void readTexture(GLuint texture, GLsizei width, GLsizei height,
+                 GLubyte *pixels) {
+  GLint previous = 0;
+  glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previous);
+  GLuint reader = 0;
+  glGenFramebuffers(1, &reader);
+  glBindFramebuffer(GL_FRAMEBUFFER, reader);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                         texture, 0);
+  glPixelStorei(GL_PACK_ALIGNMENT, 1);
+  glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+  glBindFramebuffer(GL_FRAMEBUFFER, previous);
+  glDeleteFramebuffers(1, &reader);
+}
+
 void displayBlendState() {
   // retrieve current state of blend enabled
   GLboolean blendEnabled;
@@ -143,8 +159,8 @@ void GL_checkTextureToDelete() {
 }
 
 void GL_init() {
-  gState.texture = true;
-  glEnable(GL_TEXTURE_2D);
+  frameBuffer = 0;
+  textureBuffer = 0;
   gState.blend = true;
   glEnable(GL_BLEND);
   gState.srcAlpha = GL_ONE_MINUS_SRC_ALPHA;
@@ -413,7 +429,7 @@ uint32_t SKIP_GL_getIdxUniformLocation(uint32_t program, uint32_t index,
 
 uint32_t SKIP_GL_createBuffer(uint32_t) {
   GLuint buf;
-  glCreateBuffers(1, &buf);
+  glGenBuffers(1, &buf);
   return buf;
 }
 
@@ -432,7 +448,7 @@ void SKIP_GL_deleteBuffer(uint32_t buffer, uint32_t) {
 
 uint32_t SKIP_GL_createVertexArray(uint32_t) {
   GLuint arr;
-  glCreateVertexArrays(1, &arr);
+  glGenVertexArrays(1, &arr);
   return arr;
 }
 
@@ -444,7 +460,7 @@ void SKIP_GL_deleteVertexArray(uint32_t arr, uint32_t) {
 
 uint32_t SKIP_GL_createFramebuffer(uint32_t) {
   GLuint buf;
-  glCreateFramebuffers(1, &buf);
+  glGenFramebuffers(1, &buf);
   return buf;
 }
 
@@ -517,11 +533,6 @@ void SKIP_GL_save(uint32_t) { gStates.push(gState); }
 
 void SKIP_GL_restore(uint32_t) {
   gState = gStates.top();
-  if (gState.texture) {
-    glEnable(GL_TEXTURE_2D);
-  } else {
-    glDisable(GL_TEXTURE_2D);
-  }
   if (gState.blend) {
     glEnable(GL_BLEND);
   } else {
@@ -536,9 +547,8 @@ void SKIP_GL_restore(uint32_t) {
 
 uint32_t SKIP_GL_cloneTexture(uint32_t texture, uint32_t width, uint32_t height,
                               uint32_t ctx) {
-  glBindTexture(GL_TEXTURE_2D, texture);
   GLubyte *pixels = new GLubyte[width * height * 4];
-  glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+  readTexture(texture, width, height, pixels);
   GLuint target = SKIP_GL_createTexture(ctx);
   glBindTexture(GL_TEXTURE_2D, target);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -560,20 +570,22 @@ uint32_t SKIP_GL_resizeTexture(uint32_t texture, uint32_t srcWidth,
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, dstWidth, dstHeight, 0, GL_RGBA,
                GL_UNSIGNED_BYTE, nullptr);
   glBindTexture(GL_TEXTURE_2D, 0);
-  auto currentFrame = frameBuffer;
-  SKIP_GL_bindTextureFrameBuffer(ctx);
+  GLint previous = 0;
+  glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previous);
+  GLuint buffers[2];
+  glGenFramebuffers(2, buffers);
+  glBindFramebuffer(GL_READ_FRAMEBUFFER, buffers[0]);
   glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                          GL_TEXTURE_2D, texture, 0);
-  glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT1,
+  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, buffers[1]);
+  glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                          GL_TEXTURE_2D, target, 0);
-  glDrawBuffer(GL_COLOR_ATTACHMENT1);
   auto width = srcWidth > dstWidth ? dstWidth : srcWidth;
   auto height = srcHeight > dstHeight ? dstHeight : srcHeight;
   glBlitFramebuffer(0, 0, width, height, 0, 0, width, height,
                     GL_COLOR_BUFFER_BIT, GL_NEAREST);
-  if (currentFrame != textureBuffer) {
-    SKIP_GL_bindMainFrameBuffer(ctx);
-  }
+  glBindFramebuffer(GL_FRAMEBUFFER, previous);
+  glDeleteFramebuffers(2, buffers);
   return target;
 }
 
@@ -583,8 +595,7 @@ void SKIP_GL_copyTexture(uint32_t toPaste, uint32_t srcX, uint32_t srcY,
                          uint32_t height, bool reverted, uint32_t ctx) {
   GLubyte *pixels =
       (GLubyte *)malloc(srcWidth * srcHeight * 4 * sizeof(GLubyte));
-  glBindTexture(GL_TEXTURE_2D, toPaste);
-  glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+  readTexture(toPaste, srcWidth, srcHeight, pixels);
   checkError();
   if (width < srcWidth || height < srcHeight || reverted) {
     GLubyte *buffer = (GLubyte *)malloc(width * height * 4 * sizeof(GLubyte));

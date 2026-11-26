@@ -1,4 +1,4 @@
-module SkuiX11gl;
+module SkuiSdl;
 
 fun initDrawables(ctx: GL.Ctx, drawables: Vector<GLDrawable>): Context {
   initializer = mutable GLProgram.Initializer();
@@ -72,8 +72,8 @@ fun program(
   },
 ): Context {
   program = GLSL.Scene(entity, config);
-  wood = SKIP_SKUIX11Res.woodImage();
-  steel = SKIP_SKUIX11Res.steelImage();
+  wood = SKIP_SKUISDLRes.woodImage();
+  steel = SKIP_SKUISDLRes.steelImage();
   woodTex = GLTexture.Image(Some(wood.data), true, wood.width, wood.height);
   steelTex = GLTexture.Image(Some(steel.data), true, wood.width, wood.height);
   constValue: GLSL.Value -> GL.Ctx ~> ?(

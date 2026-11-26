@@ -1,4 +1,10 @@
-module SkuiX11glBuild;
+module SkuiSdlBuild;
+
+// SDL 3, installed in SKUI_SDL3_DIR (default /opt/sdl3, see
+// views/docker/Dockerfile).
+fun sdlDir(): String {
+  Environ.varOpt("SKUI_SDL3_DIR").default("/opt/sdl3")
+}
 
 @skui_build__source_dirs
 fun source_dirs(env: SkuiBuild.Env): Array<String> {
@@ -12,6 +18,7 @@ fun include_dirs(env: SkuiBuild.Env): Array<String> {
       "native/src/includes",
       "../opengl/native/src/includes",
       "../base/native/src/includes",
+      `${sdlDir()}/include`,
     ]
   } else {
     Array[]
@@ -21,7 +28,8 @@ fun include_dirs(env: SkuiBuild.Env): Array<String> {
 @skui_build__links
 fun links(env: SkuiBuild.Env): Array<String> {
   if (!env.isWasm32()) {
-    Array["-lX11", "-lXcursor", "-lXext", "-lXrandr"]
+    lib = `${sdlDir()}/lib`;
+    Array[`-L${lib}`, `-Wl,-rpath,${lib}`, "-lSDL3"]
   } else {
     Array[]
   }
@@ -36,7 +44,7 @@ module end;
 
 @debug
 fun main(): void {
-  SkuiBuild.build("skuix11") match {
+  SkuiBuild.build("skuisdl") match {
   | Failure(err) -> skipExit(err.code)
   | _ -> void
   }

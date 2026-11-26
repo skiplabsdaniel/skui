@@ -1,6 +1,6 @@
 # Running the native views with VNC
 
-The native views (`skuiviews`) open an X11 window. Inside a Docker container
+The native views (`skuiviews`) open an SDL window (X11 on Linux). Inside a Docker container
 there is no X server, and on macOS Docker runs Linux in a virtual machine
 without access to the GPU. VNC gives a full interactive session (window,
 mouse, keyboard) from the container:
@@ -11,17 +11,12 @@ skuiviews -> Xvfb (virtual X server) -> x11vnc -> VNC client or browser
 
 ## OpenGL
 
-There is no GPU in the container (no `/dev/dri`): OpenGL is Mesa's software
-renderer, llvmpipe (OpenGL 4.5, GLSL 4.50), running on the CPU. It supports
-the skui shaders; it is slower than a GPU but fast enough to check user
+There is no GPU in the container (no `/dev/dri`): skui draws with OpenGL ES
+3.0 through ANGLE (see NATIVE.md), which runs on Mesa's software renderer,
+llvmpipe, on the CPU. It is slower than a GPU but fast enough to check user
 interactions. It is the same renderer as the offscreen rendering tests of
-`opengl/tests`.
-
-Check it with:
-
-```bash
-glxinfo -B | grep "OpenGL renderer"   # from mesa-utils, inside Xvfb
-```
+`opengl/tests`. SDL 3 and ANGLE must be installed in `/opt/sdl3` and
+`/opt/angle` (see `docker/Dockerfile`).
 
 ## Setup
 
@@ -50,7 +45,7 @@ ports:
 
 ```bash
 # Virtual screen :1, in device pixels.
-Xvfb :1 -screen 0 1600x1000x24 &
+Xvfb :1 -noreset -screen 0 1600x1000x24 &
 
 # VNC server on port 5900.
 x11vnc -display :1 -forever -shared -nopw -rfbport 5900 &
@@ -77,9 +72,9 @@ drivers.
 
 ## Pixel ratio
 
-The X11 window manager of skui reads the device pixel ratio from the
-`Xft.dpi` resource (96 dpi is a ratio of 1), when the window is created.
-To test a HiDPI screen with a ratio of 2:
+SDL reads the device pixel ratio from the `Xft.dpi` resource (96 dpi is a
+ratio of 1). Start Xvfb with `-noreset`, otherwise the resource is lost when
+`xrdb` disconnects. To test a HiDPI screen with a ratio of 2:
 
 ```bash
 echo "Xft.dpi: 192" | DISPLAY=:1 xrdb -merge

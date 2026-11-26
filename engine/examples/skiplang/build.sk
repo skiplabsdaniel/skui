@@ -9,7 +9,7 @@ module SkuiEngExamplesBuild;
 @skui_build__source_dirs
 fun source_dirs(env: SkuiBuild.Env): Array<String> {
   // If the environment is not targeting WebAssembly, include the native source directory
-  if (!env.isWasm32()) Array["../../../views/native/src"] else Array[]
+  if (!env.isWasm32()) Array["../../../sdl/app"] else Array[]
 }
 
 /**
@@ -25,7 +25,8 @@ fun include_dirs(env: SkuiBuild.Env): Array<String> {
     Array[
       "../../../opengl/native/src/includes", ///< OpenGL includes
       "../../../base/native/src/includes", ///< Base includes
-      "../../../x11gl/native/src/includes", ///< X11GL includes
+      "../../../sdl/native/src/includes", ///< SDL window includes
+      Environ.varOpt("SKUI_SDL3_DIR").default("/opt/sdl3") + "/include", ///< SDL 3 includes
     ]
   } else {
     Array[]
@@ -40,12 +41,11 @@ fun include_dirs(env: SkuiBuild.Env): Array<String> {
  */
 @skui_build__extra_sources
 fun extra_sources(env: SkuiBuild.Env): Array<String> {
-  // If the environment is not targeting WebAssembly, include additional X11GL source files
+  // If the environment is not targeting WebAssembly, include the SDL window events
   if (!env.isWasm32()) {
     Array[
-      "../../../x11gl/extra/Host.sk", ///< Host-specific code
-      "../../../x11gl/extra/X11Events.sk", ///< X11 event handling
-      "../../../x11gl/extra/X11Key.sk", ///< X11 key handling
+      "../../../sdl/extra/Host.sk", ///< Host-specific code
+      "../../../sdl/extra/SDLEvents.sk", ///< SDL event handling
     ]
   } else {
     Array[]

@@ -1,9 +1,14 @@
 # Native platform layer: SDL and ANGLE
 
-Status: design proposal, nothing implemented yet. This document describes how
-to replace the X11/GLX native layer with SDL (windows and events) and ANGLE
-(OpenGL ES 3 on the platform graphics API), to run skui natively on Linux,
-macOS and Windows with a single code base.
+Status: steps 1 to 3 of section 5 are implemented on Linux (`opengl` on
+ANGLE, the `sdl` package, `views` and the engine examples switched to it;
+`x11gl` is removed). See section 7 for the known problems. This document
+describes how the X11/GLX native layer is replaced with SDL (windows and
+events) and ANGLE (OpenGL ES 3 on the platform graphics API), to run skui
+natively on Linux, macOS and Windows with a single code base.
+
+Sections 2 and 3 were written before the implementation: section 2
+describes the former X11 layer.
 
 ## 1. Why
 
@@ -212,14 +217,22 @@ target needs it.
 
 ### 3.4 Package layout
 
-- `native/` (new package, replaces `x11gl/native` and `x11gl/extra`):
-  - `native/src/*.cpp`: SDL window manager and event loop, implementing the
-    same `EventManager` interface as today, without X11 types.
-  - `native/extra/*.sk`: forwards events to the framework, with the
-    `SDL_Scancode` to web `code` and `SDL_Keycode` to web `key` tables.
+- `sdl/` (replaces `x11gl`):
+  - `sdl/native/src/SDLWindow.cpp`: the SDL window with its ANGLE context,
+    the event loop, cursors, clipboard and pixel ratio, behind the
+    `skui::EventHandler` interface (`includes/SDLWindow.h`).
+  - `sdl/native/src/Keys.cpp`: `SDL_Scancode` to web `code` and
+    `SDL_Keycode` to web `key`.
+  - `sdl/app/App.cpp`: the event handler of framework applications
+    (messages, updates, cursor), compiled with the application (`views`,
+    `engine/examples/skiplang`), which links the framework.
+  - `sdl/extra/*.sk`: forwards the events to the framework.
+  - `sdl/src`, `sdl/native/src/Demo.cpp`: `skuisdl`, the viewer of GL
+    drawables without the framework (formerly `skuix11gl`).
 - `opengl/native/src/GL.cpp`: OpenGL ES 3.0.
-- `views` and applications link the `native` package instead of `x11gl`.
-- `x11gl` stays until the SDL layer is complete on Linux, then is removed.
+- SDL 3 and ANGLE are found in `SKUI_SDL3_DIR` (default `/opt/sdl3`) and
+  `SKUI_ANGLE_DIR` (default `/opt/angle`), at build time and, for ANGLE, at
+  run time.
 
 The framework side does not change: it already receives logical pixel
 sizes, mouse locations, web key codes and the pixel ratio at draw time.
@@ -268,9 +281,26 @@ Steps 1 and 2 can be done and tested entirely in a Linux container.
 
 ## 6. Open questions
 
+- The `clipboard` system messages of the framework (`FWKClipboard.copy`,
+  `paste`) have no native handler, as with X11: `skui::clipboardText` and
+  `setClipboardText` are ready to implement one.
+
 - ANGLE back end on Linux: OpenGL (works today) or Vulkan (needs a Vulkan
   driver, or lavapipe/SwiftShader in containers)?
 - ANGLE binaries: rely on a third-party prebuilt project, or build them in
   our own CI?
 - Multiple windows: the X11 layer supports several windows (`wId`); SDL does
   too, but the event loop must dispatch by window id.
+
+## 7. Known problems
+
+- In the engine examples (`skuieng_examples button`), the button and its
+  background are drawn, but not its text, although the glyph MSDFs are
+  computed, placed in the window and uploaded as textures, and the MSDF
+  program links. The same shader draws text in the offscreen tests
+  (`opengl/tests`). Not yet investigated further; the examples built with
+  the former X11 layer did not draw anything in Xvfb either, so it may not
+  come from SDL or ANGLE.
+- Building a package after a change of its C++ sources may reuse stale
+  objects: delete the `lib*.a` / `lib*.sklib` of the changed packages and
+  `target/.fingerprints` before rebuilding.

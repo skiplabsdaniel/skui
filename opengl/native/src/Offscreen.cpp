@@ -1,9 +1,10 @@
-// Offscreen OpenGL rendering without a window system, with EGL on the Mesa
-// surfaceless platform. Used to render drawables to images in tests.
+// Offscreen OpenGL ES rendering without a window system, with ANGLE's EGL
+// on the surfaceless platform. Used to render drawables to images in tests.
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
+#include <EGL/eglext_angle.h>
 #include "GLUtils.h"
-#include <GL/glew.h>
+#include <GLES3/gl3.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -22,14 +23,13 @@ bool initContext() {
   if (gContext != EGL_NO_CONTEXT) {
     return true;
   }
-  auto getPlatformDisplay = (PFNEGLGETPLATFORMDISPLAYEXTPROC)eglGetProcAddress(
-      "eglGetPlatformDisplayEXT");
-  if (getPlatformDisplay == nullptr) {
-    fprintf(stderr, "Offscreen: eglGetPlatformDisplayEXT is not available\n");
-    return false;
-  }
-  gDisplay = getPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA,
-                                EGL_DEFAULT_DISPLAY, nullptr);
+  // ANGLE picks its default back end (ANGLE_DEFAULT_PLATFORM overrides it).
+  const EGLAttrib displayAttributes[] = {
+      EGL_PLATFORM_ANGLE_NATIVE_PLATFORM_TYPE_ANGLE,
+      EGL_PLATFORM_SURFACELESS_MESA, EGL_NONE};
+  gDisplay = eglGetPlatformDisplay(EGL_PLATFORM_ANGLE_ANGLE,
+                                   (void *)EGL_DEFAULT_DISPLAY,
+                                   displayAttributes);
   EGLint major, minor;
   if (gDisplay == EGL_NO_DISPLAY || !eglInitialize(gDisplay, &major, &minor)) {
     fprintf(stderr, "Offscreen: unable to initialize EGL (0x%x)\n",
@@ -39,7 +39,7 @@ bool initContext() {
   const EGLint configAttributes[] = {EGL_SURFACE_TYPE,
                                      EGL_PBUFFER_BIT,
                                      EGL_RENDERABLE_TYPE,
-                                     EGL_OPENGL_BIT,
+                                     EGL_OPENGL_ES3_BIT,
                                      EGL_RED_SIZE,
                                      8,
                                      EGL_GREEN_SIZE,
@@ -56,19 +56,17 @@ bool initContext() {
     fprintf(stderr, "Offscreen: no EGL configuration\n");
     return false;
   }
-  eglBindAPI(EGL_OPENGL_API);
-  gContext = eglCreateContext(gDisplay, config, EGL_NO_CONTEXT, nullptr);
+  eglBindAPI(EGL_OPENGL_ES_API);
+  const EGLint contextAttributes[] = {EGL_CONTEXT_MAJOR_VERSION, 3,
+                                      EGL_CONTEXT_MINOR_VERSION, 0, EGL_NONE};
+  gContext =
+      eglCreateContext(gDisplay, config, EGL_NO_CONTEXT, contextAttributes);
   if (gContext == EGL_NO_CONTEXT ||
       !eglMakeCurrent(gDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, gContext)) {
     fprintf(stderr, "Offscreen: unable to create the GL context (0x%x)\n",
             eglGetError());
     return false;
   }
-  glewExperimental = GL_TRUE;
-  // Without a window system, GLEW reports an error when it looks up GLX
-  // functions, but the GL functions it needs are loaded.
-  glewInit();
-  glGetError();
   GL_init();
   return true;
 }

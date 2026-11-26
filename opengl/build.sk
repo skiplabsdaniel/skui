@@ -1,5 +1,11 @@
 module SkuiOpenglBuild;
 
+// OpenGL ES 3.0 comes from ANGLE (libEGL, libGLESv2), installed in
+// SKUI_ANGLE_DIR (default /opt/angle, see views/docker/Dockerfile).
+fun angleDir(): String {
+  Environ.varOpt("SKUI_ANGLE_DIR").default("/opt/angle")
+}
+
 @skui_build__source_dirs
 fun source_dirs(env: SkuiBuild.Env): Array<String> {
   if (!env.isWasm32()) Array["native/src"] else Array[]
@@ -7,12 +13,21 @@ fun source_dirs(env: SkuiBuild.Env): Array<String> {
 
 @skui_build__include_dirs
 fun include_dirs(env: SkuiBuild.Env): Array<String> {
-  if (!env.isWasm32()) Array["native/src/includes"] else Array[]
+  if (!env.isWasm32()) {
+    Array["native/src/includes", `${angleDir()}/include`]
+  } else {
+    Array[]
+  }
 }
 
 @skui_build__links
 fun links(env: SkuiBuild.Env): Array<String> {
-  if (!env.isWasm32()) Array["-lGLEW", "-lGL", "-lGLU", "-lglut", "-lEGL"] else Array[]
+  if (!env.isWasm32()) {
+    lib = `${angleDir()}/lib`;
+    Array[`-L${lib}`, `-Wl,-rpath,${lib}`, "-lEGL", "-lGLESv2"]
+  } else {
+    Array[]
+  }
 }
 
 module end;
