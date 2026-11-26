@@ -2,7 +2,8 @@
 
 Status: steps 1 to 3 of section 5 are implemented on Linux (`opengl` on
 ANGLE, the `sdl` package, `views` and the engine examples switched to it;
-`x11gl` is removed). See section 7 for the known problems. This document
+`x11gl` is removed), and checked under Xvfb with the engine examples (text,
+icons, clicks, pixel ratio 2). See section 7 for the known problems. This document
 describes how the X11/GLX native layer is replaced with SDL (windows and
 events) and ANGLE (OpenGL ES 3 on the platform graphics API), to run skui
 natively on Linux, macOS and Windows with a single code base.
@@ -294,13 +295,6 @@ Steps 1 and 2 can be done and tested entirely in a Linux container.
 
 ## 7. Known problems
 
-- In the engine examples (`skuieng_examples button`), the button and its
-  background are drawn, but not its text, although the glyph MSDFs are
-  computed, placed in the window and uploaded as textures, and the MSDF
-  program links. The same shader draws text in the offscreen tests
-  (`opengl/tests`). Not yet investigated further; the examples built with
-  the former X11 layer did not draw anything in Xvfb either, so it may not
-  come from SDL or ANGLE.
 - Building a package after a change of its C++ sources may reuse stale
   objects: delete the `lib*.a` / `lib*.sklib` of the changed packages and
   `target/.fingerprints` before rebuilding.

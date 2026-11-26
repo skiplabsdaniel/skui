@@ -131,11 +131,19 @@ Window::~Window() {
 void Window::createWindow() {
   int width = options.width;
   int height = options.height;
+  // Fitting the screen: the display bounds are in window coordinates, like
+  // the window size once scaled below, so they are converted to logical
+  // pixels first.
   if (width == 0 || height == 0) {
+    SDL_DisplayID display = SDL_GetPrimaryDisplay();
     SDL_Rect bounds;
-    if (SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &bounds)) {
-      width = std::min(bounds.w, 1920);
-      height = std::max(bounds.h - 100, 600);
+    if (SDL_GetDisplayUsableBounds(display, &bounds)) {
+      float displayScale = SDL_GetDisplayContentScale(display);
+      if (displayScale <= 0.0) {
+        displayScale = 1.0;
+      }
+      width = (int)(std::min(bounds.w, 1920) / displayScale);
+      height = (int)(std::max(bounds.h - 100, 600) / displayScale);
     } else {
       width = 1280;
       height = 800;
