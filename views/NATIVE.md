@@ -129,7 +129,7 @@ an ES profile, and `SDL_HINT_EGL_LIBRARY` / `SDL_HINT_OPENGL_LIBRARY` point
 it to ANGLE's `libEGL` and `libGLESv2`. Without the first hint, SDL may
 silently use the system driver instead of ANGLE.
 
-The table below uses SDL 3 names; see 3.3 for SDL 2.
+skui uses SDL 3 (see 3.3); the table below uses SDL 3 names.
 
 | skui need | Today (X11) | SDL |
 |---|---|---|
@@ -149,7 +149,9 @@ Text input is the main improvement: SDL uses the platform input methods
 (IBus/Fcitx on Linux, the macOS text input system, TSF on Windows), which
 gives accents, compose keys and Asian input methods everywhere.
 
-### 3.3 SDL 2 or SDL 3
+### 3.3 SDL 3, not SDL 2
+
+Decision: skui uses SDL 3 only. The comparison below is the reason.
 
 | | SDL 2 | SDL 3 |
 |---|---|---|
@@ -160,7 +162,7 @@ gives accents, compose keys and Asian input methods everywhere.
 | Wayland | supported, X11 preferred by default | preferred by default when available |
 | Text input | global `SDL_StartTextInput()` | per window, `SDL_StartTextInput(window)`, with IME candidate area |
 
-#### Supporting both
+#### Cost of supporting both
 
 The two APIs are close: SDL 3 mostly renames things. The scancode values are
 the same in both versions, and the keycodes of printable keys are their
@@ -185,12 +187,12 @@ the code but keeping both working: two builds to compile and test (two CI
 jobs), and the SDL 2 pixel ratio fallback, which is exactly the X11-specific
 code this design wants to remove.
 
-Recommendation: SDL 3 only. It is the version that solves the pixel ratio
-on every platform, and SDL 2 receives no new features. On Linux distributions
-without the package, SDL 3 is built from source once (CMake, a few minutes)
-or shipped with the application like ANGLE. Supporting SDL 2 can be added
-later behind the define if a target needs it; keeping the SDL calls behind
-the few wrappers above from the start makes that cheap.
+SDL 3 is the version that solves the pixel ratio on every platform, and
+SDL 2 receives no new features. On Linux distributions without the package,
+SDL 3 is built from source once (CMake, a few minutes) or shipped with the
+application like ANGLE. The SDL calls still go through the few wrappers
+above, so that SDL 2 support can be added later behind the define if a
+target needs it.
 
 ### 3.4 Package layout
 
@@ -242,7 +244,6 @@ Steps 1 and 2 can be done and tested entirely in a Linux container.
 
 ## 6. Open questions
 
-- SDL 3 only, or SDL 2 as well behind a define (see 3.3)?
 - ANGLE back end on Linux: OpenGL (works today) or Vulkan (needs a Vulkan
   driver, or lavapipe/SwiftShader in containers)?
 - ANGLE binaries: rely on a third-party prebuilt project, or build them in
