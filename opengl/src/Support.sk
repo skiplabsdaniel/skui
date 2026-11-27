@@ -390,10 +390,23 @@ class DrawableSupport(
     size: Geometry.Size,
     sigma: Float,
     paint: Ui.Paint,
+    radius: Float = 0.0,
+    shadowOffset: Geometry.Offset = Geometry.Offset::zero,
+    spread: Float = 0.0,
+    clip: Bool = false,
   ): Ui.Drawable {
     paint match {
     | color @ .Color _ ->
-      GLDrawable.BoxShadow::create{offset, size, sigma, color}
+      GLDrawable.BoxShadow::create{
+        offset,
+        size,
+        sigma,
+        color,
+        radius,
+        shadowOffset,
+        spread,
+        clip,
+      }
     | _ -> invariant_violation("Not implemented; only Color Fill managed")
     }
   }

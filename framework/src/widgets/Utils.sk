@@ -76,16 +76,20 @@ fun themeShadow(
   size: Geometry.Size,
   radius: Float,
 ): Array<Ui.Drawable> {
+  // The theme thickness is the blur radius (three standard deviations);
+  // the shadow is cast down, as by a light from above, and a little
+  // smaller than the element so that it does not show on top.
   color = context.getThemeColor(UiTheme.Shadow());
-  smooth = context.getThemeThickness(UiTheme.Shadow());
-  shift = (smooth * 3 / 4).toFloat();
+  blur = context.getThemeThickness(UiTheme.Shadow()).toFloat();
   Array[
-    support.roundedRectangle(
-      offset.translate(-shift, -shift),
-      size + Geometry.Size::square(2.0 * shift),
+    support.boxShadow(
+      offset,
+      size,
+      blur / 3.0,
       color,
-      radius + shift,
-      smooth.toFloat(),
+      radius,
+      Geometry.Offset(0.0, blur / 5.0),
+      -blur / 10.0,
     ),
   ]
 }

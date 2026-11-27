@@ -10,9 +10,15 @@ class ShadowData(scales: Array<Float>) extends SKStore.File {
   }
 }
 
+/**
+ * A shadow below the decorated widget, as CSS box-shadow: the widget's
+ * rectangle with rounded corners, moved by offset, grown by spread, blurred
+ * and drawn in the shadow color.
+ */
 class Shadow{
   /**
-   * The standard deviation of the Gaussian to convolve with the shadow's shape.
+   * The blur radius: the shadow fades out over about this distance (it is
+   * three times the standard deviation of the gaussian blur).
    */
   radius: Int = 0,
   /**
@@ -21,6 +27,22 @@ class Shadow{
   shadow: .Color = Colors.black(),
   padding: Geometry.InsetsGeometry = Geometry.Insets::all(0.0),
   optFill: ?Ui.Paint = None(),
+  /**
+   * The radius of the corners of the widget's rectangle.
+   */
+  optCornerRadius: ?Ui.Dim = None(),
+  /**
+   * The offset of the shadow, usually down to suggest a light from above.
+   */
+  offset: Geometry.Offset = Geometry.Offset::zero,
+  /**
+   * How much the shadow grows (or shrinks, if negative) on each side.
+   */
+  spread: Float = 0.0,
+  /**
+   * Hides the shadow below the widget, when its background is translucent.
+   */
+  clip: Bool = false,
 } extends Decoration {
   fun getPadding(direction: Ui.HorizontalDirection): Geometry.Insets {
     Geometry.resolveInsest(this.padding, direction);
@@ -34,12 +56,32 @@ class Shadow{
     _direction: Ui.HorizontalDirection,
     drawables: mutable Vector<Ui.Drawable>,
   ): void {
+    corner = this.optCornerRadius match {
+    | Some(r @ RelativeToSize _) -> r.pixels(size.width, size.height)
+    | Some(f @ FixedSize _) -> f.pixels()
+    | None() -> 0.0
+    };
     drawables.push(
-      support.boxShadow(offset, size, this.radius.toFloat() / 3.0, this.shadow),
+      support.boxShadow(
+        offset,
+        size,
+        this.radius.toFloat() / 3.0,
+        this.shadow,
+        corner,
+        this.offset,
+        this.spread,
+        this.clip,
+      ),
     );
     this.optFill.each(fill ->
       drawables.push(
-        support.boxShadow(offset, size, this.radius.toFloat() / 30.0, fill),
+        support.boxShadow(
+          offset,
+          size,
+          this.radius.toFloat() / 30.0,
+          fill,
+          corner,
+        ),
       )
     )
   }

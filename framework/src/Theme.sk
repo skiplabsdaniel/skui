@@ -181,7 +181,7 @@ class Default() extends Ui.Theme {
       if (opaque) .Color::fromARGBHex(0xffbdbdbd) else {
         Colors.black().withAlpha(0.2)
       }
-    | Shadow() -> .Color::gray(UInt8::truncate(178))
+    | Shadow() -> Colors.black().withAlpha(0.35)
     | Inactive() -> Colors.gray()
     | Border() -> Colors.lightgray()
     | Background(editable) ->
@@ -243,7 +243,7 @@ class Default() extends Ui.Theme {
     | IconIconGap() -> 4
     | MonospacePadding() -> 2
     | ScrollBar() -> 8
-    | Shadow() -> 20
+    | Shadow() -> 12
     }
   }
 

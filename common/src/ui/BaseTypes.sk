@@ -481,11 +481,22 @@ base class DrawableSupport {
     picture: Picture,
   ): Ui.Drawable;
 
+  /**
+   * The shadow of the rectangle at offset of the given size, with corners
+   * of the given radius, blurred with a gaussian of standard deviation
+   * sigma, moved by shadowOffset and grown by spread on each side (as CSS
+   * box-shadow). With clip, it is not drawn below the rectangle, for
+   * translucent elements.
+   */
   fun boxShadow(
     offset: Geometry.Offset,
     size: Geometry.Size,
     sigma: Float,
     paint: Ui.Paint,
+    radius: Float = 0.0,
+    shadowOffset: Geometry.Offset = Geometry.Offset::zero,
+    spread: Float = 0.0,
+    clip: Bool = false,
   ): Ui.Drawable;
 
   fun shape(path: Shape.Path, paint: Ui.Paint): Ui.Drawable;
@@ -775,6 +786,10 @@ class DummyDrawableSupport() extends DrawableSupport {
     _size: Geometry.Size,
     _sigma: Float,
     _paint: Ui.Paint,
+    _radius: Float = 0.0,
+    _shadowOffset: Geometry.Offset = Geometry.Offset::zero,
+    _spread: Float = 0.0,
+    _clip: Bool = false,
   ): Ui.Drawable {
     dummy()
   }
