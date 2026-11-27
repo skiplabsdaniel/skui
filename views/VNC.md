@@ -76,8 +76,15 @@ x11vnc -display :1 -forever -shared -nopw -rfbport 5900 &
 websockify --web /usr/share/novnc 6080 localhost:5900 &
 
 # Run a view, from the build directory of views.
-DISPLAY=:1 env -u LD_LIBRARY_PATH ./skuiviews buttons
+mkdir -p -m 700 /tmp/xdg
+XDG_RUNTIME_DIR=/tmp/xdg DISPLAY=:1 env -u LD_LIBRARY_PATH ./skuiviews buttons
 ```
+
+The VNC screen stays black until an application opens a window: Xvfb runs
+no desktop or window manager. SDL needs `XDG_RUNTIME_DIR`, a directory
+private to the user: without it, it prints `XDG_RUNTIME_DIR is invalid or not
+set in the environment`. The image of `docker/Dockerfile` already installs
+Xvfb, x11vnc and noVNC; in another container, install them as above.
 
 `skuiviews help` lists the views: `buttons`, `sliders`, `split`, `progress`,
 `tabpane`, `text`, `image`, `dropdown`.
