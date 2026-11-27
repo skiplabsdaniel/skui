@@ -44,29 +44,24 @@ ports:
 ### Container already running
 
 Docker cannot publish a port of a running container. Instead, run a small
-relay container on the same Docker network, which publishes the port and
-forwards it to the development container. On the host, find the name and
-network of the development container:
+relay container, which publishes the port and forwards it to the development
+container. Docker only resolves container names on user-defined networks, so
+put both containers on a dedicated network. On the host:
 
 ```bash
-docker ps
-docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{$v.IPAddress}}{{"\n"}}{{end}}' <container>
-```
-
-Then start the relay:
-
-```bash
-docker run -d --rm --name vnc-relay \
-  --network <network> \
+docker ps                                   # name of the development container
+docker network create vnc
+docker network connect vnc <container>      # no restart needed
+docker run -d --rm --name vnc-relay --network vnc \
   -p 127.0.0.1:5900:5900 \
   alpine/socat \
   tcp-listen:5900,fork,reuseaddr tcp-connect:<container>:5900
 ```
 
-On the default `bridge` network, container names are not resolved: use the
-IP address of the container instead of its name. For noVNC, start a second
-relay with port 6080. Stop the relay with `docker stop vnc-relay` (`--rm`
-removes it).
+`docker logs vnc-relay` shows the connection errors: `Name does not resolve`
+when the containers are not on the same network, `Connection refused` when
+x11vnc is not running. For noVNC, start a second relay with port 6080. Stop
+the relay with `docker stop vnc-relay` (`--rm` removes it).
 
 ## Start a session
 
@@ -94,8 +89,13 @@ drivers.
 ## Connect
 
 - Browser: http://localhost:6080/vnc.html
-- macOS VNC client: Finder, Go > Connect to Server, `vnc://localhost:5900`
+- macOS Screen Sharing: `open vnc://localhost:5900` in a terminal, or in the
+  menu bar of the Finder, the Go menu, then Connect to Server (Cmd+K). It
+  requires a password: see Password below.
 - Any other VNC client: `localhost:5900`
+
+To check the connection from the host, `nc localhost 5900 | head -c 12`
+prints `RFB 003.008` when x11vnc answers.
 
 ## Pixel ratio
 
@@ -113,7 +113,10 @@ The 1600x1000 virtual screen is then 800x500 logical pixels. Run
 
 ## Password
 
-To protect the session, create a password and use it instead of `-nopw`:
+To protect the session, or for the macOS Screen Sharing client, which does
+not connect without a password, create a password and use it instead of
+`-nopw` (VNC passwords are limited to 8 characters; leave the user name
+empty):
 
 ```bash
 x11vnc -storepasswd                       # writes ~/.vnc/passwd
