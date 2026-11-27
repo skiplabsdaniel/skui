@@ -77,6 +77,12 @@ mutable class TrueDistanceSelector(
   }
 }
 
+// The bound of the change of the distances to an edge since its cache was
+// computed, at cache.point.
+fun cacheDelta(cache: EdgeCache, p: Vector2): Float {
+  distanceDeltaFactor * (p - cache.point).length()
+}
+
 fun getPseudoDistance(
   distance: Float,
   ep: Vector2,
@@ -112,8 +118,9 @@ mutable base class PseudoDistanceSelectorBase(
     this.!nearEdgeParam = 0.0;
   }
 
-  readonly fun isEdgeRelevant(cache: EdgeCache, p: Vector2): Bool {
-    delta = distanceDeltaFactor * (p - cache.point).length();
+  // delta is the bound of the distance change since the cache was computed,
+  // see cacheDelta.
+  readonly fun isEdgeRelevant(cache: EdgeCache, delta: Float): Bool {
     (cache.absDistance - delta <= fabs(this.minTrueDistance.distance) ||
       fabs(cache.aDomainDistance) < delta ||
       fabs(cache.bDomainDistance) < delta ||
@@ -214,7 +221,7 @@ mutable class PseudoDistanceSelector(
     edge: EdgeSegment,
     nextEdge: EdgeSegment,
   ): EdgeCache {
-    if (this.isEdgeRelevant(cache, this.p)) {
+    if (this.isEdgeRelevant(cache, cacheDelta(cache, this.p))) {
       (param, distance) = edge.signedDistance(this.p);
       this.addEdgeTrueDistance(edge, distance, param);
       !cache.point = this.p;
@@ -273,10 +280,11 @@ mutable base class MultiDistanceSelectorBase(
     edge: EdgeSegment,
     nextEdge: EdgeSegment,
   ): EdgeCache {
+    delta = cacheDelta(cache, this.p);
     if (
-      (edge.hasRed() && this.r.isEdgeRelevant(cache, this.p)) ||
-      (edge.hasGreen() && this.g.isEdgeRelevant(cache, this.p)) ||
-      (edge.hasBlue() && this.b.isEdgeRelevant(cache, this.p))
+      (edge.hasRed() && this.r.isEdgeRelevant(cache, delta)) ||
+      (edge.hasGreen() && this.g.isEdgeRelevant(cache, delta)) ||
+      (edge.hasBlue() && this.b.isEdgeRelevant(cache, delta))
     ) {
       (param, distance) = edge.signedDistance(this.p);
       if (edge.hasRed()) {
