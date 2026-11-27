@@ -1,7 +1,7 @@
 # A new incremental UI framework: design proposal
 
 Status: proposal, nothing implemented yet. This document describes a new UI
-package, written next to `framework/` (working name `ui`), which replaces it
+package, written next to `framework/` (`rui/`, package `skui_rui`, module `RUi` for Reactive UI), which replaces it
 step by step. `framework/` keeps working until the new package covers its
 users (`engine`, `views`, `sdl`), and is then removed.
 
@@ -31,7 +31,7 @@ Decisions taken:
 
 | Subject | Decision |
 |---|---|
-| Location | A new package; `framework/` stays until the switch. |
+| Location | A new package (`rui/`, `skui_rui`, module `RUi`); `framework/` stays until the switch. |
 | Core model | Typed descriptions in Skip (the ideas of `engine`, natively typed). The JS API of `engine` becomes a thin serialization layer above. |
 | Events | An ordered input queue, pure reducers applied in one transaction at the platform entry, no side effects in the graph. |
 | Depth | A separate stacking computation, translated into the GL z at draw time. No Background/Main/Foreground layers. |
@@ -479,7 +479,7 @@ These rules apply to the new package from its first line.
    changes), never inside a map. A write inside a map is a bug, reported by an
    invariant, not postponed.
 4. **Names.** Directory names are built with `DirName.sub` from one root per
-   module: `/ui/<module>/<stage>/`, lowercase, `-` between words.
+   module: `/rui/<module>/<stage>/`, lowercase, `-` between words.
 5. **Keys.** `SKStore.IID`, `SKStore.SID`, `SKStore.UnitID` for single-value
    directories, `ElementId`, and domain keys only where needed. No `StrID`.
 6. **Properties.** `Prop<T>` with `get(context)`, `maybeGet(context)` and
@@ -487,7 +487,7 @@ These rules apply to the new package from its first line.
    no per-type modules. `Value<T>` for node fields.
 7. **Context.** Passed explicitly, always named `context`.
    `SKStore.getWorkingContext()` only at FFI entry points.
-8. **Globals.** Only for non-reactive configuration, one prefix (`Ui.`),
+8. **Globals.** Only for non-reactive configuration, one prefix (`RUi.`),
    never for handles or reactive data. The theme is a directory.
 9. **Handle variables** end with `Hdl` (`elementsHdl`, `layoutHdl`).
 10. **No `pre` directories.** No stage reads results of the previous update
@@ -512,7 +512,7 @@ These rules apply to the new package from its first line.
 Each step ends with tests (offscreen GL images for drawing, unit tests for
 reducers and layout) and is usable on its own.
 
-1. **Package and conventions.** `ui/` with its Skargo.toml, the reactive
+1. **Package and conventions.** `rui/` with its Skargo.toml (`skui_rui`, module `RUi`), the reactive
    helpers of section 11 (`Prop`, `Value`, directory naming), and their
    tests.
 2. **Renderer.** Drawables with element, clip id and z; the clip prelude in
@@ -538,8 +538,6 @@ reducers and layout) and is usable on its own.
 
 ## 14. Open questions
 
-- Package and module names (`ui` / `Ui` collides with the existing `Ui`
-  module of `common`).
 - Whether `common/` (geometry, drawables, `DrawableSupport`) is kept as is or
   partly moved into the new package.
 - Text editing: how much of `framework/src/widgets/control/monospace` can be
