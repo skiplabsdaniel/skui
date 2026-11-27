@@ -165,7 +165,8 @@ backgrounds and borders are drawn by skins; padding is a layout node.
 
 Layout keeps the constraint model of `framework` and `engine`, which is
 already clean (`framework/src/rendering/Constraints.sk`): constraints go
-down, sizes come up, parents place children.
+down, the sizes of the children come back up to their parent, and the parent
+places its children. All of it happens in one pass, from the root.
 
 ```skip
 base class Layout<N: Node> {
@@ -174,7 +175,7 @@ base class Layout<N: Node> {
     node: N,
     style: ResolvedStyle,
     constraints: BoxConstraints,
-    children: Children,      // child.measure(constraints) -> Size
+    children: Children,      // child.layout(constraints) -> size
   ): LayoutResult;           // size + child offsets (+ baseline)
 }
 ```
@@ -182,15 +183,62 @@ base class Layout<N: Node> {
 - A layout reads the node and its **resolved style** (section 6.2), never the
   theme: the minimum size of a button comes from its style, which comes from
   its skin.
-- Layout results are memoized per (element, constraints) in a lazy
-  directory, as today (`KConstraints`), but the directory is created once per
-  element type, not each time a widget value is rebuilt.
+- Layout results are memoized per (element, constraints) in a lazy directory, as
+  today (`KConstraints`), but the directory is created once per element
+  type, not each time a widget value is rebuilt.
 - Layout produces sizes and offsets relative to the parent. Absolute
-  positions, scroll offsets and clips are computed in a separate geometry
-  stage, so a scroll does not run any layout.
-- There are no separate layout roots and no constraint feedback from the
-  previous pass: overlays (menus, tooltips, dialogs) are laid out against the
-  window, from their anchor (section 8.2).
+  positions, scroll translations and clips are computed in a separate
+  geometry stage.
+- A layout never reads layout results of the previous pass. Today, viewports
+  get their constraints from the previous pass (`vpConstraintsPath`, read
+  through its `pre` copy, `framework/src/framework/Pipeline.sk:244-248`), and
+  `Monospace`, `Table` and `Tree` read their visible range from the previous
+  node infos (`FWKPipeline.gNodeInfo`): each of them needs one more pass to
+  settle. Here, everything a layout needs comes down in the same pass.
+- There are no separate layout roots: overlays (menus, tooltips, dialogs)
+  are laid out against the window, from their anchor (section 8.2).
+
+### 5.1 Visible area and virtualized content
+
+The content of a scroll area must know what is visible, so that long
+contents (lists, tables, trees, text editors) only build and lay out the
+visible part. Both parts of the visible area are known before the content is
+laid out:
+
+- the size of the `Scroll` element comes from the constraints of its parent,
+  computed on the way down;
+- the scroll offset is element state, changed by reducers (wheel, scroll
+  bar, keyboard), not a layout result.
+
+```
+Scroll.layout(constraints):
+  size    = constraints.biggest
+  visible = Rect(scrollOffset, size)           // known on the way down
+  content.layout(unbounded on the scroll axis) // ordinary content
+  // or, for a virtualized content:
+  lazyList.layout(width, visiblePages(visible))
+```
+
+Virtualization is a contract between a `Scroll` and its direct content, as
+Flutter's `ListView` is a scrollable with a list built for it. A virtualized
+list (`LazyList`, the base of tables, trees and text editors) gets an item
+count and a function from index to node instead of an array of children. Its
+layout takes the range of visible pages from its `Scroll`, expands and lays
+out only the items of those pages (plus a margin), and computes its total
+extent (for the scroll bar) from fixed, estimated or cached item sizes.
+
+Other layouts never get the visible area: it is not part of their
+constraints, so scrolling does not invalidate their memoized results.
+
+To keep scrolling cheap, the visible range is rounded to pages, as
+`Monospace` and `Table` already do: the layout of a list depends on the
+range of visible pages, not on the exact offset. Scrolling within a page
+only changes the translation applied at draw time; reaching a new page lays
+out the list again, where only the entering items are new (items are
+memoized by key).
+
+A scroll area whose size depends on its virtualized content would be a
+cycle: such a `Scroll` takes the size its parent gives it.
 
 ## 6. Skins and themes
 
