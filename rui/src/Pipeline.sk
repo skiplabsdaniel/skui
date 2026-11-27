@@ -3,14 +3,38 @@ module RUi;
 // Window size stored in an input directory.
 class WindowSizeFile(size: Geometry.Size) extends SKStore.File
 
-// Geometry of an element in window coordinates.
+// Geometry of an element in window coordinates, together with its resolved
+// clip (intersection of ancestor Clip/Scroll bounds, None when unclipped) and
+// optional scroll content size.
 class ElementGeometry(
   id: ElementId,
   offset: Geometry.Offset,
   size: Geometry.Size,
+  optClip: ?ClipShape = None(),
+  optContentSize: ?Geometry.Size = None(),
 ) extends SKStore.File {
   fun rect(): Geometry.Rect {
     Geometry.Rect::fromOffsetSize(this.offset, this.size)
+  }
+
+  // Whether `point` is both inside this element's rect and inside its active
+  // clip shape (exact rounded-corner test).
+  fun hitsPoint(point: Geometry.Offset): Bool {
+    if (!this.rect().contains(point)) return false;
+    this.optClip match {
+    | Some(clip) -> clip.contains(point)
+    | None() -> true
+    }
+  }
+
+  // Whether this element is at least partly visible inside its active clip.
+  fun isVisible(): Bool {
+    r = this.rect();
+    if (r.isEmpty()) return false;
+    this.optClip match {
+    | Some(clip) -> clip.overlaps(r)
+    | None() -> true
+    }
   }
 }
 
@@ -27,15 +51,17 @@ class ElementDepth(
 
 // Local-coordinate paint output of an element: an array of Drawables in
 // painter order (background -> content -> foreground, all local to this
-// element). Does not depend on depth or absolute offset.
+// element). Does not depend on depth, clip, or absolute offset.
 class ElementPaint(drawables: Array<Ui.Drawable>) extends SKStore.File
 
 // One entry of the final sorted draw list produced by the pipeline.
+// `optClip` is passed to the fragment shader (rounded rectangle clip).
 class DrawEntry(
   id: ElementId,
   offset: Geometry.Offset,
   depth: ElementDepth,
   drawable: Ui.Drawable,
+  optClip: ?ClipShape = None(),
 )
 
 // Helper for depth sorting: collects (layer, preOrder, id) entries.
@@ -52,33 +78,122 @@ private class DepthItem(
   }
 }
 
+// Computes the window-space offset of an Overlay's popup relative to its
+// anchor rect and window size.
+fun computeOverlayOffset(
+  placement: OverlayPlacement,
+  anchorRect: Geometry.Rect,
+  overlaySize: Geometry.Size,
+  windowSize: Geometry.Size,
+): Geometry.Offset {
+  placement match {
+  | BelowStart(gap) -> Geometry.Offset(anchorRect.left, anchorRect.bottom + gap)
+  | BelowEnd(gap) ->
+    Geometry.Offset(
+      anchorRect.right - overlaySize.width,
+      anchorRect.bottom + gap,
+    )
+  | AboveStart(gap) ->
+    Geometry.Offset(anchorRect.left, anchorRect.top - overlaySize.height - gap)
+  | WindowCentered() ->
+    Geometry.Offset(
+      (windowSize.width - overlaySize.width) * 0.5,
+      (windowSize.height - overlaySize.height) * 0.5,
+    )
+  | WindowOffset(off) -> off
+  }
+}
+
 // Walks the layout tree from ElementId::root to compute absolute window
-// geometry for every laid-out element.
+// geometry, scroll translations, active clip shapes, and overlay portals
+// (escaping ancestor clips).
 fun collectGeometry(
   context: mutable SKStore.Context,
+  elementsHdl: SKStore.EHandle<ElementId, Element>,
+  statesHdl: SKStore.EHandle<ElementId, ElementState>,
   layoutHdl: SKStore.LHandle<LayoutKey, LayoutResult>,
   writer: mutable SKStore.TWriter<ElementId, ElementGeometry>,
   id: ElementId,
   constraints: BoxConstraints,
+  optVisible: ?VisibleWindow,
   absOffset: Geometry.Offset,
+  optClip: ?ClipShape,
+  windowSize: Geometry.Size,
 ): void {
-  res = layoutHdl.get(context, LayoutKey(id, constraints));
-  writer.set(id, ElementGeometry(id, absOffset, res.size));
+  res = layoutHdl.get(context, LayoutKey(id, constraints, optVisible));
+  ownRect = Geometry.Rect::fromOffsetSize(absOffset, res.size);
+  writer.set(
+    id,
+    ElementGeometry(id, absOffset, res.size, optClip, res.optContentSize),
+  );
+  element = elementsHdl.get(context, id);
+  intersectClip = (radius: Float) -> {
+    ownClip = ClipShape(ownRect, radius);
+    optClip match {
+    | Some(parentClip) -> Some(parentClip.intersect(ownClip))
+    | None() -> Some(ownClip)
+    }
+  };
+  (childClip, childTranslate) = element.node match {
+  | Clip{radius} -> (intersectClip(radius.get(context)), Geometry.Offset::zero)
+  | Scroll{radius} ->
+    st = statesHdl.maybeGet(context, id).default(ScrollState());
+    scrollDelta = st match {
+    | ScrollState(ox, oy) -> Geometry.Offset(-ox, -oy)
+    | _ -> Geometry.Offset::zero
+    };
+    (intersectClip(radius.get(context)), scrollDelta)
+  | _ -> (optClip, Geometry.Offset::zero)
+  };
   for (placement in res.placements) {
     collectGeometry(
       context,
+      elementsHdl,
+      statesHdl,
       layoutHdl,
       writer,
       placement.id,
       placement.constraints,
-      absOffset + placement.offset,
+      placement.optVisible,
+      absOffset + placement.offset + childTranslate,
+      childClip,
+      windowSize,
     )
+  };
+  // Overlay portal child: laid out loose against the full window, positioned
+  // from the anchor rect, with NO inherited ancestor clip.
+  element.node match {
+  | Overlay{placement => overlayPlace} if (element.childIds.size() >= 2) ->
+    overlayId = element.childIds[1];
+    winConstraints = BoxConstraints::loose(windowSize);
+    ovRes = layoutHdl.get(context, LayoutKey(overlayId, winConstraints));
+    ovOffset = computeOverlayOffset(
+      overlayPlace.get(context),
+      ownRect,
+      ovRes.size,
+      windowSize,
+    );
+    collectGeometry(
+      context,
+      elementsHdl,
+      statesHdl,
+      layoutHdl,
+      writer,
+      overlayId,
+      winConstraints,
+      None(),
+      ovOffset,
+      None(),
+      windowSize,
+    )
+  | _ -> void
   }
 }
 
 // Walks the element tree in pre-order to collect (layer, preOrder, id) for
-// every element. `Layer` nodes switch the active stacking layer for their
-// subtree; changing a Layer's value only recomputes this depth stage.
+// every element. `Layer` switches the stacking layer for its subtree;
+// `Overlay` keeps its anchor on the inherited layer and puts its overlay child
+// on `Overlay.layer` (default OverlayLayer).
 fun collectDepthItems(
   context: mutable SKStore.Context,
   elementsHdl: SKStore.EHandle<ElementId, Element>,
@@ -95,8 +210,32 @@ fun collectDepthItems(
   order = counter.value;
   counter.!value = order + 1;
   out.push(DepthItem(layer, order, id));
-  for (cid in element.childIds) {
-    collectDepthItems(context, elementsHdl, cid, layer, counter, out)
+  element.node match {
+  | Overlay{layer => overlayLayer} ->
+    if (element.childIds.size() >= 1) {
+      collectDepthItems(
+        context,
+        elementsHdl,
+        element.childIds[0],
+        layer,
+        counter,
+        out,
+      )
+    };
+    if (element.childIds.size() >= 2) {
+      collectDepthItems(
+        context,
+        elementsHdl,
+        element.childIds[1],
+        overlayLayer.get(context),
+        counter,
+        out,
+      )
+    }
+  | _ ->
+    for (cid in element.childIds) {
+      collectDepthItems(context, elementsHdl, cid, layer, counter, out)
+    }
   }
 }
 
@@ -254,7 +393,9 @@ fun isStatePressed(state: ElementState): Bool {
   state match {
   | ButtonState(armed) -> armed
   | ToggleState(armed, _) -> armed
-  | EmptyState() -> false
+  | ScrollState _
+  | EmptyState() ->
+    false
   }
 }
 
@@ -276,7 +417,7 @@ fun findHoveredElement(
     elementsHdl.maybeGet(context, id).each(el -> {
       if (isInteractiveNode(el.node)) {
         geometryHdl.maybeGet(context, id).each(geom -> {
-          if (geom.rect().contains(pos)) {
+          if (geom.hitsPoint(pos)) {
             depthHdl.maybeGet(context, id).each(d -> {
               if (d.order > bestOrder) {
                 !bestOrder = d.order;
@@ -387,6 +528,8 @@ class Pipeline private (
     elementsHdl = buildElementTree(
       context,
       rootNodeHdl,
+      windowSizeHdl,
+      statesHdl,
       baseDir.sub("elements"),
     );
     elementThemesHdl = buildElementThemesDir(
@@ -405,6 +548,7 @@ class Pipeline private (
       context,
       elementsHdl,
       stylesHdl,
+      statesHdl,
       fonts,
       baseDir.sub("layout"),
     );
@@ -418,11 +562,16 @@ class Pipeline private (
         rootConstraints = BoxConstraints::tight(win.width, win.height);
         collectGeometry(
           context,
+          elementsHdl,
+          statesHdl,
           layoutHdl,
           writer,
           ElementId::root,
           rootConstraints,
+          None(),
           Geometry.Offset::zero,
+          None(),
+          win,
         )
       },
     );
@@ -599,8 +748,8 @@ class Pipeline private (
     this.hoveredHdl.unsafeGet(context, SKStore.UnitID::singleton).value
   }
 
-  // Hit tests the committed geometry and depth (outside the graph), returning
-  // the topmost element containing `pos` (deepest/frontmost by depth order).
+  // Hit tests the committed geometry (including active rounded clips) and
+  // depth outside the graph, returning the topmost element containing `pos`.
   fun hitTest(
     context: readonly SKStore.Context,
     pos: Geometry.Offset,
@@ -612,7 +761,7 @@ class Pipeline private (
       id = stack.pop();
       this.elementsHdl.unsafeMaybeGet(context, id).each(el -> {
         this.geometryHdl.unsafeMaybeGet(context, id).each(geom -> {
-          if (geom.rect().contains(pos)) {
+          if (geom.hitsPoint(pos)) {
             this.depthHdl.unsafeMaybeGet(context, id).each(d -> {
               if (d.order > bestOrder) {
                 !bestOrder = d.order;
@@ -789,6 +938,11 @@ class Pipeline private (
           | None() -> Array[]
           }
         }
+      | PointerWheel{position} ->
+        this.hitTest(context, position) match {
+        | Some(tid) -> this.routeToRoot(tid)
+        | None() -> Array[]
+        }
       | PointerLeave{} ->
         curPointer.optCaptured match {
         | Some(cap) -> Array[cap]
@@ -809,11 +963,11 @@ class Pipeline private (
         this.elementsHdl.unsafeMaybeGet(context, tid) match {
         | None() -> void
         | Some(el) ->
-          rect = this.geometryHdl.unsafeMaybeGet(context, tid)
-            .map(g -> g.rect())
-            .default(Geometry.Rect::zero());
+          optGeom = this.geometryHdl.unsafeMaybeGet(context, tid);
+          rect = optGeom.map(g -> g.rect()).default(Geometry.Rect::zero());
+          optContentSize = optGeom.flatMap(g -> g.optContentSize);
           st = readState(tid, el.node);
-          red = reduceElement(context, el, rect, st, event);
+          red = reduceElement(context, el, rect, optContentSize, st, event);
           if (red.state != st) {
             pendingStates.set(tid, red.state)
           };
@@ -881,10 +1035,16 @@ class Pipeline private (
       geom = this.geometryHdl.unsafeMaybeGet(context, depth.id);
       paint = this.paintHdl.unsafeMaybeGet(context, depth.id);
       (geom, paint) match {
-      | (Some(g), Some(p)) ->
+      | (Some(g), Some(p)) if (g.isVisible()) ->
         for (d in p.drawables) {
           result.push(
-            DrawEntry(depth.id, g.offset, depth, d.translate(g.offset)),
+            DrawEntry(
+              depth.id,
+              g.offset,
+              depth,
+              d.translate(g.offset),
+              g.optClip,
+            ),
           )
         }
       | _ -> void

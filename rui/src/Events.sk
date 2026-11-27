@@ -73,6 +73,12 @@ base class Event{timeMs: Int = 0} {
     button: PointerButton = PointerPrimary(),
     modifiers: Modifiers = Modifiers{},
   }
+  | PointerWheel{
+    position: Geometry.Offset,
+    deltaX: Float = 0.0,
+    deltaY: Float = 0.0,
+    modifiers: Modifiers = Modifiers{},
+  }
   | KeyDown{
     key: KeyCode,
     modifiers: Modifiers = Modifiers{},
@@ -97,6 +103,7 @@ base class ElementState extends SKStore.File uses Equality {
   | EmptyState()
   | ButtonState(armed: Bool = false)
   | ToggleState(armed: Bool = false, checked: Bool = false)
+  | ScrollState(offsetX: Float = 0.0, offsetY: Float = 0.0)
 
   static fun stateType(obj: SKStore.File): ElementState {
     obj match {

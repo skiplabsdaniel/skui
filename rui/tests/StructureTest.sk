@@ -1,0 +1,399 @@
+module alias T = SKTest;
+
+module SKUIRUiTest;
+
+@test
+fun clipRoundedPropagatesToDrawListAndClipsHitTest(): void {
+  context = SKStore.Context::create{}.mclone();
+  root = RUi.Align{
+    alignment => RUi.Const(RUi.Alignment::topLeft),
+    child => RUi.Const(
+      RUi.Constrained{
+        key => Some("box"),
+        constraints => RUi.Const(RUi.BoxConstraints::tight(100.0, 100.0)),
+        child => RUi.Const(
+          RUi.Clip{
+            key => Some("clip"),
+            radius => RUi.Const(30.0),
+            child => RUi.Const(
+              RUi.Button{key => Some("btn"), text => RUi.Const("Big")},
+            ),
+          },
+        ),
+      },
+    ),
+  };
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(200.0, 200.0),
+    MockSupport(),
+    "clip-rounded",
+  );
+  context.update();
+
+  btnId = RUi.ElementId::root.childNamed("box")
+    .childNamed("clip")
+    .childNamed("btn");
+
+  // DrawEntry for the button carries the ClipShape(0,0,100,100, radius=30).
+  list = pipe.drawList(context);
+  T.expectEq(list.size() > 0, true, "has button drawables");
+  clip = list[0].optClip.fromSome();
+  expectRect(clip.rect, 0.0, 0.0, 100.0, 100.0, "clip rect");
+  T.expectEq(clip.radius, 30.0, "clip radius");
+
+  // Center (50, 50) hits the button; top-left corner (2, 2) is cut by the
+  // 30px corner radius so it does NOT hit the button.
+  T.expectEq(
+    pipe.hitTest(context, Geometry.Offset(50.0, 50.0)),
+    Some(btnId),
+    "center hits button",
+  );
+  T.expectEq(
+    pipe.hitTest(context, Geometry.Offset(2.0, 2.0)) == Some(btnId),
+    false,
+    "cut rounded corner does not hit button",
+  );
+
+  // Derived hover also respects the rounded clip.
+  _ = pipe.dispatch(
+    context,
+    RUi.PointerMove{position => Geometry.Offset(2.0, 2.0)},
+  );
+  T.expectEq(pipe.hovered(context), None(), "corner not hovered");
+  _ = pipe.dispatch(
+    context,
+    RUi.PointerMove{position => Geometry.Offset(50.0, 50.0)},
+  );
+  T.expectEq(pipe.hovered(context), Some(btnId), "center hovered");
+}
+
+@test
+fun scrollTranslatesClipsCullsWithoutRepaintingChildren(): void {
+  context = SKStore.Context::create{}.mclone();
+  // 5 items of height 40 = 200px tall content inside a 100x80 Scroll viewport.
+  items = Array[
+    box(100.0, 40.0, Colors.red(), Some("i0")),
+    box(100.0, 40.0, Colors.green(), Some("i1")),
+    box(100.0, 40.0, Colors.blue(), Some("i2")),
+    box(100.0, 40.0, Colors.yellow(), Some("i3")),
+    box(100.0, 40.0, Colors.black(), Some("i4")),
+  ];
+  root = RUi.Align{
+    alignment => RUi.Const(RUi.Alignment::topLeft),
+    child => RUi.Const(
+      RUi.Constrained{
+        key => Some("frame"),
+        constraints => RUi.Const(RUi.BoxConstraints::tight(100.0, 80.0)),
+        child => RUi.Const(
+          RUi.Scroll{
+            key => Some("scroll"),
+            axis => RUi.Const(Ui.VerticalAxis()),
+            child => RUi.Const(
+              RUi.Flex{
+                key => Some("col"),
+                direction => RUi.Const(Ui.VerticalAxis()),
+                mainAxisSize => RUi.Const(RUi.MainMin()),
+                items => RUi.Const(RUi.NodeList::fromArray(items)),
+              },
+            ),
+          },
+        ),
+      },
+    ),
+  };
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(200.0, 200.0),
+    MockSupport(),
+    "scroll-cull",
+  );
+  paintTickHdl = pipe.paintHdl.map(
+    RUi.ElementId::keyType,
+    SKStore.IntFile::type,
+    context,
+    RUi.stageDir("scroll-cull", "paint-tick"),
+    (context, writer, key, _values) ~> {
+      writer.set(key, SKStore.IntFile(context.getTick().value))
+    },
+  );
+  context.update();
+
+  colId = RUi.ElementId::root.childNamed("frame")
+    .childNamed("scroll")
+    .childNamed("col");
+  i0 = colId.childNamed("i0");
+  i1 = colId.childNamed("i1");
+  i2 = colId.childNamed("i2");
+  i3 = colId.childNamed("i3");
+
+  // Initially scroll=0 -> viewport [0, 80) shows only i0 [0, 40) and i1 [40, 80);
+  // i2, i3, i4 are culled from drawList.
+  list0 = pipe.drawList(context);
+  T.expectEq(list0.size(), 2, "only 2 items visible at scroll 0");
+  T.expectEq(list0[0].id, i0, "i0 visible");
+  T.expectEq(list0[1].id, i1, "i1 visible");
+  p1Before = paintTickHdl.unsafeGet(context, i1).value;
+  p2Before = paintTickHdl.unsafeGet(context, i2).value;
+
+  // Scroll down by 60px via wheel inside the scroll viewport.
+  // Viewport [0, 80) now sees i1 [-20, 20), i2 [20, 60), i3 [60, 100); i0 is culled.
+  _ = pipe.dispatch(
+    context,
+    RUi.PointerWheel{position => Geometry.Offset(50.0, 40.0), deltaY => 60.0},
+  );
+  list1 = pipe.drawList(context);
+  T.expectEq(list1.size(), 3, "3 items visible at scroll 60");
+  T.expectEq(list1[0].id, i1, "i1 at top");
+  T.expectEq(list1[1].id, i2, "i2 middle");
+  T.expectEq(list1[2].id, i3, "i3 bottom");
+  expectRect(
+    pipe.geometryHdl.unsafeGet(context, i2).rect(),
+    0.0,
+    20.0,
+    100.0,
+    40.0,
+    "i2 translated by -60",
+  );
+
+  // Scrolling did not repaint any child!
+  T.expectEq(
+    paintTickHdl.unsafeGet(context, i1).value,
+    p1Before,
+    "i1 paint untouched on scroll",
+  );
+  T.expectEq(
+    paintTickHdl.unsafeGet(context, i2).value,
+    p2Before,
+    "i2 paint untouched on scroll",
+  );
+
+  // Scrolling past max (200 - 80 = 120) clamps at 120.
+  _ = pipe.dispatch(
+    context,
+    RUi.PointerWheel{position => Geometry.Offset(50.0, 40.0), deltaY => 500.0},
+  );
+  scrollId = RUi.ElementId::root.childNamed("frame").childNamed("scroll");
+  T.expectEq(
+    pipe.statesHdl.unsafeGet(context, scrollId),
+    RUi.ScrollState(0.0, 120.0),
+    "scroll clamped to maxOffset",
+  );
+}
+
+@test
+fun lazyListVirtualizesByPagesInOnePass(): void {
+  context = SKStore.Context::create{}.mclone();
+  // 1000 items of height 20px = 20,000px total inside a 200x100 window
+  // with pageSize 100px: only items near the visible pages are built.
+  root = RUi.Scroll{
+    key => Some("scroll"),
+    axis => RUi.Const(Ui.VerticalAxis()),
+    pageSize => RUi.Const(100.0),
+    child => RUi.Const(
+      RUi.LazyList{
+        key => Some("list"),
+        itemCount => RUi.Const(1000),
+        itemExtent => RUi.Const(20.0),
+        itemBuilder => (_ctx, i) ~>
+          box(200.0, 20.0, Colors.blue(), Some(`row-${i}`)),
+      },
+    ),
+  };
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(200.0, 100.0),
+    MockSupport(),
+    "lazy-list",
+  );
+  context.update();
+
+  listId = RUi.ElementId::root.childNamed("list");
+  listEl0 = pipe.elementsHdl.unsafeGet(context, listId);
+  // Total content height is 1000 * 20 = 20000, while materialized children << 1000.
+  T.expectEq(
+    pipe.geometryHdl.unsafeGet(context, listId).size.height,
+    20000.0,
+    "total virtual height",
+  );
+  T.expectEq(
+    listEl0.childIds.size() < 30,
+    true,
+    "only visible pages materialized at scroll 0",
+  );
+  // Culling keeps only the 5 items actually intersecting [0, 100).
+  T.expectEq(
+    pipe.drawList(context).size(),
+    5,
+    "5 items drawn in 100px viewport",
+  );
+
+  // Scroll within page 0 (0 -> 20px): materialized page window stays the same,
+  // and row-2 is translated without repainting.
+  row2 = listId.childNamed("row-2");
+  paintTickHdl = pipe.paintHdl.map(
+    RUi.ElementId::keyType,
+    SKStore.IntFile::type,
+    context,
+    RUi.stageDir("lazy-list", "paint-tick"),
+    (context, writer, key, _values) ~> {
+      writer.set(key, SKStore.IntFile(context.getTick().value))
+    },
+  );
+  context.update();
+  p2Before = paintTickHdl.unsafeGet(context, row2).value;
+
+  _ = pipe.dispatch(
+    context,
+    RUi.PointerWheel{position => Geometry.Offset(50.0, 50.0), deltaY => 20.0},
+  );
+  listElSmall = pipe.elementsHdl.unsafeGet(context, listId);
+  T.expectEq(
+    listElSmall.childIds,
+    listEl0.childIds,
+    "same page range on small scroll",
+  );
+  T.expectEq(
+    paintTickHdl.unsafeGet(context, row2).value,
+    p2Before,
+    "row-2 paint untouched within same page",
+  );
+
+  // Jump far down (scroll to y = 5000 -> row-250..row-254 visible): built in
+  // the same update without any pre directory.
+  _ = pipe.dispatch(
+    context,
+    RUi.PointerWheel{position => Geometry.Offset(50.0, 50.0), deltaY => 4980.0},
+  );
+  listElFar = pipe.elementsHdl.unsafeGet(context, listId);
+  T.expectEq(listElFar.childIds.size() < 30, true, "still bounded after jump");
+  drawnFar = pipe.drawList(context);
+  T.expectEq(drawnFar.size(), 5, "5 items drawn at scroll 5000");
+  T.expectEq(drawnFar[0].id, listId.childNamed("row-250"), "row-250 at top");
+  expectRect(
+    pipe.geometryHdl.unsafeGet(context, listId.childNamed("row-250")).rect(),
+    0.0,
+    0.0,
+    200.0,
+    20.0,
+    "row-250 aligned to viewport top",
+  );
+}
+
+@test
+fun overlayEscapesAncestorClipAndDrawsAbove(): void {
+  context = SKStore.Context::create{}.mclone();
+  openProp = RUi.Prop::create(context, "menu-open", true);
+  clicks = RUi.Prop::create(context, "menu-clicks", 0);
+
+  // Put the Overlay inside a tight 60x40 Clip at (10, 10). Its dropdown
+  // menu (120x80) placed BelowStart(gap=4) extends well outside the 60x40
+  // clip, yet must be unclipped, drawn on OverlayLayer above a later sibling,
+  // and clickable outside the clip.
+  root = RUi.Stack{
+    items => RUi.Const(
+      RUi.NodeList::fromArray(
+        Array[
+          RUi.Padding{
+            key => Some("pad"),
+            insets => RUi.Const(
+              Geometry.Insets::only{left => 10.0, top => 10.0},
+            ),
+            child => RUi.Const(
+              RUi.Constrained{
+                key => Some("box"),
+                constraints => RUi.Const(RUi.BoxConstraints::tight(60.0, 40.0)),
+                child => RUi.Const(
+                  RUi.Clip{
+                    key => Some("clip"),
+                    child => RUi.Const(
+                      RUi.Overlay{
+                        key => Some("ov"),
+                        visible => RUi.Bound(openProp),
+                        placement => RUi.Const(RUi.BelowStart(4.0)),
+                        layer => RUi.Const(RUi.OverlayLayer()),
+                        anchor => RUi.Const(
+                          box(60.0, 40.0, Colors.blue(), Some("anchor-box")),
+                        ),
+                        overlay => RUi.Const(
+                          RUi.Constrained{
+                            constraints => RUi.Const(
+                              RUi.BoxConstraints::tight(120.0, 80.0),
+                            ),
+                            child => RUi.Const(
+                              RUi.Button{
+                                key => Some("menu-btn"),
+                                text => RUi.Const("Item"),
+                                onPress => Some(ctx ~> {
+                                  clicks.set(ctx, clicks.unsafeGet(ctx) + 1);
+                                  ctx.update()
+                                }),
+                              },
+                            ),
+                          },
+                        ),
+                      },
+                    ),
+                  },
+                ),
+              },
+            ),
+          },
+          // Later sibling on BaseLayer covering the whole window: must draw
+          // BEHIND the OverlayLayer popup.
+          box(300.0, 300.0, Colors.white(), Some("backdrop")),
+        ],
+      ),
+    ),
+  };
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(300.0, 300.0),
+    MockSupport(),
+    "overlay-escape",
+  );
+  context.update();
+
+  ovId = RUi.ElementId::root.childNamed("pad")
+    .childNamed("box")
+    .childNamed("clip")
+    .childNamed("ov");
+  menuBtnId = ovId.childNamed("overlay").childNamed("menu-btn");
+  backdropId = RUi.ElementId::root.childNamed("backdrop");
+
+  // Menu is placed below anchor (10, 10 + 40 + 4 = 54) with size 120x80 and NO clip.
+  menuGeom = pipe.geometryHdl.unsafeGet(context, menuBtnId);
+  expectRect(menuGeom.rect(), 10.0, 54.0, 120.0, 80.0, "overlay below anchor");
+  T.expectEq(menuGeom.optClip.isNone(), true, "overlay escapes ancestor clip");
+
+  // Overlay draws above the later BaseLayer sibling.
+  dMenu = pipe.depthHdl.unsafeGet(context, menuBtnId);
+  dBack = pipe.depthHdl.unsafeGet(context, backdropId);
+  T.expectEq(dMenu.layer, RUi.OverlayLayer(), "overlay on OverlayLayer");
+  T.expectEq(dMenu.order > dBack.order, true, "overlay draws above backdrop");
+
+  // Click on the menu outside the 60x40 clip (e.g. at (100, 100)) hits menu-btn!
+  _ = pipe.dispatchBatch(
+    context,
+    Array[
+      RUi.PointerDown{position => Geometry.Offset(100.0, 100.0)},
+      RUi.PointerUp{position => Geometry.Offset(100.0, 100.0)},
+    ],
+  );
+  T.expectEq(clicks.unsafeGet(context), 1, "overlay clickable outside clip");
+
+  // Closing the overlay removes its element from the tree.
+  openProp.set(context, false);
+  context.update();
+  T.expectEq(
+    pipe.elementsHdl.unsafeMaybeGet(context, menuBtnId).isNone(),
+    true,
+    "closed overlay removed",
+  );
+}
+
+module end;

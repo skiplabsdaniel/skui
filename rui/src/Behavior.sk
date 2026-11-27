@@ -16,6 +16,7 @@ fun defaultElementState(
   node match {
   | Button _ -> ButtonState(false)
   | Toggle{checked} -> ToggleState(false, checked.unsafeGet(context))
+  | Scroll _ -> ScrollState(0.0, 0.0)
   | _ -> EmptyState()
   }
 }
@@ -24,13 +25,47 @@ fun reduceElement(
   context: readonly SKStore.Context,
   element: Element,
   rect: Geometry.Rect,
+  optContentSize: ?Geometry.Size,
   state: ElementState,
   event: Event,
 ): Reduced {
   element.node match {
   | btn @ Button _ -> reduceButton(context, element.id, btn, rect, state, event)
   | tgl @ Toggle _ -> reduceToggle(context, element.id, tgl, rect, state, event)
+  | scr @ Scroll _ ->
+    reduceScroll(context, scr, rect, optContentSize, state, event)
   | _ -> Reduced::ignored(state)
+  }
+}
+
+private fun reduceScroll(
+  context: readonly SKStore.Context,
+  scr: Scroll,
+  rect: Geometry.Rect,
+  optContentSize: ?Geometry.Size,
+  rawState: ElementState,
+  event: Event,
+): Reduced {
+  st = rawState match {
+  | s @ ScrollState _ -> s
+  | _ -> ScrollState(0.0, 0.0)
+  };
+  event match {
+  | PointerWheel{deltaX, deltaY} ->
+    axis = scr.axis.unsafeGet(context);
+    contentSize = optContentSize.default(
+      Geometry.Size(rect.width(), rect.height()),
+    );
+    maxX = Math.max(0.0, contentSize.width - rect.width());
+    maxY = Math.max(0.0, contentSize.height - rect.height());
+    (nextX, nextY) = axis match {
+    | Ui.VerticalAxis() -> (0.0, Math.clamp(st.offsetY + deltaY, 0.0, maxY))
+    | Ui.HorizontalAxis() ->
+      delta = if (deltaX != 0.0) deltaX else deltaY;
+      (Math.clamp(st.offsetX + delta, 0.0, maxX), 0.0)
+    };
+    Reduced(ScrollState(nextX, nextY), true)
+  | _ -> Reduced::ignored(st)
   }
 }
 

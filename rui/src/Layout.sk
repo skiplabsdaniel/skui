@@ -1,12 +1,12 @@
 module RUi;
 
 // Placement of a single child relative to its parent's origin, together with
-// the constraints used to lay it out (so the geometry stage can look up the
-// memoized layout result of that child).
+// the constraints (and optional visible window) used to lay it out.
 class ChildPlacement(
   id: ElementId,
   offset: Geometry.Offset,
   constraints: BoxConstraints,
+  optVisible: ?VisibleWindow = None(),
 ) uses Hashable, Equality
 
 // Result of laying out an element under given BoxConstraints.
@@ -14,15 +14,21 @@ class LayoutResult(
   size: Geometry.Size,
   placements: Array<ChildPlacement> = Array[],
   optBaseline: ?Float = None(),
+  optContentSize: ?Geometry.Size = None(),
 ) extends SKStore.File
 
-// Key for the memoized layout directory: (element id, constraints).
+// Key for the memoized layout directory: (element id, constraints, optional
+// page-aligned visible window for LazyList).
 class LayoutKey(
   id: ElementId,
   constraints: BoxConstraints,
+  optVisible: ?VisibleWindow = None(),
 ) extends SKStore.Key uses Hashable {
   fun toString(): String {
-    `${this.id}@${this.constraints}`
+    this.optVisible match {
+    | Some(v) -> `${this.id}@${this.constraints}#${v}`
+    | None() -> `${this.id}@${this.constraints}`
+    }
   }
 }
 
@@ -32,14 +38,17 @@ class Layouter(
   elementsHdl: SKStore.EHandle<ElementId, Element>,
   layoutHdl: SKStore.LHandle<LayoutKey, LayoutResult>,
   stylesHdl: SKStore.EHandle<ElementId, ResolvedStyle>,
+  statesHdl: SKStore.EHandle<ElementId, ElementState>,
   fonts: FontStore,
 ) {
   fun measure(
     context: mutable SKStore.Context,
     childId: ElementId,
     constraints: BoxConstraints,
+    optVisible: ?VisibleWindow = None(),
   ): Geometry.Size {
-    this.layoutHdl.get(context, LayoutKey(childId, constraints)).size
+    this.layoutHdl.get(context, LayoutKey(childId, constraints, optVisible))
+      .size
   }
 
   fun parentData(
@@ -52,6 +61,14 @@ class Layouter(
   fun style(context: mutable SKStore.Context, id: ElementId): ResolvedStyle {
     this.stylesHdl.maybeGet(context, id).default(ResolvedStyle::empty)
   }
+
+  fun element(context: mutable SKStore.Context, id: ElementId): Element {
+    this.elementsHdl.get(context, id)
+  }
+
+  fun state(context: mutable SKStore.Context, id: ElementId): ElementState {
+    this.statesHdl.maybeGet(context, id).default(EmptyState())
+  }
 }
 
 // Creates the shared lazy layout directory memoized by (ElementId, constraints).
@@ -59,6 +76,7 @@ fun buildLayoutDir(
   context: mutable SKStore.Context,
   elementsHdl: SKStore.EHandle<ElementId, Element>,
   stylesHdl: SKStore.EHandle<ElementId, ResolvedStyle>,
+  statesHdl: SKStore.EHandle<ElementId, ElementState>,
   fonts: FontStore,
   dirName: SKStore.DirName,
 ): SKStore.LHandle<LayoutKey, LayoutResult> {
@@ -69,8 +87,8 @@ fun buildLayoutDir(
     dirName,
     (context, self, key) ~> {
       element = elementsHdl.get(context, key.id);
-      layouter = Layouter(elementsHdl, self, stylesHdl, fonts);
-      computeLayout(context, element, key.constraints, layouter)
+      layouter = Layouter(elementsHdl, self, stylesHdl, statesHdl, fonts);
+      computeLayout(context, element, key.constraints, key.optVisible, layouter)
     },
   )
 }
@@ -79,6 +97,7 @@ fun computeLayout(
   context: mutable SKStore.Context,
   element: Element,
   constraints: BoxConstraints,
+  optVisible: ?VisibleWindow,
   layouter: Layouter,
 ): LayoutResult {
   element.node match {
@@ -91,8 +110,14 @@ fun computeLayout(
     layoutConstrained(context, node, element, constraints, layouter)
   | Layer _
   | ThemeScope _
-  | Semantics _ ->
+  | Semantics _
+  | Clip _ ->
     layoutPassthrough(context, element, constraints, layouter)
+  | node @ Scroll _ ->
+    layoutScroll(context, node, element, constraints, layouter)
+  | node @ LazyList _ ->
+    layoutLazyList(context, node, element, constraints, optVisible, layouter)
+  | Overlay _ -> layoutOverlay(context, element, constraints, layouter)
   | node @ Shape _ -> layoutShape(context, node, constraints)
   | node @ Text _ -> layoutText(context, node, element, constraints, layouter)
   | Icon _ -> layoutIcon(context, element, constraints, layouter)
@@ -585,6 +610,165 @@ fun layoutStack(
   };
 
   LayoutResult(containerSize, placements.toArray())
+}
+
+// Scroll layout (DESIGN.md section 5.1):
+// - Takes the bounded size given by its parent (biggest finite extent).
+// - Gives its child unbounded constraints along the scroll axis so the
+//   content takes its natural extent.
+// - When the direct child is a `LazyList`, passes the page-aligned
+//   `VisibleWindow` down in the same pass.
+// - Does NOT apply `-scrollOffset` to the placement here: the geometry stage
+//   applies the scroll translation so scrolling within a page does not
+//   invalidate layout of the child.
+fun layoutScroll(
+  context: mutable SKStore.Context,
+  node: Scroll,
+  element: Element,
+  constraints: BoxConstraints,
+  layouter: Layouter,
+): LayoutResult {
+  if (element.childIds.isEmpty()) {
+    return LayoutResult(constraints.smallest())
+  };
+  axis = node.axis.get(context);
+  childId = element.childIds[0];
+  childEl = layouter.element(context, childId);
+  isLazy = childEl.node is LazyList _;
+
+  // Determine the scroll viewport size first when possible.
+  vpWidth = if (constraints.hasBoundedWidth()) constraints.maxWidth else {
+    constraints.minWidth
+  };
+  vpHeight = if (constraints.hasBoundedHeight()) constraints.maxHeight else {
+    constraints.minHeight
+  };
+  childConstraints = axis match {
+  | Ui.VerticalAxis() ->
+    BoxConstraints(constraints.minWidth, constraints.maxWidth, 0.0, Float::inf)
+  | Ui.HorizontalAxis() ->
+    BoxConstraints(
+      0.0,
+      Float::inf,
+      constraints.minHeight,
+      constraints.maxHeight,
+    )
+  };
+  optVisible: ?VisibleWindow = if (isLazy) {
+    st = layouter.state(context, element.id);
+    scrollOff = st match {
+    | ScrollState(ox, oy) -> if (axis is Ui.HorizontalAxis _) ox else oy
+    | _ -> 0.0
+    };
+    vpExtent = if (axis is Ui.HorizontalAxis _) vpWidth else vpHeight;
+    Some(
+      VisibleWindow::forScroll(scrollOff, vpExtent, node.pageSize.get(context)),
+    )
+  } else {
+    None()
+  };
+
+  contentSize = layouter.measure(
+    context,
+    childId,
+    childConstraints,
+    optVisible,
+  );
+  finalW = if (constraints.hasBoundedWidth()) vpWidth else {
+    constraints.constrainWidth(contentSize.width)
+  };
+  finalH = if (constraints.hasBoundedHeight()) vpHeight else {
+    constraints.constrainHeight(contentSize.height)
+  };
+  viewportSize = constraints.constrain(Geometry.Size(finalW, finalH));
+  LayoutResult(
+    viewportSize,
+    Array[
+      ChildPlacement(
+        childId,
+        Geometry.Offset::zero,
+        childConstraints,
+        optVisible,
+      ),
+    ],
+    None(),
+    Some(contentSize),
+  )
+}
+
+// Page-virtualized list layout (DESIGN.md section 5.1):
+// - Computes total main-axis extent from `itemCount`, `itemExtent`, and `gap`.
+// - Only lays out the materialized items in `element.childIds` (which match
+//   the page-aligned `optVisible` range) and places each item at its logical
+//   position `index * (itemExtent + gap)`.
+fun layoutLazyList(
+  context: mutable SKStore.Context,
+  node: LazyList,
+  element: Element,
+  constraints: BoxConstraints,
+  optVisible: ?VisibleWindow,
+  layouter: Layouter,
+): LayoutResult {
+  axis = node.axis.get(context);
+  count = Math.max(0, node.itemCount.get(context));
+  extent = Math.max(0.0, node.itemExtent.get(context));
+  gap = Math.max(0.0, node.gap.get(context));
+  totalMain = if (count == 0) {
+    0.0
+  } else {
+    count.toFloat() * extent + (count - 1).toFloat() * gap
+  };
+  isHoriz = axis is Ui.HorizontalAxis _;
+  maxCross = if (isHoriz) constraints.maxHeight else constraints.maxWidth;
+  minCross = if (isHoriz) constraints.minHeight else constraints.minWidth;
+
+  (startIdx, _endIdx) = optVisible match {
+  | Some(vis) -> lazyItemRange(count, extent, gap, vis)
+  | None() -> (0, count)
+  };
+
+  itemConstraints = if (isHoriz) {
+    BoxConstraints(extent, extent, 0.0, maxCross)
+  } else {
+    BoxConstraints(0.0, maxCross, extent, extent)
+  };
+
+  placements = mutable Vector<ChildPlacement>[];
+  crossExtent = minCross;
+  stride = extent + gap;
+  for (i in Range(0, element.childIds.size())) {
+    cid = element.childIds[i];
+    logicalIdx = startIdx + i;
+    sz = layouter.measure(context, cid, itemConstraints);
+    !crossExtent = Math.max(crossExtent, axis.cross(sz));
+    posMain = logicalIdx.toFloat() * stride;
+    placements.push(
+      ChildPlacement(cid, axis.offset(posMain, 0.0), itemConstraints),
+    )
+  };
+  actualCross = Math.clamp(crossExtent, minCross, maxCross);
+  size = constraints.constrain(axis.size(totalMain, actualCross));
+  LayoutResult(size, placements.toArray())
+}
+
+// Overlay layout: sizes itself strictly to its anchor child. The overlay
+// child (when visible) is laid out against the window in the geometry stage,
+// escaping ancestor constraints and clips.
+fun layoutOverlay(
+  context: mutable SKStore.Context,
+  element: Element,
+  constraints: BoxConstraints,
+  layouter: Layouter,
+): LayoutResult {
+  if (element.childIds.isEmpty()) {
+    return LayoutResult(constraints.smallest())
+  };
+  anchorId = element.childIds[0];
+  size = layouter.measure(context, anchorId, constraints);
+  LayoutResult(
+    constraints.constrain(size),
+    Array[ChildPlacement(anchorId, Geometry.Offset::zero, constraints)],
+  )
 }
 
 module end;

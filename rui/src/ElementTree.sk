@@ -5,10 +5,9 @@ module RUi;
 // child ids.
 //
 // For dynamic/reorderable lists (`KeyedNodes`), each child's ElementId uses
-// the list's stable `NamedKey(key)`. When the list is reordered, the child
-// ElementIds and their own Element records stay identical (SKStore preserves
-// unchanged outputs per key), so styles, memoized layouts, and paint of the
-// children are not invalidated.
+// the list's stable `NamedKey(key)`. For virtualized `LazyList` inside a
+// `Scroll`, only the items intersecting the page-aligned visible window are
+// expanded (using `IndexKey(i)` or the built node's explicit `key`).
 class Element(
   id: ElementId,
   parent: ?ElementId,
@@ -30,10 +29,12 @@ fun childKeyFor(node: Node, index: Int): ChildKey {
 }
 
 // Extracts the direct keyed child nodes of a concrete (non-Component) node.
-// Returns (ChildKey, Node) pairs in display order.
+// `optVisible` is provided when this element is the direct child of a `Scroll`,
+// so `LazyList` expands only items in the page-aligned visible window.
 fun nodeKeyedChildren(
   context: mutable SKStore.Context,
   node: Node,
+  optVisible: ?VisibleWindow,
 ): Array<(ChildKey, Node)> {
   expandList = (nl: NodeList) ->
     nl match {
@@ -71,6 +72,33 @@ fun nodeKeyedChildren(
   | Semantics{child} ->
     c = child.get(context);
     Array[(childKeyFor(c, 0), c)]
+  | Clip{child} ->
+    c = child.get(context);
+    Array[(childKeyFor(c, 0), c)]
+  | Scroll{child} ->
+    c = child.get(context);
+    Array[(childKeyFor(c, 0), c)]
+  | Overlay{anchor, overlay, visible} ->
+    a = anchor.get(context);
+    if (visible.get(context)) {
+      o = overlay.get(context);
+      Array[(NamedKey("anchor"), a), (NamedKey("overlay"), o)]
+    } else {
+      Array[(NamedKey("anchor"), a)]
+    }
+  | LazyList{itemCount, itemExtent, gap, itemBuilder} ->
+    count = Math.max(0, itemCount.get(context));
+    (start, end) = optVisible match {
+    | Some(vis) ->
+      lazyItemRange(count, itemExtent.get(context), gap.get(context), vis)
+    | None() -> (0, count)
+    };
+    out = mutable Vector<(ChildKey, Node)>[];
+    for (i in Range(start, end)) {
+      child = itemBuilder(context, i);
+      out.push((childKeyFor(child, i), child))
+    };
+    out.toArray()
   | Shape _
   | Text _
   | Icon _
@@ -86,15 +114,20 @@ fun nodeKeyedChildren(
 }
 
 // Expands a Node recursively into an SKStore writer keyed by ElementId.
-// Component nodes are expanded on the fly; because render reads its Props
-// through context, SKStore tracks those reads automatically.
+// When expanding a `Scroll` node, computes its page-aligned visible window
+// from its current scroll state and the window size so a direct `LazyList`
+// child only materializes visible pages (scrolling within a page does not
+// re-expand items).
 fun expandElement(
   context: mutable SKStore.Context,
   writer: mutable SKStore.TWriter<ElementId, Element>,
+  statesHdl: SKStore.EHandle<ElementId, ElementState>,
+  windowSize: Geometry.Size,
   id: ElementId,
   parent: ?ElementId,
   rawNode: Node,
   inheritedParentData: ?ParentData = None(),
+  optVisible: ?VisibleWindow = None(),
 ): void {
   // Unwrap nested Component nodes, preserving outermost parentData if any.
   node = rawNode;
@@ -109,7 +142,23 @@ fun expandElement(
       !parentData = node.parentData
     }
   };
-  keyedChildren = nodeKeyedChildren(context, node);
+  // Compute page-aligned visible window for a Scroll's direct child (used by
+  // LazyList). Rounded to pages via VisibleWindow::forScroll so scrolling
+  // within a page preserves the same window.
+  childVisible: ?VisibleWindow = node match {
+  | Scroll{axis, pageSize} ->
+    ax = axis.get(context);
+    st = statesHdl.maybeGet(context, id).default(ScrollState());
+    scrollOff = st match {
+    | ScrollState(ox, oy) -> if (ax is Ui.HorizontalAxis _) ox else oy
+    | _ -> 0.0
+    };
+    vpExtent = ax.main(windowSize);
+    Some(VisibleWindow::forScroll(scrollOff, vpExtent, pageSize.get(context)))
+  | _ -> None()
+  };
+
+  keyedChildren = nodeKeyedChildren(context, node, optVisible);
   seenKeys = mutable Set<ChildKey>[];
   childIds = mutable Vector<ElementId>[];
   for (pair in keyedChildren) {
@@ -124,10 +173,13 @@ fun expandElement(
     expandElement(
       context,
       writer,
+      statesHdl,
+      windowSize,
       cid,
       Some(id),
       childNode,
       childNode.parentData,
+      childVisible,
     )
   };
   writer.set(id, Element(id, parent, node, parentData, childIds.toArray()))
@@ -137,6 +189,8 @@ fun expandElement(
 fun buildElementTree(
   context: mutable SKStore.Context,
   rootNodeHdl: SKStore.EHandle<SKStore.UnitID, NodeFile>,
+  windowSizeHdl: SKStore.EHandle<SKStore.UnitID, WindowSizeFile>,
+  statesHdl: SKStore.EHandle<ElementId, ElementState>,
   dirName: SKStore.DirName,
 ): SKStore.EHandle<ElementId, Element> {
   rootNodeHdl.map(
@@ -145,7 +199,16 @@ fun buildElementTree(
     context,
     dirName,
     (context, writer, _key, values) ~> {
-      expandElement(context, writer, ElementId::root, None(), values.first.node)
+      winSize = windowSizeHdl.get(context, SKStore.UnitID::singleton).size;
+      expandElement(
+        context,
+        writer,
+        statesHdl,
+        winSize,
+        ElementId::root,
+        None(),
+        values.first.node,
+      )
     },
   )
 }

@@ -259,7 +259,11 @@ fun nodeSkinKey(context: mutable SKStore.Context, node: Node): ?SkinKey {
   | Constrained _
   | Layer _
   | ThemeScope _
-  | Semantics _ ->
+  | Semantics _
+  | Clip _
+  | Scroll _
+  | LazyList _
+  | Overlay _ ->
     None()
   | Component _ ->
     invariant_violation("RUi: Component must be expanded before nodeSkinKey")

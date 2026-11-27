@@ -133,6 +133,58 @@ class Semantics{
   child: Value<Node>,
 } extends Node
 
+// Clips its descendants to its own bounds with optional corner radius.
+// Applied in fragment shaders (no GL viewport) and used for culling and
+// hit testing.
+class Clip{radius: Value<Float> = Const(0.0), child: Value<Node>} extends Node
+
+// Scrollable container (DESIGN.md section 5.1 & 8.2).
+// - Clips its content to its own bounds (with optional corner radius).
+// - Translates content by `-scrollOffset` at geometry/draw time.
+// - When its direct child is a `LazyList`, passes the visible page range
+//   down in the same layout pass (no pre directories).
+class Scroll{
+  axis: Value<Ui.Axis> = Const(Ui.VerticalAxis()),
+  radius: Value<Float> = Const(0.0),
+  pageSize: Value<Float> = Const(256.0),
+  child: Value<Node>,
+} extends Node
+
+// Virtualized list for long contents (tables, trees, editors).
+// Only builds and lays out the items intersecting the visible page range
+// provided by its enclosing `Scroll` (plus a 1-page margin).
+// Outside a `Scroll`, all items in [0, itemCount) are laid out.
+class LazyList{
+  axis: Value<Ui.Axis> = Const(Ui.VerticalAxis()),
+  itemCount: Value<Int>,
+  itemExtent: Value<Float>,
+  gap: Value<Float> = Const(0.0),
+  itemBuilder: (mutable SKStore.Context, Int) ~> Node,
+} extends Node
+
+// Anchored overlay placement relative to its anchor element's window rect.
+base class OverlayPlacement uses Hashable, Equality {
+  children =
+  | BelowStart(gap: Float = 0.0)
+  | BelowEnd(gap: Float = 0.0)
+  | AboveStart(gap: Float = 0.0)
+  | WindowCentered()
+  | WindowOffset(offset: Geometry.Offset)
+}
+
+// Portal / overlay node (menus, tooltips, dialogs).
+// - `anchor` is laid out normally in place inside the parent tree.
+// - When `visible` is true, `overlay` is laid out against the window, placed
+//   relative to `anchor` (or the window), rendered on `layer` (default
+//   OverlayLayer), and escapes all ancestor clips.
+class Overlay{
+  anchor: Value<Node>,
+  overlay: Value<Node>,
+  visible: Value<Bool> = Const(true),
+  placement: Value<OverlayPlacement> = Const(BelowStart()),
+  layer: Value<StackingLayer> = Const(OverlayLayer()),
+} extends Node
+
 // Control nodes: semantic descriptions only (look comes from Skins, behavior
 // comes from pure reducers in Behavior.sk).
 

@@ -1,0 +1,87 @@
+module RUi;
+
+// Clip shape in window coordinates (DESIGN.md section 8.2).
+// Applied by fragment shaders (rounded rectangle SDF) and used for culling
+// and hit testing instead of GL viewports.
+class ClipShape(rect: Geometry.Rect, radius: Float = 0.0) extends SKStore.File {
+  // Intersects two clip shapes. When both have rounded corners, the resulting
+  // bounding rect is the intersection and the effective radius is capped to
+  // half the smallest dimension.
+  fun intersect(other: ClipShape): ClipShape {
+    r = this.rect.intersect(other.rect);
+    if (r.isEmpty()) {
+      ClipShape(Geometry.Rect::zero(), 0.0)
+    } else {
+      maxR = Math.min(r.width(), r.height()) * 0.5;
+      rad = Math.min(Math.max(this.radius, other.radius), maxR);
+      ClipShape(r, rad)
+    }
+  }
+
+  // Exact point-in-rounded-rect test (matches shader SDF clip).
+  fun contains(point: Geometry.Offset): Bool {
+    if (!this.rect.contains(point)) return false;
+    if (this.radius <= 0.0) return true;
+    r = Math.min(
+      this.radius,
+      Math.min(this.rect.width(), this.rect.height()) * 0.5,
+    );
+    cx = (this.rect.left + this.rect.right) * 0.5;
+    cy = (this.rect.top + this.rect.bottom) * 0.5;
+    hx = this.rect.width() * 0.5 - r;
+    hy = this.rect.height() * 0.5 - r;
+    qx = Math.max(Math.abs(point.dx - cx) - hx, 0.0);
+    qy = Math.max(Math.abs(point.dy - cy) - hy, 0.0);
+    qx * qx + qy * qy <= r * r
+  }
+
+  fun overlaps(other: Geometry.Rect): Bool {
+    !this.rect.intersect(other).isEmpty()
+  }
+}
+
+// Page-aligned visible range passed from a Scroll to a direct LazyList child.
+// Rounded to pages so scrolling within a page does not invalidate item layout.
+value class VisibleWindow(
+  startPx: Float,
+  endPx: Float,
+) uses Hashable, Orderable, Show {
+  static fun forScroll(
+    scrollOffset: Float,
+    viewportExtent: Float,
+    pageSize: Float,
+  ): VisibleWindow {
+    p = Math.max(1.0, pageSize);
+    firstPage = Math.max(0, Math.floor(scrollOffset / p).toInt() - 1);
+    lastPage = Math.max(
+      firstPage,
+      Math.floor((scrollOffset + viewportExtent) / p).toInt() + 1,
+    );
+    VisibleWindow(firstPage.toFloat() * p, (lastPage + 1).toFloat() * p)
+  }
+
+  fun toString(): String {
+    `VisibleWindow(${this.startPx}..${this.endPx})`
+  }
+}
+
+// Computes the half-open index range [start, end) of items in a LazyList
+// that intersect `visible`.
+fun lazyItemRange(
+  itemCount: Int,
+  itemExtent: Float,
+  gap: Float,
+  visible: VisibleWindow,
+): (Int, Int) {
+  if (itemCount <= 0) return (0, 0);
+  stride = Math.max(1.0, itemExtent + Math.max(0.0, gap));
+  start = Math.clamp(
+    Math.floor(visible.startPx / stride).toInt(),
+    0,
+    itemCount,
+  );
+  end = Math.clamp(Math.ceil(visible.endPx / stride).toInt(), start, itemCount);
+  (start, end)
+}
+
+module end;
