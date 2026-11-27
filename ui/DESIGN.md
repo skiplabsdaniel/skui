@@ -490,6 +490,12 @@ These rules apply to the new package from its first line.
 8. **Globals.** Only for non-reactive configuration, one prefix (`Ui.`),
    never for handles or reactive data. The theme is a directory.
 9. **Handle variables** end with `Hdl` (`elementsHdl`, `layoutHdl`).
+10. **No `pre` directories.** No stage reads results of the previous update
+    (`EHandle.pre`, `context.pre`, `makePreDir`): what a stage needs comes
+    from the current update, and what must outlive an update is element
+    state written by reducers. Once `framework/` is removed, nothing in skui
+    uses `pre` any more, and SKStore can stop copying every changed
+    directory into `X/pre` at each update (`EagerDir.updatePre`).
 
 ## 12. Engine and JavaScript
 
