@@ -1,0 +1,203 @@
+module SKUIMTSDFBench;
+
+// MSDF generation benchmark: generates the MSDF of every printable ASCII
+// glyph of a font, as the framework does (see toMSDF), and reports the time
+// spent. The font is parsed and the glyph shapes are built once, outside of
+// the measures. Build it with `skargo b -r` to measure optimized code; the
+// binary can be run under `perf record`. The memory allocated for each
+// glyph is released after it, as the framework does when a computation ends.
+
+const fonts: Array<(String, () ~> Array<UInt8>)> = Array[
+  ("liberation", SKIP_SKUIFontTestsRes.liberationBin),
+  ("luxisr", SKIP_SKUIFontTestsRes.luxisrBin),
+  ("luximr", SKIP_SKUIFontTestsRes.luximrBin),
+  ("luxirr", SKIP_SKUIFontTestsRes.luxirrBin),
+];
+
+const phaseNames: Array<String> = Array[
+  "prepare",
+  "generate",
+  "sign",
+  "errors",
+  "image",
+];
+
+fun main(): void {
+  args = Cli.Command("skuimtsdfbench")
+    .about("MSDF generation benchmark")
+    .arg(
+      Cli.Arg::string("font")
+        .long("font")
+        .default("liberation")
+        .about(`Font: ${fonts.map(f -> f.i0).join(", ")}`),
+    )
+    .arg(
+      Cli.Arg::int("size")
+        .long("size")
+        .default(45)
+        .about("Glyph size in pixels (the framework uses 45)"),
+    )
+    .arg(
+      Cli.Arg::int("range")
+        .long("range")
+        .default(8)
+        .about("Distance range in pixels (the framework uses at least 8)"),
+    )
+    .arg(
+      Cli.Arg::int("iterations")
+        .long("iterations")
+        .default(20)
+        .about("Number of times all the glyphs are generated"),
+    )
+    .arg(
+      Cli.Arg::bool("msdf")
+        .long("msdf")
+        .about("Generate MSDFs without the true distance in alpha"),
+    )
+    .arg(
+      Cli.Arg::bool("phases")
+        .long("phases")
+        .about("Time each phase of the generation"),
+    )
+    .help()
+    .parseArgs();
+  fontName = args.getString("font");
+  bytes = fonts.find(f -> f.i0 == fontName) match {
+  | Some((_, f)) -> f()
+  | None() ->
+    print_error(`Unknown font ${fontName}`);
+    skipExit(1)
+  };
+  size = args.getInt("size");
+  range = args.getInt("range");
+  iterations = args.getInt("iterations");
+  trueDistance = !args.getBool("msdf");
+  face = TrueType.Face::make(
+    TrueType.parse(bytes),
+    Font.Options{size => size.toFloat(), dpi => 72.0},
+  );
+  shapes = Range(33, 127).map(code -> face.getGlyph(Char::fromCode(code)))
+    .filterNone()
+    .map(glyph ->
+      glyph.optPath.map(path ->
+        MTSDF.Shape::fromPath(path.translate(glyph.topLeft()))
+      )
+    )
+    .filterNone()
+    .collect(Array);
+  print_string(
+    `${fontName}: ${shapes.size()} glyphs at ${size}px, range ${range}, ${if (
+      trueDistance
+    ) "MTSDF" else {
+      "MSDF"
+    }}, ${iterations} iterations`,
+  );
+  if (args.getBool("phases")) {
+    phases(shapes, range, iterations, trueDistance)
+  } else {
+    total(shapes, range, iterations, trueDistance)
+  }
+}
+
+fun report(label: String, ns: Int, glyphs: Int, texels: Int): void {
+  print_string(
+    `${label}: ${ns / 1000000} ms, ${ns / 1000 / glyphs} us/glyph, ${ns /
+      texels} ns/texel`,
+  );
+}
+
+// The time of toMSDF, the function used by the framework.
+fun total(
+  shapes: Array<MTSDF.Shape>,
+  range: Int,
+  iterations: Int,
+  trueDistance: Bool,
+): void {
+  texels = 0;
+  start = Time.time_ns();
+  for (_ in Range(0, iterations)) {
+    for (shape in shapes) {
+      obstack = SKStore.newSkuiObstack();
+      (image, _) = MTSDF.toMSDF{shape, pxRange => range, trueDistance};
+      !texels = texels + image.width * image.height;
+      SKStore.destroySkuiObstack(obstack)
+    }
+  };
+  report("total", Time.time_ns() - start, iterations * shapes.size(), texels);
+}
+
+// The time of each phase of toMSDF, which this function reproduces.
+fun phases(
+  shapes: Array<MTSDF.Shape>,
+  range: Int,
+  iterations: Int,
+  trueDistance: Bool,
+): void {
+  times = Array::mfill(phaseNames.size(), 0);
+  texels = 0;
+  for (_ in Range(0, iterations)) {
+    for (s in shapes) {
+      obstack = SKStore.newSkuiObstack();
+      t0 = Time.time_ns();
+      shape = MTSDF.edgeColoringSimple(
+        s.normalize(),
+        MTSDF.defaultAngleThreshold.toFloat(),
+        0,
+      );
+      (translate, _, width, height) = MTSDF.check(shape, range);
+      projection = MTSDF.Projection(MTSDF.Vector2(1.0, 1.0), translate);
+      distanceRange = MTSDF.Px(range.toFloat()).range(projection.scale);
+      sdf = MTSDF.BitmapRef::make(
+        if (trueDistance) 4 else 3,
+        width,
+        height,
+        0.0,
+      );
+      t1 = Time.time_ns();
+      MTSDF.generateDistanceField(
+        sdf,
+        shape,
+        projection,
+        distanceRange,
+        if (trueDistance) MTSDF.MultiAndTrue() else MTSDF.Multi(),
+        true,
+      );
+      t2 = Time.time_ns();
+      MTSDF.multiDistanceSignCorrection(
+        sdf,
+        shape,
+        projection,
+        MTSDF.NonZero(),
+      );
+      t3 = Time.time_ns();
+      MTSDF.msdfErrorCorrection(
+        sdf,
+        shape,
+        projection,
+        distanceRange,
+        MTSDF.Configuration{}.doNotCheckDistance(),
+      );
+      t4 = Time.time_ns();
+      _ = sdf.toImage(false);
+      t5 = Time.time_ns();
+      !texels = texels + width * height;
+      deltas = Array[t1 - t0, t2 - t1, t3 - t2, t4 - t3, t5 - t4];
+      for (i in Range(0, deltas.size())) {
+        times.set(i, times[i] + deltas[i])
+      };
+      SKStore.destroySkuiObstack(obstack)
+    }
+  };
+  all = times.reduce((a, b) -> a + b, 0);
+  glyphs = iterations * shapes.size();
+  for (i in Range(0, phaseNames.size())) {
+    print_string(
+      `${phaseNames[i]}: ${times[i] / 1000000} ms (${times[i] *
+        100 /
+        all}%), ${times[i] / 1000 / glyphs} us/glyph`,
+    )
+  };
+  report("total", all, glyphs, texels);
+}
+
+module end;

@@ -1,0 +1,13 @@
+[package]
+name = "skui_mtsdf_bench"
+version = "0.1.0"
+
+[dependencies]
+skui_mtsdf = { path = ".." }
+skui_font = { path = "../../font" }
+skui_font_tests = { path = "../../font/dev" }
+cli = { path = "../../skip/skiplang/cli" }
+
+[[bin]]
+name = "skuimtsdfbench"
+main = "SKUIMTSDFBench.main"
