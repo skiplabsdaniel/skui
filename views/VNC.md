@@ -41,6 +41,33 @@ ports:
   - "127.0.0.1:6080:6080"
 ```
 
+### Container already running
+
+Docker cannot publish a port of a running container. Instead, run a small
+relay container on the same Docker network, which publishes the port and
+forwards it to the development container. On the host, find the name and
+network of the development container:
+
+```bash
+docker ps
+docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{$v.IPAddress}}{{"\n"}}{{end}}' <container>
+```
+
+Then start the relay:
+
+```bash
+docker run -d --rm --name vnc-relay \
+  --network <network> \
+  -p 127.0.0.1:5900:5900 \
+  alpine/socat \
+  tcp-listen:5900,fork,reuseaddr tcp-connect:<container>:5900
+```
+
+On the default `bridge` network, container names are not resolved: use the
+IP address of the container instead of its name. For noVNC, start a second
+relay with port 6080. Stop the relay with `docker stop vnc-relay` (`--rm`
+removes it).
+
 ## Start a session
 
 ```bash
