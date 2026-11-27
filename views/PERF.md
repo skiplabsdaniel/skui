@@ -23,7 +23,7 @@ Then start the perf container in the background:
 ```bash
 docker run -d --rm --name perf --privileged \
   --pid=container:<container> \
-  -v /home/daniel/workspace:/home/daniel/workspace \
+  --volumes-from <container> \
   ubuntu:24.04 sleep infinity
 ```
 
@@ -31,8 +31,11 @@ docker run -d --rm --name perf --privileged \
   development container.
 - `--privileged` lifts the seccomp restriction. It only applies to the perf
   container.
-- Mounting the workspace at the same path helps `perf` find the binaries and
-  their symbols if it cannot read them through `/proc/<pid>/root`.
+- `--volumes-from <container>` mounts the volumes of the development
+  container at the same paths (`/home/daniel` is the named volume
+  `skip-home`, not a host directory: `-v /home/daniel/...` would mount an
+  empty directory). It helps `perf` find the binaries and their symbols if
+  it cannot read them through `/proc/<pid>/root`.
 
 ## Install perf, as root
 
