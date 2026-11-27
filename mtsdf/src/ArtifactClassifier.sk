@@ -61,13 +61,9 @@ mutable class ShapeDistanceClassifier(
         oldMSD = this.checker.sdf.interpolate(sdfCoord);
         // Compute the color that would be interpolated at the artifact candidate's position if error correction was applied on the current texel.
         aWeight = (1.0 - fabs(tVector.x)) * (1.0 - fabs(tVector.y));
-        aPSD = fmedian(
-          this.checker.msd(0),
-          this.checker.msd(1),
-          this.checker.msd(2),
-        );
+        aPSD = this.checker.msd.median();
         newMSD = Array::fillBy(3, idx ->
-          oldMSD[idx] + aWeight * (aPSD - this.checker.msd(idx))
+          oldMSD[idx] + aWeight * (aPSD - this.checker.msd.channel(idx))
         );
         // Compute the evaluated distance (interpolated median) before and after error correction, as well as the exact shape distance.
         oldPSD = fmedian(oldMSD[0], oldMSD[1], oldMSD[2]);
@@ -92,7 +88,7 @@ mutable class ShapeDistanceChecker(
   minImproveRatio: Float,
   distanceFinder: mutable ShapeDistanceFinder,
   texelSize: Vector2,
-  mutable msd: Int -> Float = _v -> 0.0,
+  mutable msd: MSD = MSD(0.0, 0.0, 0.0),
   mutable protectedFlag: Bool = false,
   mutable shapeCoord: Vector2 = Vector2(0.0, 0.0),
   mutable sdfCoord: Vector2 = Vector2(0.0, 0.0),
@@ -183,13 +179,33 @@ mutable class ShapeDistanceFinder private (
   }
 }
 
+// The three channels of a texel of a multi-channel distance field. A value
+// class: reading texels does not allocate.
+value class MSD(r: Float, g: Float, b: Float) {
+  static fun at(sdf: readonly BitmapRef<Float>, x: Int, y: Int): MSD {
+    MSD(sdf.elem(x, y, 0), sdf.elem(x, y, 1), sdf.elem(x, y, 2))
+  }
+
+  fun channel(i: Int): Float {
+    i match {
+    | 0 -> this.r
+    | 1 -> this.g
+    | _ -> this.b
+    }
+  }
+
+  fun median(): Float {
+    fmedian(this.r, this.g, this.b)
+  }
+}
+
 fun hasLinearArtifact(
   classifier: mutable ArtifactClassifier,
   am: Float,
-  a: Int -> Float,
-  b: Int -> Float,
+  a: MSD,
+  b: MSD,
 ): Bool {
-  bm = fmedian(b(0), b(1), b(2));
+  bm = b.median();
   (fabs(am - 0.5) >= fabs(bm - 0.5) && // Out of the pair, only report artifacts for the texel further from the edge to minimize side effects.
     (hasLinearArtifactInner( // Check points where each pair of color channels meets.
       classifier,
@@ -197,47 +213,31 @@ fun hasLinearArtifact(
       bm,
       a,
       b,
-      a(1) - a(0),
-      b(1) - b(0),
+      a.g - a.r,
+      b.g - b.r,
     ) ||
-      hasLinearArtifactInner(
-        classifier,
-        am,
-        bm,
-        a,
-        b,
-        a(2) - a(1),
-        b(2) - b(1),
-      ) ||
-      hasLinearArtifactInner(
-        classifier,
-        am,
-        bm,
-        a,
-        b,
-        a(0) - a(2),
-        b(0) - b(2),
-      )));
+      hasLinearArtifactInner(classifier, am, bm, a, b, a.b - a.g, b.b - b.g) ||
+      hasLinearArtifactInner(classifier, am, bm, a, b, a.r - a.b, b.r - b.b)));
 }
 
 fun hasDiagonalArtifact(
   classifier: mutable ArtifactClassifier,
   am: Float,
-  a: Int -> Float,
-  b: Int -> Float,
-  c: Int -> Float,
-  d: Int -> Float,
+  a: MSD,
+  b: MSD,
+  c: MSD,
+  d: MSD,
 ): Bool {
-  dm = fmedian(d(0), d(1), d(2));
+  dm = d.median();
   // Out of the pair, only report artifacts for the texel further from the edge to minimize side effects.
   if (fabs(am - 0.5) >= fabs(dm - 0.5)) {
-    abc = Array[a(0) - b(0) - c(0), a(1) - b(1) - c(1), a(2) - b(2) - c(2)];
+    abc = MSD(a.r - b.r - c.r, a.g - b.g - c.g, a.b - b.b - c.b);
     // Compute the linear terms for bilinear interpolation.
-    l = Array[-a(0) - abc[0], -a(1) - abc[1], -a(2) - abc[2]];
+    l = MSD(-a.r - abc.r, -a.g - abc.g, -a.b - abc.b);
     // Compute the quadratic terms for bilinear interpolation.
-    q = Array[d(0) + abc[0], d(1) + abc[1], d(2) + abc[2]];
+    q = MSD(d.r + abc.r, d.g + abc.g, d.b + abc.b);
     // Compute interpolation ratios tEx (0 < tEx[i] < 1) for the local extremes of each color channel (the derivative 2*q[i]*tEx[i]+l[i] == 0).
-    tEx = Array[-0.5 * l[0] / q[0], -0.5 * l[1] / q[1], -0.5 * l[2] / q[2]];
+    tEx = MSD(-0.5 * l.r / q.r, -0.5 * l.g / q.g, -0.5 * l.b / q.b);
     // Check points where each pair of color channels meets.
     hasDiagonalArtifactInner(
       classifier,
@@ -246,11 +246,11 @@ fun hasDiagonalArtifact(
       a,
       l,
       q,
-      a(1) - a(0),
-      b(1) - b(0) + c(1) - c(0),
-      d(1) - d(0),
-      tEx[0],
-      tEx[1],
+      a.g - a.r,
+      b.g - b.r + c.g - c.r,
+      d.g - d.r,
+      tEx.r,
+      tEx.g,
     ) ||
       hasDiagonalArtifactInner(
         classifier,
@@ -259,11 +259,11 @@ fun hasDiagonalArtifact(
         a,
         l,
         q,
-        a(2) - a(1),
-        b(2) - b(1) + c(2) - c(1),
-        d(2) - d(1),
-        tEx[1],
-        tEx[2],
+        a.b - a.g,
+        b.b - b.g + c.b - c.g,
+        d.b - d.g,
+        tEx.g,
+        tEx.b,
       ) ||
       hasDiagonalArtifactInner(
         classifier,
@@ -272,11 +272,11 @@ fun hasDiagonalArtifact(
         a,
         l,
         q,
-        a(0) - a(2),
-        b(0) - b(2) + c(0) - c(2),
-        d(0) - d(2),
-        tEx[2],
-        tEx[0],
+        a.r - a.b,
+        b.r - b.b + c.r - c.b,
+        d.r - d.b,
+        tEx.b,
+        tEx.r,
       )
   } else {
     false
@@ -287,8 +287,8 @@ fun hasLinearArtifactInner(
   classifier: mutable ArtifactClassifier,
   am: Float,
   bm: Float,
-  a: Int -> Float,
-  b: Int -> Float,
+  a: MSD,
+  b: MSD,
   dA: Float,
   dB: Float,
 ): Bool {
@@ -296,23 +296,18 @@ fun hasLinearArtifactInner(
   t = dA / (dA - dB);
   if (t > artifactTEpsilon && t < 1.0 - artifactTEpsilon) {
     // Interpolate median at t and let the classifier decide if its value indicates an artifact.
-    xm = fmedian(fmix(a(0), b(0), t), fmix(a(1), b(1), t), fmix(a(2), b(2), t));
+    xm = fmedian(fmix(a.r, b.r, t), fmix(a.g, b.g, t), fmix(a.b, b.b, t));
     classifier.evaluate(t, xm, classifier.rangeTest(0.0, 1.0, t, am, bm, xm));
   } else {
     false
   }
 }
 
-fun interpolatedMedian(
-  a: Int -> Float,
-  l: Array<Float>,
-  q: Array<Float>,
-  t: Float,
-): Float {
+fun interpolatedMedian(a: MSD, l: MSD, q: MSD, t: Float): Float {
   fmedian(
-    t * (t * q[0] + l[0]) + a(0),
-    t * (t * q[1] + l[1]) + a(1),
-    t * (t * q[2] + l[2]) + a(2),
+    t * (t * q.r + l.r) + a.r,
+    t * (t * q.g + l.g) + a.g,
+    t * (t * q.b + l.b) + a.b,
   )
 }
 
@@ -320,52 +315,114 @@ fun hasDiagonalArtifactInner(
   classifier: mutable ArtifactClassifier,
   am: Float,
   dm: Float,
-  a: Int -> Float,
-  l: Array<Float>,
-  q: Array<Float>,
+  a: MSD,
+  l: MSD,
+  q: MSD,
   dA: Float,
   dBC: Float,
   dD: Float,
   tEx0: Float,
   tEx1: Float,
 ): Bool {
-  // Find interpolation ratios t (0 < t[i] < 1) where two color channels are equal.
-  solutions = solveQuadratic(dD - dBC + dA, dBC - dA - dA, dA);
-  for (solution in solutions) {
-    if (solution > artifactTEpsilon && solution < 1.0 - artifactTEpsilon) {
-      // Interpolate median xm at t.
-      xm = interpolatedMedian(a, l, q, solution);
-      // Determine if xm deviates too much from medians of a, d.
-      rangeFlags = classifier.rangeTest(0.0, 1.0, solution, am, dm, xm);
-      // Additionally, check xm against the local extremes tEx0, tEx1 of the
-      // channels. As in msdfgen, the range is bounded by the extreme on the
-      // side of the solution, and the medians stay those of a and d.
-      if (tEx0 > 0.0 && tEx0 < 1.0) {
-        !rangeFlags = rangeFlags.or(
-          classifier.rangeTest(
-            if (tEx0 > solution) 0.0 else tEx0,
-            if (tEx0 > solution) tEx0 else 1.0,
-            solution,
-            am,
-            dm,
-            xm,
-          ),
-        );
-      };
-      if (tEx1 > 0.0 && tEx1 < 1.0) {
-        !rangeFlags = rangeFlags.or(
-          classifier.rangeTest(
-            if (tEx1 > solution) 0.0 else tEx1,
-            if (tEx1 > solution) tEx1 else 1.0,
-            solution,
-            am,
-            dm,
-            xm,
-          ),
-        );
-      };
-      if (classifier.evaluate(solution, xm, rangeFlags)) break true;
+  // Find interpolation ratios t (0 < t[i] < 1) where two color channels are
+  // equal: the solutions of the quadratic equation, in the order of
+  // solveQuadratic, which is not called to avoid allocating its result.
+  qa = dD - dBC + dA;
+  qb = dBC - dA - dA;
+  qc = dA;
+  if (qa == 0.0 || fabs(qb) > 1e12 * fabs(qa)) {
+    qb != 0.0 &&
+      isDiagonalArtifact(classifier, am, dm, a, l, q, tEx0, tEx1, -qc / qb)
+  } else {
+    dscr = qb * qb - 4.0 * qa * qc;
+    if (dscr > 0.0) {
+      !dscr = Math.sqrt(dscr);
+      isDiagonalArtifact(
+        classifier,
+        am,
+        dm,
+        a,
+        l,
+        q,
+        tEx0,
+        tEx1,
+        (-qb + dscr) / (2.0 * qa),
+      ) ||
+        isDiagonalArtifact(
+          classifier,
+          am,
+          dm,
+          a,
+          l,
+          q,
+          tEx0,
+          tEx1,
+          (-qb - dscr) / (2.0 * qa),
+        )
+    } else if (dscr == 0.0) {
+      isDiagonalArtifact(
+        classifier,
+        am,
+        dm,
+        a,
+        l,
+        q,
+        tEx0,
+        tEx1,
+        -qb / (2.0 * qa),
+      )
+    } else {
+      false
     }
+  }
+}
+
+// Whether the diagonal interpolation at solution, where two channels are
+// equal, is an artifact.
+fun isDiagonalArtifact(
+  classifier: mutable ArtifactClassifier,
+  am: Float,
+  dm: Float,
+  a: MSD,
+  l: MSD,
+  q: MSD,
+  tEx0: Float,
+  tEx1: Float,
+  solution: Float,
+): Bool {
+  if (solution > artifactTEpsilon && solution < 1.0 - artifactTEpsilon) {
+    // Interpolate median xm at t.
+    xm = interpolatedMedian(a, l, q, solution);
+    // Determine if xm deviates too much from medians of a, d.
+    rangeFlags = classifier.rangeTest(0.0, 1.0, solution, am, dm, xm);
+    // Additionally, check xm against the local extremes tEx0, tEx1 of the
+    // channels. As in msdfgen, the range is bounded by the extreme on the
+    // side of the solution, and the medians stay those of a and d.
+    if (tEx0 > 0.0 && tEx0 < 1.0) {
+      !rangeFlags = rangeFlags.or(
+        classifier.rangeTest(
+          if (tEx0 > solution) 0.0 else tEx0,
+          if (tEx0 > solution) tEx0 else 1.0,
+          solution,
+          am,
+          dm,
+          xm,
+        ),
+      );
+    };
+    if (tEx1 > 0.0 && tEx1 < 1.0) {
+      !rangeFlags = rangeFlags.or(
+        classifier.rangeTest(
+          if (tEx1 > solution) 0.0 else tEx1,
+          if (tEx1 > solution) tEx1 else 1.0,
+          solution,
+          am,
+          dm,
+          xm,
+        ),
+      );
+    };
+    classifier.evaluate(solution, xm, rangeFlags)
   } else {
     false
   }

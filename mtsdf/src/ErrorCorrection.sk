@@ -72,30 +72,24 @@ mutable class ErrorCorrection(
   }
 
   mutable fun protectEdges(sdf: mutable BitmapRef<Float>): void {
+    protect = (x, y, msd, m, mask) ->
+      if (protectExtremeChannels(msd, m, mask)) {
+        this.stencil.updateOne(x, y, v -> UInt8::truncate(v.or(protectedFlag)))
+      };
     // Horizontal texel pairs
     radius =
       protectionRadiusTolerance *
       this.projection.unscaleVector(Vector2(this.invRange, 0.0)).length();
     for (y in Range(0, sdf.height)) {
       for (x in Range(0, sdf.width - 1)) {
-        left = idx -> sdf.elem(x, y, idx);
-        right = idx -> sdf.elem(x + 1, y, idx);
-        lm = fmedian(left(0), left(1), left(2));
-        rm = fmedian(right(0), right(1), right(2));
+        left = MSD::at(sdf, x, y);
+        right = MSD::at(sdf, x + 1, y);
+        lm = left.median();
+        rm = right.median();
         if (fabs(lm - 0.5) + fabs(rm - 0.5) < radius) {
           mask = edgeBetweenTexels(left, right);
-          protectExtremeChannels(
-            conv -> this.stencil.updateOne(x, y, conv),
-            left,
-            lm,
-            mask,
-          );
-          protectExtremeChannels(
-            conv -> this.stencil.updateOne(x + 1, y, conv),
-            right,
-            rm,
-            mask,
-          );
+          protect(x, y, left, lm, mask);
+          protect(x + 1, y, right, rm, mask);
         };
       }
     };
@@ -105,24 +99,14 @@ mutable class ErrorCorrection(
       this.projection.unscaleVector(Vector2(0.0, this.invRange)).length();
     for (y in Range(0, sdf.height - 1)) {
       for (x in Range(0, sdf.width)) {
-        bottom = idx -> sdf.elem(x, y, idx);
-        top = idx -> sdf.elem(x, y + 1, idx);
-        bm = fmedian(bottom(0), bottom(1), bottom(2));
-        tm = fmedian(top(0), top(1), top(2));
+        bottom = MSD::at(sdf, x, y);
+        top = MSD::at(sdf, x, y + 1);
+        bm = bottom.median();
+        tm = top.median();
         if (fabs(bm - 0.5) + fabs(tm - 0.5) < radius) {
           mask = edgeBetweenTexels(bottom, top);
-          protectExtremeChannels(
-            conv -> this.stencil.updateOne(x, y, conv),
-            bottom,
-            bm,
-            mask,
-          );
-          protectExtremeChannels(
-            conv -> this.stencil.updateOne(x, y + 1, conv),
-            top,
-            tm,
-            mask,
-          );
+          protect(x, y, bottom, bm, mask);
+          protect(x, y + 1, top, tm, mask);
         }
       }
     };
@@ -135,43 +119,23 @@ mutable class ErrorCorrection(
 
     for (y in Range(0, sdf.height - 1)) {
       for (x in Range(0, sdf.width - 1)) {
-        lb = idx -> sdf.elem(x, y, idx);
-        rb = idx -> sdf.elem(x + 1, y, idx);
-        lt = idx -> sdf.elem(x, y + 1, idx);
-        rt = idx -> sdf.elem(x + 1, y + 1, idx);
-        mlb = fmedian(lb(0), lb(1), lb(2));
-        mrb = fmedian(rb(0), rb(1), rb(2));
-        mlt = fmedian(lt(0), lt(1), lt(2));
-        mrt = fmedian(rt(0), rt(1), rt(2));
+        lb = MSD::at(sdf, x, y);
+        rb = MSD::at(sdf, x + 1, y);
+        lt = MSD::at(sdf, x, y + 1);
+        rt = MSD::at(sdf, x + 1, y + 1);
+        mlb = lb.median();
+        mrb = rb.median();
+        mlt = lt.median();
+        mrt = rt.median();
         if (fabs(mlb - 0.5) + fabs(mrt - 0.5) < radius) {
           mask = edgeBetweenTexels(lb, rt);
-          protectExtremeChannels(
-            conv -> this.stencil.updateOne(x, y, conv),
-            lb,
-            mlb,
-            mask,
-          );
-          protectExtremeChannels(
-            conv -> this.stencil.updateOne(x + 1, y + 1, conv),
-            rt,
-            mrt,
-            mask,
-          );
+          protect(x, y, lb, mlb, mask);
+          protect(x + 1, y + 1, rt, mrt, mask);
         };
         if (fabs(mrb - 0.5) + fabs(mlt - 0.5) < radius) {
           mask = edgeBetweenTexels(rb, lt);
-          protectExtremeChannels(
-            conv -> this.stencil.updateOne(x + 1, y, conv),
-            rb,
-            mrb,
-            mask,
-          );
-          protectExtremeChannels(
-            conv -> this.stencil.updateOne(x, y + 1, conv),
-            lt,
-            mlt,
-            mask,
-          );
+          protect(x + 1, y, rb, mrb, mask);
+          protect(x, y + 1, lt, mlt, mask);
         }
       }
     };
@@ -194,30 +158,40 @@ mutable class ErrorCorrection(
       this.projection.unscaleVector(
         Vector2(this.invRange, this.invRange),
       ).length();
+    // The base classifiers have no state: one per direction and protection
+    // is enough.
+    classifiers = (isProtected: Bool) -> {
+      h = mutable BasicArtifactClassifier(hSpan, isProtected);
+      v = mutable BasicArtifactClassifier(vSpan, isProtected);
+      d = mutable BasicArtifactClassifier(dSpan, isProtected);
+      (_p -> h, _p -> v, _p -> d)
+    };
+    (hFree, vFree, dFree) = classifiers(false);
+    (hProtected, vProtected, dProtected) = classifiers(true);
     // Inspect all texels.
     for (y in Range(0, sdf.height)) {
       for (x in Range(0, sdf.width)) {
-        get = idx -> sdf.elem(x, y, idx);
-        cm = fmedian(get(0), get(1), get(2));
+        c = MSD::at(sdf, x, y);
+        cm = c.median();
         isProtected =
           this.stencil.elem(x, y, 0).and(protectedFlag) == protectedFlag;
-        // The base classifiers have no state: one per direction is enough.
-        hClassifier = mutable BasicArtifactClassifier(hSpan, isProtected);
-        vClassifier = mutable BasicArtifactClassifier(vSpan, isProtected);
-        dClassifier = mutable BasicArtifactClassifier(dSpan, isProtected);
         // Mark current texel c with the error flag if an artifact occurs when it's interpolated with any of its 8 neighbors.
         this.stencil.updateOne(x, y, v ->
-          computeError(
-            sdf,
-            x,
-            y,
-            cm,
-            get,
-            v,
-            _p -> hClassifier,
-            _p -> vClassifier,
-            _p -> dClassifier,
-          )
+          if (isProtected) {
+            computeError(
+              sdf,
+              x,
+              y,
+              cm,
+              c,
+              v,
+              hProtected,
+              vProtected,
+              dProtected,
+            )
+          } else {
+            computeError(sdf, x, y, cm, c, v, hFree, vFree, dFree)
+          }
         );
       }
     }
@@ -255,7 +229,7 @@ mutable class ErrorCorrection(
         x = if (rightToLeft) sdf.width - col - 1 else col;
         stencil = this.stencil.elem(x, row, 0);
         if (stencil.and(errorFlag) != errorFlag) {
-          c = idx -> sdf.elem(x, row, idx);
+          c = MSD::at(sdf, x, row);
           shapeDistanceChecker.!shapeCoord = this.projection.unproject(
             Vector2(x.toFloat() + 0.5, y.toFloat() + 0.5),
           );
@@ -266,7 +240,7 @@ mutable class ErrorCorrection(
           shapeDistanceChecker.!msd = c;
           shapeDistanceChecker.!protectedFlag =
             stencil.and(protectedFlag) == protectedFlag;
-          cm = fmedian(c(0), c(1), c(2));
+          cm = c.median();
           // Mark current texel c with the error flag if an artifact occurs when it's interpolated with any of its 8 neighbors.
           this.stencil.updateOne(x, row, v ->
             computeError(
@@ -305,7 +279,7 @@ fun computeError(
   x: Int,
   y: Int,
   cm: Float,
-  get: Int -> Float,
+  c: MSD,
   v: UInt8,
   hArtifactSupplier: Vector2 -> mutable ArtifactClassifier,
   vArtifactSupplier: Vector2 -> mutable ArtifactClassifier,
@@ -315,19 +289,19 @@ fun computeError(
   hasB = y > 0;
   hasR = x < sdf.width - 1;
   hasT = y < sdf.height - 1;
-  texel = (dx, dy) -> idx -> sdf.elem(x + dx, y + dy, idx);
+  texel = (dx, dy) -> MSD::at(sdf, x + dx, y + dy);
   linear = (supplier, dx, dy) ->
     hasLinearArtifact(
       supplier(Vector2(dx.toFloat(), dy.toFloat())),
       cm,
-      get,
+      c,
       texel(dx, dy),
     );
   diagonal = (dx, dy) ->
     hasDiagonalArtifact(
       dArtifactSupplier(Vector2(dx.toFloat(), dy.toFloat())),
       cm,
-      get,
+      c,
       texel(dx, 0),
       texel(0, dy),
       texel(dx, dy),
@@ -350,42 +324,31 @@ fun computeError(
 }
 
 /// Determines if the channel contributes to an edge between the two texels a, b.
-fun edgeBetweenTexelsChannel(
-  a: Int -> Float,
-  b: Int -> Float,
-  channel: Int,
-): Bool {
+fun edgeBetweenTexelsChannel(a: MSD, b: MSD, channel: Int): Bool {
   // Find interpolation ratio t (0 < t < 1) where an edge is expected (mix(a[channel], b[channel], t) == 0.5).
-  t = (a(channel) - 0.5) / (a(channel) - b(channel));
+  t = (a.channel(channel) - 0.5) / (a.channel(channel) - b.channel(channel));
   if (t > 0.0 && t < 1.0) {
     // Interpolate channel values at t.
-    c = Array[fmix(a(0), b(0), t), fmix(a(1), b(1), t), fmix(a(2), b(2), t)];
+    c = MSD(fmix(a.r, b.r, t), fmix(a.g, b.g, t), fmix(a.b, b.b, t));
     // This is only an edge if the zero-distance channel is the median.
-    fmedian(c[0], c[1], c[2]) == c[channel];
+    c.median() == c.channel(channel);
   } else {
     false;
   }
 }
 
 /// Returns a bit mask of which channels contribute to an edge between the two texels a, b.
-fun edgeBetweenTexels(a: Int -> Float, b: Int -> Float): Int {
+fun edgeBetweenTexels(a: MSD, b: MSD): Int {
   (if (edgeBetweenTexelsChannel(a, b, 0)) EdgeColor::red else 0) +
     (if (edgeBetweenTexelsChannel(a, b, 1)) EdgeColor::green else 0) +
     if (edgeBetweenTexelsChannel(a, b, 2)) EdgeColor::blue else 0;
 }
 
-/// Marks texel as protected if one of its non-median channels is present in the channel mask.
-fun protectExtremeChannels(
-  apply: (UInt8 ~> UInt8) -> void,
-  msd: Int -> Float,
-  m: Float,
-  mask: Int,
-): void {
-  if (
-    (mask.and(EdgeColor::red) != 0 && msd(0) != m) ||
-    (mask.and(EdgeColor::green) != 0 && msd(1) != m) ||
-    (mask.and(EdgeColor::blue) != 0 && msd(2) != m)
-  ) apply(v ~> UInt8::truncate(v.or(protectedFlag)));
+/// Whether the texel must be protected: one of its non-median channels is present in the channel mask.
+fun protectExtremeChannels(msd: MSD, m: Float, mask: Int): Bool {
+  (mask.and(EdgeColor::red) != 0 && msd.r != m) ||
+    (mask.and(EdgeColor::green) != 0 && msd.g != m) ||
+    (mask.and(EdgeColor::blue) != 0 && msd.b != m)
 }
 
 fun msdfErrorCorrection(

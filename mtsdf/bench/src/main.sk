@@ -55,6 +55,13 @@ fun main(): void {
         .about("Generate MSDFs without the true distance in alpha"),
     )
     .arg(
+      Cli.Arg::string("dump")
+        .long("dump")
+        .about(
+          "Generate each glyph once and write the images to this file, to compare the output of two versions",
+        ),
+    )
+    .arg(
       Cli.Arg::bool("phases")
         .long("phases")
         .about("Time each phase of the generation"),
@@ -92,11 +99,50 @@ fun main(): void {
       "MSDF"
     }}, ${iterations} iterations`,
   );
-  if (args.getBool("phases")) {
+  args.maybeGetString("dump") match {
+  | Some(path) -> dump(shapes, range, trueDistance, path)
+  | None() if (args.getBool("phases")) ->
     phases(shapes, range, iterations, trueDistance)
-  } else {
-    total(shapes, range, iterations, trueDistance)
+  | None() -> total(shapes, range, iterations, trueDistance)
   }
+}
+
+// Writes the images of the glyphs, each as its width and height (16 bits,
+// little endian) followed by its RGBA texels.
+fun dump(
+  shapes: Array<MTSDF.Shape>,
+  range: Int,
+  trueDistance: Bool,
+  path: String,
+): void {
+  bytes = mutable Vector<UInt8>[];
+  push16 = (v: Int) -> {
+    bytes.push(UInt8::truncate(v.and(0xff)));
+    bytes.push(UInt8::truncate(v.shr(8).and(0xff)))
+  };
+  for (shape in shapes) {
+    (image, _) = MTSDF.toMSDF{shape, pxRange => range, trueDistance};
+    push16(image.width);
+    push16(image.height);
+    for (pix in image.data) {
+      bytes.push(pix.red);
+      bytes.push(pix.green);
+      bytes.push(pix.blue);
+      bytes.push(pix.alpha)
+    }
+  };
+  file = IO.File::open(
+    path,
+    IO.OpenOptions{
+      write => true,
+      create => true,
+      truncate => true,
+      mode => 0o644,
+    },
+  );
+  _ = file.write_all(bytes.toArray().bytes());
+  file.close();
+  print_string(`${shapes.size()} images written to ${path}`)
 }
 
 fun report(label: String, ns: Int, glyphs: Int, texels: Int): void {
