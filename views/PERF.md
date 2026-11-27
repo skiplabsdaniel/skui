@@ -6,7 +6,9 @@ seccomp profile blocks the call. These are set when the container is created
 and cannot be changed afterwards.
 
 Instead of recreating the development container, run `perf` from a second,
-privileged container that shares its process namespace.
+privileged container that shares its process namespace. It is set up as
+root, then used as the same user as the development container (uid 1000),
+so that the files it writes are not owned by root.
 
 ## Start the perf container
 
@@ -16,46 +18,60 @@ On the host, find the name of the development container:
 docker ps
 ```
 
-Then start the perf container:
+Then start the perf container in the background:
 
 ```bash
-docker run --rm -it --privileged \
+docker run -d --rm --name perf --privileged \
   --pid=container:<container> \
   -v /home/daniel/workspace:/home/daniel/workspace \
-  ubuntu:24.04 bash
+  ubuntu:24.04 sleep infinity
 ```
 
 - `--pid=container:<container>` lets `perf` see the processes of the
   development container.
-- `--privileged` only applies to the perf container.
+- `--privileged` lifts the seccomp restriction. It only applies to the perf
+  container.
 - Mounting the workspace at the same path helps `perf` find the binaries and
   their symbols if it cannot read them through `/proc/<pid>/root`.
 
-## Install perf
+## Install perf, as root
 
-In the perf container, install the tools of the running kernel (the
-`/usr/bin/perf` wrapper requires the exact kernel version, so
-`linux-tools-generic` does not work when it is a different version):
+Install the tools of the running kernel (the `/usr/bin/perf` wrapper
+requires the exact kernel version, so `linux-tools-generic` does not work
+when it is a different version):
 
 ```bash
-apt-get update
-apt-get install -y linux-tools-$(uname -r) linux-tools-common
+docker exec perf bash -c 'apt-get update && apt-get install -y linux-tools-$(uname -r) linux-tools-common'
 ```
 
-Allow profiling and kernel symbols:
+Allow users to profile their own processes, and show kernel symbols:
 
 ```bash
-sysctl kernel.perf_event_paranoid=1
-sysctl kernel.kptr_restrict=0
+docker exec perf sysctl kernel.perf_event_paranoid=1 kernel.kptr_restrict=0
 ```
 
 These settings are for the kernel shared by all the containers, until Docker
 restarts.
 
+## Open a shell as uid 1000
+
+```bash
+docker exec -it -u 1000:1000 -w /home/daniel/workspace perf bash
+```
+
+With `perf_event_paranoid=1`, a user can profile the processes with the same
+uid: the application in the development container also runs as uid 1000.
+The shell has no capabilities, even in a privileged container, and the image
+has neither `sudo` nor Docker: an agent running in it cannot become root.
+Only `docker exec` on the host can.
+
+In the `ubuntu:24.04` image, uid 1000 is the user `ubuntu`, whose home is
+`/home/ubuntu`: only the uid matters for `perf` and file ownership.
+
 ## Profile
 
 Start the application in the development container (see VNC.md), then in the
-perf container:
+uid 1000 shell of the perf container:
 
 ```bash
 ps aux | grep skuiviews
@@ -81,4 +97,8 @@ find the cost of the application itself.
 
 ## Stop
 
-Exit the perf container's shell: `--rm` removes it.
+```bash
+docker stop perf
+```
+
+`--rm` removes the container.
