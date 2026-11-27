@@ -27,10 +27,12 @@ class LayoutKey(
 }
 
 // Handle passed to layouts so they can measure their children through the
-// shared memoized lazy directory.
+// shared memoized lazy directory and measure text via the font store.
 class Layouter(
   elementsHdl: SKStore.EHandle<ElementId, Element>,
   layoutHdl: SKStore.LHandle<LayoutKey, LayoutResult>,
+  stylesHdl: SKStore.EHandle<ElementId, ResolvedStyle>,
+  fonts: FontStore,
 ) {
   fun measure(
     context: mutable SKStore.Context,
@@ -46,12 +48,18 @@ class Layouter(
   ): ?ParentData {
     this.elementsHdl.get(context, childId).parentData
   }
+
+  fun style(context: mutable SKStore.Context, id: ElementId): ResolvedStyle {
+    this.stylesHdl.maybeGet(context, id).default(ResolvedStyle::empty)
+  }
 }
 
 // Creates the shared lazy layout directory memoized by (ElementId, constraints).
 fun buildLayoutDir(
   context: mutable SKStore.Context,
   elementsHdl: SKStore.EHandle<ElementId, Element>,
+  stylesHdl: SKStore.EHandle<ElementId, ResolvedStyle>,
+  fonts: FontStore,
   dirName: SKStore.DirName,
 ): SKStore.LHandle<LayoutKey, LayoutResult> {
   makeLazyDir(
@@ -61,7 +69,7 @@ fun buildLayoutDir(
     dirName,
     (context, self, key) ~> {
       element = elementsHdl.get(context, key.id);
-      layouter = Layouter(elementsHdl, self);
+      layouter = Layouter(elementsHdl, self, stylesHdl, fonts);
       computeLayout(context, element, key.constraints, layouter)
     },
   )
@@ -81,8 +89,13 @@ fun computeLayout(
   | node @ Align _ -> layoutAlign(context, node, element, constraints, layouter)
   | node @ Constrained _ ->
     layoutConstrained(context, node, element, constraints, layouter)
-  | Layer _ -> layoutPassthrough(context, element, constraints, layouter)
+  | Layer _
+  | ThemeScope _ ->
+    layoutPassthrough(context, element, constraints, layouter)
   | node @ Shape _ -> layoutShape(context, node, constraints)
+  | node @ Text _ -> layoutText(context, node, element, constraints, layouter)
+  | Icon _ -> layoutIcon(context, element, constraints, layouter)
+  | node @ Label _ -> layoutLabel(context, node, element, constraints, layouter)
   | Component _ ->
     invariant_violation("RUi: Component must be expanded before layout")
   }
@@ -94,6 +107,68 @@ fun layoutShape(
   constraints: BoxConstraints,
 ): LayoutResult {
   LayoutResult(constraints.constrain(node.preferredSize.get(context)))
+}
+
+fun layoutText(
+  context: mutable SKStore.Context,
+  node: Text,
+  element: Element,
+  constraints: BoxConstraints,
+  layouter: Layouter,
+): LayoutResult {
+  style = layouter.style(context, element.id);
+  spec = style.font.default(FontSpec{family => "sans", size => 14.0});
+  measured = layouter.fonts.measureText(
+    context,
+    node.text.get(context),
+    spec,
+    style.lineHeightFactor,
+  );
+  padded = style.padding.inflateSize(measured).max(style.minSize);
+  baseline = layouter.fonts.face(context, spec).map(f ->
+    style.padding.top + f.metrics.ascent.toFloat()
+  );
+  LayoutResult(constraints.constrain(padded), Array[], baseline)
+}
+
+fun layoutIcon(
+  context: mutable SKStore.Context,
+  element: Element,
+  constraints: BoxConstraints,
+  layouter: Layouter,
+): LayoutResult {
+  style = layouter.style(context, element.id);
+  s = style.iconSize;
+  padded = style.padding.inflateSize(Geometry.Size(s, s)).max(style.minSize);
+  LayoutResult(constraints.constrain(padded))
+}
+
+fun layoutLabel(
+  context: mutable SKStore.Context,
+  node: Label,
+  element: Element,
+  constraints: BoxConstraints,
+  layouter: Layouter,
+): LayoutResult {
+  style = layouter.style(context, element.id);
+  textStr = node.text.get(context);
+  hasIcon = node.icon.get(context).isSome();
+  hasText = !textStr.isEmpty();
+  spec = style.font.default(FontSpec{family => "sans", size => 14.0});
+  textSz = if (hasText) {
+    layouter.fonts.measureText(context, textStr, spec, style.lineHeightFactor)
+  } else {
+    Geometry.Size::zero
+  };
+  iconW = if (hasIcon) style.iconSize else 0.0;
+  iconH = if (hasIcon) style.iconSize else 0.0;
+  gapW = if (hasIcon && hasText) style.gap else 0.0;
+  inner = Geometry.Size(
+    iconW + gapW + textSz.width,
+    Math.max(iconH, textSz.height),
+  );
+  padded = style.padding.inflateSize(inner).max(style.minSize);
+  LayoutResult(constraints.constrain(padded))
 }
 
 fun layoutPassthrough(

@@ -1,0 +1,414 @@
+module RUi;
+
+// Default reference size (in pixels) used to generate unhinted glyph MSDFs.
+// Smaller sizes (e.g. 32.0) generate faster at the cost of fine detail.
+const defaultMsdfSize: Float = 45.0;
+const defaultPxRange: Int = 8;
+
+// Specification of a font face used by styles and text nodes.
+class FontSpec{
+  family: String,
+  size: Float = 14.0,
+  dpi: Float = 72.0,
+  hinting: Font.Hinting = Font.HintingNone(),
+  msdfSize: Float = defaultMsdfSize,
+  pxRange: Int = defaultPxRange,
+} uses Hashable, Orderable, Show {
+  fun toString(): String {
+    `${this.family}@${this.size}px(dpi=${this.dpi},msdf=${this.msdfSize},r=${
+      this.pxRange
+    })`
+  }
+}
+
+// Key for memoized Face instances.
+class FaceKey(
+  family: String,
+  size: Float,
+  dpi: Float,
+  hinting: Font.Hinting,
+) extends SKStore.Key uses Hashable {
+  fun toString(): String {
+    `${this.family}@${this.size}/${this.dpi}/${this.hinting}`
+  }
+}
+
+// Key for memoized Glyph instances.
+class GlyphKey(face: FaceKey, char: Char) extends SKStore.Key uses Hashable {
+  fun toString(): String {
+    `${this.face}#${this.char.code()}`
+  }
+}
+
+// Key for memoized glyph MSDFs. Includes msdfSize so different quality levels
+// do not share the same MSDF texture, and pxRange so outlines/shadows get
+// enough distance range.
+class MsdfKey(
+  family: String,
+  msdfSize: Float,
+  dpi: Float,
+  hinting: Font.Hinting,
+  char: Char,
+  pxRange: Int,
+) extends SKStore.Key uses Hashable {
+  static fun forSpec(
+    spec: FontSpec,
+    char: Char,
+    effects: Ui.TextEffects = Ui.TextEffects::none,
+  ): MsdfKey {
+    genSize = if (spec.hinting == Font.HintingNone()) {
+      spec.msdfSize
+    } else {
+      spec.size
+    };
+    reach = effects.extent() * genSize / Math.max(spec.size, 1.0);
+    needed = 2 * Math.ceil(reach + 2.0).toInt();
+    pxRange = Math.max(spec.pxRange, ((needed + 7) / 8) * 8);
+    MsdfKey(spec.family, genSize, spec.dpi, spec.hinting, char, pxRange)
+  }
+
+  fun toString(): String {
+    `${this.family}@${this.msdfSize}/${this.dpi}/${
+      this.hinting
+    }#${this.char.code()}r${this.pxRange}`
+  }
+}
+
+// Key for memoized vector-path MSDFs (used by Icon).
+class PathMsdfKey(
+  name: String,
+  path: Shape.Path,
+  pxRange: Int,
+) extends SKStore.Key {
+  fun toString(): String {
+    `${this.name}#r${this.pxRange}`
+  }
+}
+
+class FontDataFile(font: TrueType.Font) extends SKStore.File
+class FaceFile(face: Font.Face) extends SKStore.File
+class GlyphDataFile(glyph: Font.Glyph) extends SKStore.File
+
+class MsdfLayer(
+  image: Ui.Image,
+  place: (Geometry.Rect, Float) ~> Geometry.Rect,
+  color: ?.Color,
+)
+
+class MsdfFile(
+  image: Ui.Image,
+  place: (Geometry.Rect, Float) ~> Geometry.Rect,
+  layers: Array<MsdfLayer> = Array[],
+) extends SKStore.File {
+  static fun placeGlyph(
+    place: (Geometry.Rect, Float) ~> Geometry.Rect,
+    msdfSize: Float,
+    size: Float,
+    imageSize: Geometry.Size,
+    topLeft: Geometry.Offset,
+  ): Geometry.Rect ~> Geometry.Rect {
+    r ~> {
+      ratio = if (imageSize.width > 0.0) {
+        r.width() / imageSize.width
+      } else if (imageSize.height > 0.0) {
+        r.height() / imageSize.height
+      } else {
+        1.0
+      };
+      place(
+        Geometry.Rect::fromOffsetSize(
+          r.topLeft() - topLeft * ratio,
+          Geometry.Size(0.0, 0.0),
+        ),
+        size * ratio / msdfSize,
+      )
+    }
+  }
+}
+
+// Reactive font registry and lazy caches for faces, glyphs, and MSDFs.
+// All directories live under /rui/<prefix>/fonts/ and follow RUi conventions
+// (writes only outside computations; tracked reads inside the graph).
+class FontStore private (
+  fontsHdl: SKStore.EHandle<SKStore.SID, FontDataFile>,
+  facesHdl: SKStore.LHandle<FaceKey, FaceFile>,
+  glyphsHdl: SKStore.LHandle<GlyphKey, GlyphDataFile>,
+  msdfsHdl: SKStore.LHandle<MsdfKey, MsdfFile>,
+  pathMsdfsHdl: SKStore.LHandle<PathMsdfKey, MsdfFile>,
+) {
+  static fun create(
+    context: mutable SKStore.Context,
+    prefix: String = "main",
+  ): FontStore {
+    baseDir = stageDir(prefix, "fonts");
+    fontsHdl = makeInputDir(
+      SKStore.SID::keyType,
+      FontDataFile::type,
+      context,
+      baseDir.sub("families"),
+    );
+    facesHdl = makeOptLazyDir(
+      FaceKey::keyType,
+      FaceFile::type,
+      context,
+      baseDir.sub("faces"),
+      (context, _self, key) ~> {
+        fontsHdl.maybeGet(context, SKStore.SID(key.family)).map(ff ->
+          FaceFile(
+            TrueType.Face::make(
+              ff.font,
+              Font.Options{
+                size => key.size,
+                dpi => key.dpi,
+                hinting => key.hinting,
+              },
+            ),
+          )
+        )
+      },
+    );
+    glyphsHdl = makeOptLazyDir(
+      GlyphKey::keyType,
+      GlyphDataFile::type,
+      context,
+      baseDir.sub("glyphs"),
+      (context, _self, key) ~> {
+        facesHdl.maybeGet(context, key.face).flatMap(ff -> {
+          face = ff.face;
+          optGlyph = face.getGlyph(key.char) match {
+          | Some(g) -> Some(g)
+          | None() ->
+            face.getGlyph('\ufffd') match {
+            | Some(g) -> Some(g)
+            | None() -> face.getGlyph('?')
+            }
+          };
+          optGlyph.map(g -> GlyphDataFile(g))
+        })
+      },
+    );
+    msdfsHdl = makeOptLazyDir(
+      MsdfKey::keyType,
+      MsdfFile::type,
+      context,
+      baseDir.sub("msdfs"),
+      (context, _self, key) ~> {
+        refFaceKey = FaceKey(key.family, key.msdfSize, key.dpi, key.hinting);
+        glyphsHdl
+          .maybeGet(context, GlyphKey(refFaceKey, key.char))
+          .flatMap(gf -> {
+            glyph = gf.glyph;
+            toMsdf = path ->
+              MTSDF.toMSDF{
+                shape => MTSDF.Shape::fromPath(path.translate(glyph.topLeft())),
+                pxRange => key.pxRange,
+                trueDistance => true,
+              };
+            layers = glyph.colorLayers.map(layer -> {
+              (img, place) = toMsdf(layer.path);
+              MsdfLayer(img, place, layer.color)
+            });
+            glyph.optPath.map(path -> {
+              (img, place) = toMsdf(path);
+              MsdfFile(img, place, layers)
+            })
+          })
+      },
+    );
+    pathMsdfsHdl = makeLazyDir(
+      PathMsdfKey::keyType,
+      MsdfFile::type,
+      context,
+      baseDir.sub("path-msdfs"),
+      (_context, _self, key) ~> {
+        (img, place) = MTSDF.toMSDF{
+          shape => MTSDF.Shape::fromPath(key.path),
+          pxRange => key.pxRange,
+          trueDistance => true,
+        };
+        MsdfFile(img, place)
+      },
+    );
+    FontStore(fontsHdl, facesHdl, glyphsHdl, msdfsHdl, pathMsdfsHdl)
+  }
+
+  // Registers a TrueType/WOFF font under `family` from raw bytes.
+  fun registerBytes(
+    context: mutable SKStore.Context,
+    family: String,
+    bytes: Array<UInt8>,
+  ): void {
+    this.registerFont(context, family, TrueType.parse(bytes))
+  }
+
+  // Registers a parsed TrueType.Font under `family`.
+  fun registerFont(
+    context: mutable SKStore.Context,
+    family: String,
+    font: TrueType.Font,
+  ): void {
+    writeValue(context, this.fontsHdl, SKStore.SID(family), FontDataFile(font))
+  }
+
+  fun face(context: mutable SKStore.Context, spec: FontSpec): ?Font.Face {
+    key = FaceKey(spec.family, spec.size, spec.dpi, spec.hinting);
+    this.facesHdl.maybeGet(context, key).map(f -> f.face)
+  }
+
+  fun glyph(
+    context: mutable SKStore.Context,
+    spec: FontSpec,
+    char: Char,
+  ): ?Font.Glyph {
+    key = GlyphKey(
+      FaceKey(spec.family, spec.size, spec.dpi, spec.hinting),
+      char,
+    );
+    this.glyphsHdl.maybeGet(context, key).map(g -> g.glyph)
+  }
+
+  // Measures a single-line or multi-line (`\n`-separated) text string.
+  // Falls back to an approximate size when the font family is not registered.
+  fun measureText(
+    context: mutable SKStore.Context,
+    text: String,
+    spec: FontSpec,
+    lineHeightFactor: Float = 1.2,
+  ): Geometry.Size {
+    this.face(context, spec) match {
+    | None() ->
+      // Fallback when no font is registered (e.g. headless layout tests).
+      lines = text.split("\n");
+      maxLen = lines.foldl((m, l) -> Math.max(m, l.length()), 0);
+      lineH = spec.size * lineHeightFactor;
+      Geometry.Size(
+        maxLen.toFloat() * spec.size * 0.6,
+        Math.max(1, lines.size()).toFloat() * lineH,
+      )
+    | Some(face) ->
+      lineH = Math.max(face.height(), spec.size * lineHeightFactor);
+      lines = text.split("\n");
+      maxW = 0.0;
+      for (line in lines) {
+        pen = 0.0;
+        prevOpt: ?Char = None();
+        for (c in line.chars()) {
+          this.glyph(context, spec, c).each(g -> {
+            prevOpt.each(prev -> !pen = pen + face.getKern(prev, g).toFloat());
+            !pen = pen + g.advance()
+          });
+          !prevOpt = Some(c)
+        };
+        !maxW = Math.max(maxW, pen)
+      };
+      Geometry.Size(maxW, Math.max(1, lines.size()).toFloat() * lineH)
+    }
+  }
+
+  // Produces MSDF drawables for text positioned at `origin`, using `spec`.
+  fun paintText(
+    context: mutable SKStore.Context,
+    support: Ui.DrawableSupport,
+    text: String,
+    spec: FontSpec,
+    color: .Color,
+    origin: Geometry.Offset = Geometry.Offset::zero,
+    lineHeightFactor: Float = 1.2,
+    effects: Ui.TextEffects = Ui.TextEffects::none,
+  ): Array<Ui.Drawable> {
+    this.face(context, spec) match {
+    | None() -> Array[]
+    | Some(face) ->
+      ascent = face.metrics.ascent.toFloat();
+      lineH = Math.max(face.height(), spec.size * lineHeightFactor);
+      lines = text.split("\n");
+      out = mutable Vector<Ui.Drawable>[];
+      y = origin.dy + ascent;
+      for (line in lines) {
+        pen = origin.dx;
+        prevOpt: ?Char = None();
+        for (c in line.chars()) {
+          this.glyph(context, spec, c).each(g -> {
+            prevOpt.each(prev -> !pen = pen + face.getKern(prev, g).toFloat());
+            msdfKey = MsdfKey::forSpec(spec, c, effects);
+            this.msdfsHdl.maybeGet(context, msdfKey).each(msdf -> {
+              topLeft = g.topLeft();
+              imageSize = Geometry.Size(
+                g.imageWidth().toFloat(),
+                g.imageHeight().toFloat(),
+              );
+              offset = Geometry.Offset(pen, y) + topLeft;
+              if (g.isColor() && !msdf.layers.isEmpty()) {
+                for (layer in msdf.layers) {
+                  layerColor = layer.color.default(color);
+                  conv = MsdfFile::placeGlyph(
+                    layer.place,
+                    msdfKey.msdfSize,
+                    spec.size,
+                    imageSize,
+                    topLeft,
+                  );
+                  out.push(
+                    support.msdf(
+                      offset,
+                      imageSize,
+                      layer.image,
+                      conv,
+                      msdfKey.pxRange,
+                      0.0,
+                      layerColor,
+                      effects,
+                    ),
+                  )
+                }
+              } else {
+                conv = MsdfFile::placeGlyph(
+                  msdf.place,
+                  msdfKey.msdfSize,
+                  spec.size,
+                  imageSize,
+                  topLeft,
+                );
+                out.push(
+                  support.msdf(
+                    offset,
+                    imageSize,
+                    msdf.image,
+                    conv,
+                    msdfKey.pxRange,
+                    0.0,
+                    color,
+                    effects,
+                  ),
+                )
+              }
+            });
+            !pen = pen + g.advance()
+          });
+          !prevOpt = Some(c)
+        };
+        !y = y + lineH
+      };
+      out.toArray()
+    }
+  }
+
+  // Produces an MSDF drawable for a vector icon path scaled into `rect`.
+  fun paintIconPath(
+    context: mutable SKStore.Context,
+    support: Ui.DrawableSupport,
+    name: String,
+    path: Shape.Path,
+    rect: Geometry.Rect,
+    color: .Color,
+    pxRange: Int = defaultPxRange,
+  ): Ui.Drawable {
+    msdf = this.pathMsdfsHdl.get(context, PathMsdfKey(name, path, pxRange));
+    size = Geometry.Size(rect.width(), rect.height());
+    // Fit the MSDF image directly into the destination rectangle.
+    conv = (r: Geometry.Rect) ~> r;
+    support.msdf(rect.topLeft(), size, msdf.image, conv, pxRange, 0.0, color)
+  }
+}
+
+module end;

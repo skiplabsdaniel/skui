@@ -151,47 +151,100 @@ fun buildDepthDir(
   )
 }
 
-// Paints a single element in its local coordinates (origin 0, 0).
-// Does not depend on depth or absolute position, so restacking or shifting
-// an element does not re-run paint.
-fun paintElement(
+// Resolves the active Theme for an element by walking up ThemeScope ancestors
+// to the root theme directory. Memoized lazily per ElementId so changing a
+// ThemeScope only affects its subtree.
+fun buildElementThemesDir(
   context: mutable SKStore.Context,
-  support: Ui.DrawableSupport,
+  elementsHdl: SKStore.EHandle<ElementId, Element>,
+  rootThemeHdl: SKStore.EHandle<SKStore.UnitID, Theme>,
+  dirName: SKStore.DirName,
+): SKStore.LHandle<ElementId, Theme> {
+  makeLazyDir(
+    ElementId::keyType,
+    Theme::type,
+    context,
+    dirName,
+    (context, self, id) ~> {
+      element = elementsHdl.get(context, id);
+      element.node match {
+      | ThemeScope{theme} -> theme.get(context)
+      | _ ->
+        element.parent match {
+        | Some(pid) -> self.get(context, pid)
+        | None() -> rootThemeHdl.get(context, SKStore.UnitID::singleton)
+        }
+      }
+    },
+  )
+}
+
+// Resolves each element's style through its active Skin and Theme.
+fun buildStylesDir(
+  context: mutable SKStore.Context,
+  elementsHdl: SKStore.EHandle<ElementId, Element>,
+  elementThemesHdl: SKStore.LHandle<ElementId, Theme>,
+  dirName: SKStore.DirName,
+): SKStore.EHandle<ElementId, ResolvedStyle> {
+  elementsHdl.map(
+    ElementId::keyType,
+    ResolvedStyle::type,
+    context,
+    dirName,
+    (context, writer, id, values) ~> {
+      element = values.first;
+      style = nodeSkinKey(context, element.node) match {
+      | Some(sk) ->
+        theme = elementThemesHdl.get(context, id);
+        theme.skinFor(sk.kind, sk.variant) match {
+        | Some(skin) -> skin.resolveStyle(context, element.node, theme)
+        | None() -> ResolvedStyle::empty
+        }
+      | None() -> ResolvedStyle::empty
+      };
+      writer.set(id, style)
+    },
+  )
+}
+
+// Paints a single element in its local coordinates (origin 0, 0) through its
+// active Skin. Does not depend on depth or absolute position, so restacking
+// or shifting an element does not re-run paint.
+fun paintElement(
+  pctx: mutable PaintContext,
   element: Element,
+  theme: Theme,
+  style: ResolvedStyle,
   size: Geometry.Size,
 ): Array<Ui.Drawable> {
-  element.node match {
-  | Shape{kind, color, border} ->
-    c = color.get(context);
-    b = border.get(context);
-    origin = Geometry.Offset::zero;
-    drawable = kind.get(context) match {
-    | RectShape() ->
-      b match {
-      | Some(_) -> support.roundedRectangle(origin, size, c, 0.0, 0.0, b)
-      | None() -> support.rectangle(origin, size, c)
-      }
-    | RoundedRectShape(radius, smooth) ->
-      support.roundedRectangle(origin, size, c, radius, smooth, b)
-    | EllipseShape() -> support.ellipse(origin, size, c)
-    };
-    Array[drawable]
-  | _ -> Array[]
+  nodeSkinKey(pctx.context, element.node) match {
+  | Some(sk) ->
+    theme.skinFor(sk.kind, sk.variant) match {
+    | Some(skin) -> skin.paint(pctx, element.node, style, size)
+    | None() -> Array[]
+    }
+  | None() -> Array[]
   }
 }
 
-// The core incremental pipeline for RUi (step 3):
+// The incremental pipeline for RUi (steps 3-4):
 //
-//   rootNode + windowSize
-//     -> elementsHdl  (ElementTree: Node descriptions expanded by ElementId)
-//     -> layoutHdl    (lazy memoized layout per (ElementId, BoxConstraints))
-//     -> geometryHdl  (absolute rects in window coordinates)
-//     -> depthHdl     (stacking layers -> global order and GL z, independent of layout)
-//     -> paintHdl     (local drawables per ElementId, independent of depth/offset)
+//   rootNode + windowSize + rootTheme + fonts
+//     -> elementsHdl      (Node descriptions expanded by ElementId)
+//     -> elementThemesHdl (active Theme per ElementId, respecting ThemeScope)
+//     -> stylesHdl        (ResolvedStyle per ElementId via Skin + Theme)
+//     -> layoutHdl        (lazy memoized layout per (ElementId, BoxConstraints))
+//     -> geometryHdl      (absolute rects in window coordinates)
+//     -> depthHdl         (stacking layers -> global order and GL z)
+//     -> paintHdl         (local drawables per ElementId via Skin)
 class Pipeline private (
   rootNodeHdl: SKStore.EHandle<SKStore.UnitID, NodeFile>,
   windowSizeHdl: SKStore.EHandle<SKStore.UnitID, WindowSizeFile>,
+  themeHdl: SKStore.EHandle<SKStore.UnitID, Theme>,
+  fonts: FontStore,
   elementsHdl: SKStore.EHandle<ElementId, Element>,
+  elementThemesHdl: SKStore.LHandle<ElementId, Theme>,
+  stylesHdl: SKStore.EHandle<ElementId, ResolvedStyle>,
   layoutHdl: SKStore.LHandle<LayoutKey, LayoutResult>,
   geometryHdl: SKStore.EHandle<ElementId, ElementGeometry>,
   depthHdl: SKStore.EHandle<ElementId, ElementDepth>,
@@ -203,6 +256,8 @@ class Pipeline private (
     windowSize: Geometry.Size,
     support: Ui.DrawableSupport,
     prefix: String = "main",
+    optTheme: ?Theme = None(),
+    optFonts: ?FontStore = None(),
   ): Pipeline {
     baseDir = moduleDir(prefix);
     rootNodeHdl = makeInputDir(
@@ -219,12 +274,41 @@ class Pipeline private (
       baseDir.sub("window-size"),
       Array[(SKStore.UnitID::singleton, WindowSizeFile(windowSize))],
     );
+    themeHdl = makeInputDir(
+      SKStore.UnitID::keyType,
+      Theme::type,
+      context,
+      baseDir.sub("theme"),
+      Array[(SKStore.UnitID::singleton, optTheme.default(Theme::default()))],
+    );
+    fonts = optFonts match {
+    | Some(fs) -> fs
+    | None() -> FontStore::create(context, prefix)
+    };
     elementsHdl = buildElementTree(
       context,
       rootNodeHdl,
       baseDir.sub("elements"),
     );
-    layoutHdl = buildLayoutDir(context, elementsHdl, baseDir.sub("layout"));
+    elementThemesHdl = buildElementThemesDir(
+      context,
+      elementsHdl,
+      themeHdl,
+      baseDir.sub("element-themes"),
+    );
+    stylesHdl = buildStylesDir(
+      context,
+      elementsHdl,
+      elementThemesHdl,
+      baseDir.sub("styles"),
+    );
+    layoutHdl = buildLayoutDir(
+      context,
+      elementsHdl,
+      stylesHdl,
+      fonts,
+      baseDir.sub("layout"),
+    );
     geometryHdl = windowSizeHdl.map(
       ElementId::keyType,
       ElementGeometry::type,
@@ -244,8 +328,8 @@ class Pipeline private (
       },
     );
     depthHdl = buildDepthDir(context, elementsHdl, baseDir.sub("depth"));
-    // Paint depends on element + its own size (projected from geometry so
-    // moving an element without resizing it does not invalidate paint).
+    // Paint depends on element + style + its own size (projected from geometry
+    // so moving an element without resizing it does not invalidate paint).
     sizesHdl = geometryHdl.map(
       ElementId::keyType,
       BoxFile<Geometry.Size>::type,
@@ -262,14 +346,27 @@ class Pipeline private (
       baseDir.sub("paint"),
       (context, writer, key, values) ~> {
         element = elementsHdl.get(context, key);
-        drawables = paintElement(context, support, element, values.first.value);
+        theme = elementThemesHdl.get(context, key);
+        style = stylesHdl.get(context, key);
+        pctx = mutable PaintContext(context, support, fonts);
+        drawables = paintElement(
+          pctx,
+          element,
+          theme,
+          style,
+          values.first.value,
+        );
         writer.set(key, ElementPaint(drawables))
       },
     );
     Pipeline(
       rootNodeHdl,
       windowSizeHdl,
+      themeHdl,
+      fonts,
       elementsHdl,
+      elementThemesHdl,
+      stylesHdl,
       layoutHdl,
       geometryHdl,
       depthHdl,
@@ -298,6 +395,11 @@ class Pipeline private (
       SKStore.UnitID::singleton,
       WindowSizeFile(size),
     )
+  }
+
+  // Updates the root theme (outside of reactive computations).
+  fun setTheme(context: mutable SKStore.Context, theme: Theme): void {
+    writeValue(context, this.themeHdl, SKStore.UnitID::singleton, theme)
   }
 
   // Builds the sorted draw list (back to front by ElementDepth.order),

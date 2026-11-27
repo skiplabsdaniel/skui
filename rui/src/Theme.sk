@@ -1,0 +1,484 @@
+module RUi;
+
+// Open, extensible theme tokens (section 6.2).
+// Unlike the closed UiTheme enums of framework/, tokens are stored in open
+// maps keyed by string name so custom themes and skins can define their own
+// tokens without editing the core framework.
+base class ThemeToken uses Hashable, Equality {
+  children =
+  | ColorToken(value: .Color)
+  | FloatToken(value: Float)
+  | InsetsToken(value: Geometry.Insets)
+  | FontToken(value: FontSpec)
+}
+
+// Well-known token names used by the default skins.
+class ThemeTokens private () {
+  const textColor: String = "color.text";
+  const mutedTextColor: String = "color.text.muted";
+  const iconColor: String = "color.icon";
+  const surfaceColor: String = "color.surface";
+  const accentColor: String = "color.accent";
+  const borderColor: String = "color.border";
+
+  const bodyFont: String = "font.body";
+  const labelFont: String = "font.label";
+
+  const iconSize: String = "size.icon";
+  const labelGap: String = "spacing.label-gap";
+  const labelPadding: String = "insets.label-padding";
+  const lineHeightFactor: String = "text.line-height";
+}
+
+// Context passed to a Skin's paint method.
+mutable class PaintContext(
+  context: mutable SKStore.Context,
+  support: Ui.DrawableSupport,
+  fonts: FontStore,
+)
+
+// Resolved style values produced by a Skin for one element (section 6.1).
+// Layout reads ONLY ResolvedStyle (never the Theme), so changing a skin or
+// theme token changes both layout metrics and paint consistently.
+class ResolvedStyle{
+  color: .Color = Colors.black(),
+  background: ?.Color = None(),
+  border: ?Ui.Border = None(),
+  cornerRadius: Float = 0.0,
+  padding: Geometry.Insets = Geometry.Insets::zero(),
+  minSize: Geometry.Size = Geometry.Size::zero,
+  gap: Float = 0.0,
+  font: ?FontSpec = None(),
+  iconSize: Float = 16.0,
+  lineHeightFactor: Float = 1.2,
+  effects: Ui.TextEffects = Ui.TextEffects::none,
+} extends SKStore.File {
+  const empty: ResolvedStyle = ResolvedStyle{};
+}
+
+// A skin gives the look (and style metrics) of one node role (section 6.1).
+// It is registered in a Theme by node kind (and optional variant) and can be
+// swapped without touching any Node or Layout.
+base class Skin {
+  fun resolveStyle(
+    context: mutable SKStore.Context,
+    node: Node,
+    theme: Theme,
+  ): ResolvedStyle;
+
+  fun paint(
+    pctx: mutable PaintContext,
+    node: Node,
+    style: ResolvedStyle,
+    size: Geometry.Size,
+  ): Array<Ui.Drawable>;
+}
+
+// Identifies which skin slot a Node looks up in a Theme.
+// `kind` names the node type (e.g. "text", "icon", "label", "shape");
+// `variant` selects an optional skin variant (e.g. "heading", "muted").
+value class SkinKey(
+  kind: String,
+  variant: ?String = None(),
+) uses Hashable, Orderable, Show {
+  fun toString(): String {
+    this.variant match {
+    | Some(v) -> `${this.kind}:${v}`
+    | None() -> this.kind
+    }
+  }
+}
+
+// Immutable Theme value stored in an SKStore directory (tracked, reactive).
+// Holds open token maps and a skin registry. Subtrees can override the theme
+// with a `ThemeScope` node.
+class Theme(
+  tokens: Map<String, ThemeToken>,
+  skins: Map<SkinKey, Skin>,
+) extends SKStore.File {
+  static fun default(): Theme {
+    tokens: Map<String, ThemeToken> = Map[
+      ThemeTokens::textColor => ColorToken(.Color::rgbaInt(24, 24, 27, 255)),
+      ThemeTokens::mutedTextColor => ColorToken(
+        .Color::rgbaInt(113, 113, 122, 255),
+      ),
+      ThemeTokens::iconColor => ColorToken(.Color::rgbaInt(24, 24, 27, 255)),
+      ThemeTokens::surfaceColor => ColorToken(Colors.white()),
+      ThemeTokens::accentColor => ColorToken(.Color::rgbaInt(37, 99, 235, 255)),
+      ThemeTokens::borderColor => ColorToken(
+        .Color::rgbaInt(212, 212, 216, 255),
+      ),
+      ThemeTokens::bodyFont => FontToken(
+        FontSpec{family => "sans", size => 14.0},
+      ),
+      ThemeTokens::labelFont => FontToken(
+        FontSpec{family => "sans", size => 14.0},
+      ),
+      ThemeTokens::iconSize => FloatToken(18.0),
+      ThemeTokens::labelGap => FloatToken(6.0),
+      ThemeTokens::labelPadding => InsetsToken(Geometry.Insets::zero()),
+      ThemeTokens::lineHeightFactor => FloatToken(1.2),
+    ];
+    skins: Map<SkinKey, Skin> = Map[
+      SkinKey("shape") => DefaultShapeSkin(),
+      SkinKey("text") => DefaultTextSkin(),
+      SkinKey("icon") => DefaultIconSkin(),
+      SkinKey("label") => DefaultLabelSkin(),
+    ];
+    Theme(tokens, skins)
+  }
+
+  fun color(name: String, fallback: .Color = Colors.black()): .Color {
+    this.tokens.maybeGet(name) match {
+    | Some(ColorToken(c)) -> c
+    | _ -> fallback
+    }
+  }
+
+  fun float(name: String, fallback: Float = 0.0): Float {
+    this.tokens.maybeGet(name) match {
+    | Some(FloatToken(v)) -> v
+    | _ -> fallback
+    }
+  }
+
+  fun insets(
+    name: String,
+    fallback: Geometry.Insets = Geometry.Insets::zero(),
+  ): Geometry.Insets {
+    this.tokens.maybeGet(name) match {
+    | Some(InsetsToken(v)) -> v
+    | _ -> fallback
+    }
+  }
+
+  fun font(
+    name: String,
+    fallback: FontSpec = FontSpec{family => "sans", size => 14.0},
+  ): FontSpec {
+    this.tokens.maybeGet(name) match {
+    | Some(FontToken(f)) -> f
+    | _ -> fallback
+    }
+  }
+
+  fun withToken(name: String, token: ThemeToken): Theme {
+    next = this.tokens.clone();
+    next.set(name, token);
+    Theme(next.chill(), this.skins)
+  }
+
+  fun withColor(name: String, color: .Color): Theme {
+    this.withToken(name, ColorToken(color))
+  }
+
+  fun withFloat(name: String, value: Float): Theme {
+    this.withToken(name, FloatToken(value))
+  }
+
+  fun withInsets(name: String, value: Geometry.Insets): Theme {
+    this.withToken(name, InsetsToken(value))
+  }
+
+  fun withFont(name: String, spec: FontSpec): Theme {
+    this.withToken(name, FontToken(spec))
+  }
+
+  fun withSkin(kind: String, skin: Skin, variant: ?String = None()): Theme {
+    next = this.skins.clone();
+    next.set(SkinKey(kind, variant), skin);
+    Theme(this.tokens, next.chill())
+  }
+
+  // Looks up the skin for (kind, variant), falling back to (kind, None()).
+  fun skinFor(kind: String, variant: ?String = None()): ?Skin {
+    variant match {
+    | Some(_) ->
+      this.skins.maybeGet(SkinKey(kind, variant)) match {
+      | s @ Some(_) -> s
+      | None() -> this.skins.maybeGet(SkinKey(kind))
+      }
+    | None() -> this.skins.maybeGet(SkinKey(kind))
+    }
+  }
+}
+
+// Returns the skin slot (kind, optional variant) of a node, or None for pure
+// structural/layout nodes that do not draw.
+fun nodeSkinKey(context: mutable SKStore.Context, node: Node): ?SkinKey {
+  node match {
+  | Shape _ -> Some(SkinKey("shape"))
+  | Text{variant} -> Some(SkinKey("text", variant.get(context)))
+  | Icon{variant} -> Some(SkinKey("icon", variant.get(context)))
+  | Label{variant} -> Some(SkinKey("label", variant.get(context)))
+  | Flex _
+  | Stack _
+  | Padding _
+  | Align _
+  | Constrained _
+  | Layer _
+  | ThemeScope _ ->
+    None()
+  | Component _ ->
+    invariant_violation("RUi: Component must be expanded before nodeSkinKey")
+  }
+}
+
+// Built-in default skins.
+
+class DefaultShapeSkin() extends Skin {
+  fun resolveStyle(
+    context: mutable SKStore.Context,
+    node: Node,
+    _theme: Theme,
+  ): ResolvedStyle {
+    s = node as Shape _;
+    ResolvedStyle{
+      color => s.color.get(context),
+      border => s.border.get(context),
+    }
+  }
+
+  fun paint(
+    pctx: mutable PaintContext,
+    node: Node,
+    style: ResolvedStyle,
+    size: Geometry.Size,
+  ): Array<Ui.Drawable> {
+    s = node as Shape _;
+    origin = Geometry.Offset::zero;
+    drawable = s.kind.get(pctx.context) match {
+    | RectShape() ->
+      style.border match {
+      | Some(_) ->
+        pctx.support.roundedRectangle(
+          origin,
+          size,
+          style.color,
+          0.0,
+          0.0,
+          style.border,
+        )
+      | None() -> pctx.support.rectangle(origin, size, style.color)
+      }
+    | RoundedRectShape(radius, smooth) ->
+      pctx.support.roundedRectangle(
+        origin,
+        size,
+        style.color,
+        radius,
+        smooth,
+        style.border,
+      )
+    | EllipseShape() -> pctx.support.ellipse(origin, size, style.color)
+    };
+    Array[drawable]
+  }
+}
+
+class DefaultTextSkin() extends Skin {
+  fun resolveStyle(
+    context: mutable SKStore.Context,
+    node: Node,
+    theme: Theme,
+  ): ResolvedStyle {
+    t = node as Text _;
+    ResolvedStyle{
+      color => t.color
+        .get(context)
+        .default(theme.color(ThemeTokens::textColor)),
+      font => Some(
+        t.font.get(context).default(theme.font(ThemeTokens::bodyFont)),
+      ),
+      lineHeightFactor => theme.float(ThemeTokens::lineHeightFactor, 1.2),
+      effects => t.effects.get(context),
+    }
+  }
+
+  fun paint(
+    pctx: mutable PaintContext,
+    node: Node,
+    style: ResolvedStyle,
+    _size: Geometry.Size,
+  ): Array<Ui.Drawable> {
+    t = node as Text _;
+    content = t.text.get(pctx.context);
+    style.font match {
+    | Some(spec) ->
+      pctx.fonts.paintText(
+        pctx.context,
+        pctx.support,
+        content,
+        spec,
+        style.color,
+        Geometry.Offset::zero,
+        style.lineHeightFactor,
+        style.effects,
+      )
+    | None() -> Array[]
+    }
+  }
+}
+
+class DefaultIconSkin() extends Skin {
+  fun resolveStyle(
+    context: mutable SKStore.Context,
+    node: Node,
+    theme: Theme,
+  ): ResolvedStyle {
+    ic = node as Icon _;
+    ResolvedStyle{
+      color => ic.color
+        .get(context)
+        .default(theme.color(ThemeTokens::iconColor)),
+      iconSize => ic.size
+        .get(context)
+        .default(theme.float(ThemeTokens::iconSize, 18.0)),
+    }
+  }
+
+  fun paint(
+    pctx: mutable PaintContext,
+    node: Node,
+    style: ResolvedStyle,
+    size: Geometry.Size,
+  ): Array<Ui.Drawable> {
+    ic = node as Icon _;
+    icon = ic.icon.get(pctx.context);
+    rect = Geometry.Rect::fromOffsetSize(Geometry.Offset::zero, size);
+    icon match {
+    | PathIcon(name, path, pxRange) ->
+      Array[
+        pctx.fonts.paintIconPath(
+          pctx.context,
+          pctx.support,
+          name,
+          path,
+          rect,
+          style.color,
+          pxRange,
+        ),
+      ]
+    | GlyphIcon(family, codePoint) ->
+      spec = FontSpec{family, size => style.iconSize};
+      pctx.fonts.paintText(
+        pctx.context,
+        pctx.support,
+        String::fromChars(Array[codePoint]),
+        spec,
+        style.color,
+      )
+    }
+  }
+}
+
+class DefaultLabelSkin() extends Skin {
+  fun resolveStyle(
+    context: mutable SKStore.Context,
+    node: Node,
+    theme: Theme,
+  ): ResolvedStyle {
+    lbl = node as Label _;
+    ResolvedStyle{
+      color => lbl.color
+        .get(context)
+        .default(theme.color(ThemeTokens::textColor)),
+      font => Some(
+        lbl.font.get(context).default(theme.font(ThemeTokens::labelFont)),
+      ),
+      iconSize => theme.float(ThemeTokens::iconSize, 18.0),
+      gap => theme.float(ThemeTokens::labelGap, 6.0),
+      padding => theme.insets(ThemeTokens::labelPadding),
+      lineHeightFactor => theme.float(ThemeTokens::lineHeightFactor, 1.2),
+    }
+  }
+
+  fun paint(
+    pctx: mutable PaintContext,
+    node: Node,
+    style: ResolvedStyle,
+    size: Geometry.Size,
+  ): Array<Ui.Drawable> {
+    lbl = node as Label _;
+    out = mutable Vector<Ui.Drawable>[];
+    style.background.each(bg -> {
+      if (style.cornerRadius > 0.0 || style.border.isSome()) {
+        out.push(
+          pctx.support.roundedRectangle(
+            Geometry.Offset::zero,
+            size,
+            bg,
+            style.cornerRadius,
+            2.0,
+            style.border,
+          ),
+        )
+      } else {
+        out.push(pctx.support.rectangle(Geometry.Offset::zero, size, bg))
+      }
+    });
+    innerH = Math.max(0.0, size.height - style.padding.vertical());
+    x = style.padding.left;
+    yTop = style.padding.top;
+    optIcon = lbl.icon.get(pctx.context);
+    textStr = lbl.text.get(pctx.context);
+    optIcon.each(icon -> {
+      icSize = style.iconSize;
+      icY = yTop + (innerH - icSize) * 0.5;
+      rect = Geometry.Rect::fromLTWH(x, icY, icSize, icSize);
+      icon match {
+      | PathIcon(name, path, pxRange) ->
+        out.push(
+          pctx.fonts.paintIconPath(
+            pctx.context,
+            pctx.support,
+            name,
+            path,
+            rect,
+            style.color,
+            pxRange,
+          ),
+        )
+      | GlyphIcon(family, codePoint) ->
+        spec = FontSpec{family, size => icSize};
+        for (d in pctx.fonts.paintText(
+          pctx.context,
+          pctx.support,
+          String::fromChars(Array[codePoint]),
+          spec,
+          style.color,
+          Geometry.Offset(x, icY),
+        )) {
+          out.push(d)
+        }
+      };
+      !x = x + icSize + if (textStr.isEmpty()) 0.0 else style.gap
+    });
+    if (!textStr.isEmpty()) {
+      style.font.each(spec -> {
+        textSz = pctx.fonts.measureText(
+          pctx.context,
+          textStr,
+          spec,
+          style.lineHeightFactor,
+        );
+        ty = yTop + (innerH - textSz.height) * 0.5;
+        for (d in pctx.fonts.paintText(
+          pctx.context,
+          pctx.support,
+          textStr,
+          spec,
+          style.color,
+          Geometry.Offset(x, ty),
+          style.lineHeightFactor,
+          style.effects,
+        )) {
+          out.push(d)
+        }
+      })
+    };
+    out.toArray()
+  }
+}
+
+module end;

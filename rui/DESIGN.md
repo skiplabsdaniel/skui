@@ -523,7 +523,7 @@ reducers and layout) and is usable on its own.
    and can be used by `framework/` too.
 3. **Core.** Descriptions, element tree, layout protocol, `Flex`, `Stack`,
    `Padding`, `Align`, `Constrained`, geometry stage, depth stage, paint of
-   plain shapes. A first `sdl` example on top of it.
+   plain shapes. Visual examples live in a dedicated package (not `sdl/`).
 4. **Skins and theme.** Theme directory, skin registry, resolved styles,
    `Text` and `Icon` (reusing `font` and `mtsdf`), `Label`.
 5. **Input.** Input queue, routing, reducers, commits, effects, focus,

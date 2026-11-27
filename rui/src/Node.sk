@@ -122,7 +122,42 @@ class Constrained{
 // Starts a stacking context on the given layer without affecting layout.
 class Layer{layer: Value<StackingLayer>, child: Value<Node>} extends Node
 
-// Plain geometric shape node for step 3 (and low-level drawing).
+// Overrides the active Theme for its subtree without affecting layout.
+class ThemeScope{theme: Value<Theme>, child: Value<Node>} extends Node
+
+// Vector or glyph icon specification.
+base class IconData {
+  children =
+  | PathIcon(name: String, path: Shape.Path, pxRange: Int = defaultPxRange)
+  | GlyphIcon(family: String, codePoint: Char)
+}
+
+// View nodes: semantic descriptions whose look and metrics come from Skins.
+
+class Text{
+  text: Value<String>,
+  font: Value<?FontSpec> = Const(None()),
+  color: Value<?.Color> = Const(None()),
+  effects: Value<Ui.TextEffects> = Const(Ui.TextEffects::none),
+  variant: Value<?String> = Const(None()),
+} extends Node
+
+class Icon{
+  icon: Value<IconData>,
+  size: Value<?Float> = Const(None()),
+  color: Value<?.Color> = Const(None()),
+  variant: Value<?String> = Const(None()),
+} extends Node
+
+class Label{
+  text: Value<String>,
+  icon: Value<?IconData> = Const(None()),
+  font: Value<?FontSpec> = Const(None()),
+  color: Value<?.Color> = Const(None()),
+  variant: Value<?String> = Const(None()),
+} extends Node
+
+// Plain geometric shape node for low-level drawing.
 base class ShapeKind uses Hashable, Equality {
   children =
   | RectShape()

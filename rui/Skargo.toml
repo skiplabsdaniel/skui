@@ -5,6 +5,9 @@ version = "0.1.0"
 [dependencies]
 std = { path = "../skip/skiplang/prelude" }
 skui_common = { path = "../common" }
+skui_font = { path = "../font" }
+skui_mtsdf = { path = "../mtsdf" }
 
 [dev-dependencies]
 sktest = { path = "../skip/skiplang/sktest" }
+skui_font_tests = { path = "../font/dev" }

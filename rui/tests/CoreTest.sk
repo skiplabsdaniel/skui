@@ -35,16 +35,20 @@ class MockSupport() extends Ui.DrawableSupport {
   }
 
   fun msdf(
-    _offset: Geometry.Offset,
-    _size: Geometry.Size,
+    offset: Geometry.Offset,
+    size: Geometry.Size,
     _picture: Ui.Picture,
     _conv: Geometry.Rect ~> Geometry.Rect,
-    _pxRange: Int,
+    pxRange: Int,
     _thickness: Float,
-    _paint: Ui.Paint,
+    paint: Ui.Paint,
     _effects: Ui.TextEffects = Ui.TextEffects::none,
   ): Ui.Drawable {
-    invariant_violation("unexpected msdf in MockSupport")
+    c = paint match {
+    | col @ .Color _ -> col
+    | _ -> Colors.black()
+    };
+    MockDrawable("msdf", offset, size, c, pxRange.toFloat())
   }
 
   fun ellipse(

@@ -1,0 +1,311 @@
+module alias T = SKTest;
+
+module SKUIRUiTest;
+
+// Custom pill skin for Label: adds padding, a background pill, and a wider gap,
+// proving that both layout metrics and paint change by swapping only the Skin.
+class PillLabelSkin() extends RUi.Skin {
+  fun resolveStyle(
+    context: mutable SKStore.Context,
+    node: RUi.Node,
+    theme: RUi.Theme,
+  ): RUi.ResolvedStyle {
+    lbl = node as RUi.Label _;
+    RUi.ResolvedStyle{
+      color => lbl.color.get(context).default(Colors.white()),
+      background => Some(theme.color(RUi.ThemeTokens::accentColor)),
+      cornerRadius => 12.0,
+      padding => Geometry.Insets::fromLTRB(12.0, 6.0, 12.0, 6.0),
+      minSize => Geometry.Size(80.0, 32.0),
+      gap => 10.0,
+      iconSize => 16.0,
+      font => Some(
+        lbl.font.get(context).default(theme.font(RUi.ThemeTokens::labelFont)),
+      ),
+    }
+  }
+
+  fun paint(
+    pctx: mutable RUi.PaintContext,
+    node: RUi.Node,
+    style: RUi.ResolvedStyle,
+    size: Geometry.Size,
+  ): Array<Ui.Drawable> {
+    RUi.DefaultLabelSkin().paint(pctx, node, style, size)
+  }
+}
+
+@test
+fun textMeasuresAndPaintsWithRealFont(): void {
+  context = SKStore.Context::create{}.mclone();
+  fonts = RUi.FontStore::create(context, "text-test");
+  fonts.registerBytes(context, "sans", SKIP_SKUIFontTestsRes.liberationBin());
+
+  root = RUi.Align{
+    alignment => RUi.Const(RUi.Alignment::topLeft),
+    child => RUi.Const(
+      RUi.Text{
+        key => Some("hello"),
+        text => RUi.Const("Hi"),
+        font => RUi.Const(
+          Some(RUi.FontSpec{family => "sans", size => 20.0, msdfSize => 32.0}),
+        ),
+        color => RUi.Const(Some(Colors.blue())),
+      },
+    ),
+  };
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(200.0, 100.0),
+    MockSupport(),
+    "text-test",
+    None(),
+    Some(fonts),
+  );
+  context.update();
+
+  helloId = RUi.ElementId::root.childNamed("hello");
+  geom = pipe.geometryHdl.unsafeGet(context, helloId);
+  T.expectEq(geom.size.width > 5.0, true, "measured width positive");
+  T.expectEq(geom.size.height >= 20.0, true, "measured height at least 20px");
+
+  // Two visible glyphs ('H' and 'i') -> two MSDF drawables with blue color.
+  list = pipe.drawList(context);
+  T.expectEq(list.size(), 2, "two glyph drawables");
+  d0 = list[0].drawable as MockDrawable _;
+  d1 = list[1].drawable as MockDrawable _;
+  T.expectEq(d0.kind, "msdf", "first is msdf");
+  T.expectEq(d1.kind, "msdf", "second is msdf");
+  T.expectEq(d0.color, Colors.blue(), "first blue");
+  T.expectEq(d1.offset.dx > d0.offset.dx, true, "second glyph right of first");
+}
+
+@test
+fun msdfKeySeparatesQualitySizes(): void {
+  s45 = RUi.FontSpec{family => "sans", size => 14.0, msdfSize => 45.0};
+  s32 = RUi.FontSpec{family => "sans", size => 14.0, msdfSize => 32.0};
+  k45 = RUi.MsdfKey::forSpec(s45, 'A');
+  k32 = RUi.MsdfKey::forSpec(s32, 'A');
+  T.expectEq(k45 == k32, false, "distinct keys for 45 vs 32 msdfSize");
+  T.expectEq(k45.msdfSize, 45.0, "msdfSize 45");
+  T.expectEq(k32.msdfSize, 32.0, "msdfSize 32");
+
+  // Same msdfSize at two drawn sizes shares one MSDF key (unhinted).
+  s14 = RUi.FontSpec{family => "sans", size => 14.0, msdfSize => 45.0};
+  s28 = RUi.FontSpec{family => "sans", size => 28.0, msdfSize => 45.0};
+  T.expectEq(
+    RUi.MsdfKey::forSpec(s14, 'A'),
+    RUi.MsdfKey::forSpec(s28, 'A'),
+    "unhinted sizes share MSDF",
+  );
+}
+
+@test
+fun iconPathAndLabelLayoutAndPaint(): void {
+  context = SKStore.Context::create{}.mclone();
+  fonts = RUi.FontStore::create(context, "icon-label");
+  fonts.registerBytes(context, "sans", SKIP_SKUIFontTestsRes.liberationBin());
+
+  squarePath = Shape.Path::rectangle(
+    Geometry.Rect::fromLTWH(0.0, 0.0, 16.0, 16.0),
+  );
+  ic = RUi.PathIcon("sq", squarePath);
+
+  root = RUi.Flex{
+    direction => RUi.Const(Ui.VerticalAxis()),
+    crossAxisAlignment => RUi.Const(RUi.CrossStart()),
+    items => RUi.Const(
+      Array[
+        RUi.Icon{key => Some("ic"), icon => RUi.Const(ic)},
+        RUi.Label{
+          key => Some("lbl"),
+          text => RUi.Const("Ok"),
+          icon => RUi.Const(Some(ic)),
+        },
+      ],
+    ),
+  };
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(200.0, 100.0),
+    MockSupport(),
+    "icon-label",
+    None(),
+    Some(fonts),
+  );
+  context.update();
+
+  // Default theme icon size is 18.0.
+  icGeom = pipe.geometryHdl.unsafeGet(
+    context,
+    RUi.ElementId::root.childNamed("ic"),
+  );
+  T.expectEq(icGeom.size, Geometry.Size(18.0, 18.0), "icon uses theme size");
+
+  // Label width = icon(18) + gap(6) + text("Ok") > 24.
+  lblGeom = pipe.geometryHdl.unsafeGet(
+    context,
+    RUi.ElementId::root.childNamed("lbl"),
+  );
+  T.expectEq(
+    lblGeom.size.width > 24.0,
+    true,
+    "label includes icon + gap + text",
+  );
+
+  // Drawables: 1 for standalone Icon + 1 for Label icon + 2 for "Ok" = 4 MSDFs.
+  list = pipe.drawList(context);
+  T.expectEq(list.size(), 4, "icon + label(icon + 2 glyphs)");
+}
+
+@test
+fun reactiveThemeAndSkinSwapChangesLayoutAndPaint(): void {
+  context = SKStore.Context::create{}.mclone();
+  fonts = RUi.FontStore::create(context, "skin-swap");
+  fonts.registerBytes(context, "sans", SKIP_SKUIFontTestsRes.liberationBin());
+
+  root = RUi.Align{
+    alignment => RUi.Const(RUi.Alignment::topLeft),
+    child => RUi.Const(
+      RUi.Label{
+        key => Some("badge"),
+        text => RUi.Const("Go"),
+        variant => RUi.Const(Some("pill")),
+      },
+    ),
+  };
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(200.0, 100.0),
+    MockSupport(),
+    "skin-swap",
+    None(),
+    Some(fonts),
+  );
+  context.update();
+
+  badgeId = RUi.ElementId::root.childNamed("badge");
+  geomDefault = pipe.geometryHdl.unsafeGet(context, badgeId);
+  // Without a "pill" skin registered, falls back to DefaultLabelSkin (no minSize/bg).
+  T.expectEq(
+    geomDefault.size.width < 80.0,
+    true,
+    "default label smaller than 80",
+  );
+  T.expectEq(pipe.drawList(context).size(), 2, "only 2 glyphs, no background");
+
+  // Register PillLabelSkin for variant "pill" on the theme -> updates both
+  // layout (minSize 80x32) and paint (rounded background + white glyphs).
+  pillTheme = RUi.Theme::default()
+    .withColor(RUi.ThemeTokens::accentColor, Colors.red())
+    .withSkin("label", PillLabelSkin(), Some("pill"));
+  pipe.setTheme(context, pillTheme);
+  context.update();
+
+  geomPill = pipe.geometryHdl.unsafeGet(context, badgeId);
+  T.expectEq(geomPill.size.width >= 80.0, true, "pill min width applied");
+  T.expectEq(geomPill.size.height >= 32.0, true, "pill min height applied");
+
+  list = pipe.drawList(context);
+  T.expectEq(list.size(), 3, "rounded bg + 2 glyphs");
+  bg = list[0].drawable as MockDrawable _;
+  g0 = list[1].drawable as MockDrawable _;
+  T.expectEq(bg.kind, "rrect", "pill background is rrect");
+  T.expectEq(bg.radius, 12.0, "pill radius");
+  T.expectEq(bg.color, Colors.red(), "pill accent color from theme");
+  T.expectEq(g0.color, Colors.white(), "pill text color");
+}
+
+@test
+fun themeScopeOverridesSubtreeOnly(): void {
+  context = SKStore.Context::create{}.mclone();
+  fonts = RUi.FontStore::create(context, "scope-test");
+  fonts.registerBytes(context, "sans", SKIP_SKUIFontTestsRes.liberationBin());
+
+  outerTheme = RUi.Theme::default().withColor(
+    RUi.ThemeTokens::textColor,
+    Colors.black(),
+  );
+  innerThemeProp = RUi.Prop::create(
+    context,
+    "inner-theme",
+    outerTheme.withColor(RUi.ThemeTokens::textColor, Colors.red()),
+  );
+
+  root = RUi.Flex{
+    items => RUi.Const(
+      Array[
+        RUi.Text{key => Some("out"), text => RUi.Const("A")},
+        RUi.ThemeScope{
+          key => Some("scope"),
+          theme => RUi.Bound(innerThemeProp),
+          child => RUi.Const(
+            RUi.Text{key => Some("in"), text => RUi.Const("B")},
+          ),
+        },
+      ],
+    ),
+  };
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(200.0, 100.0),
+    MockSupport(),
+    "scope-test",
+    Some(outerTheme),
+    Some(fonts),
+  );
+  paintTickHdl = pipe.paintHdl.map(
+    RUi.ElementId::keyType,
+    SKStore.IntFile::type,
+    context,
+    RUi.stageDir("scope-test", "paint-tick"),
+    (context, writer, key, _values) ~> {
+      writer.set(key, SKStore.IntFile(context.getTick().value))
+    },
+  );
+  context.update();
+
+  outId = RUi.ElementId::root.childNamed("out");
+  inId = RUi.ElementId::root.childNamed("scope").childNamed("in");
+
+  T.expectEq(
+    pipe.stylesHdl.unsafeGet(context, outId).color,
+    Colors.black(),
+    "outer text black",
+  );
+  T.expectEq(
+    pipe.stylesHdl.unsafeGet(context, inId).color,
+    Colors.red(),
+    "inner text red",
+  );
+  outPaintTickBefore = paintTickHdl.unsafeGet(context, outId).value;
+
+  // Changing the scoped theme updates only the scoped subtree, not the sibling.
+  innerThemeProp.set(
+    context,
+    outerTheme.withColor(RUi.ThemeTokens::textColor, Colors.green()),
+  );
+  context.update();
+
+  T.expectEq(
+    pipe.stylesHdl.unsafeGet(context, inId).color,
+    Colors.green(),
+    "inner text updated to green",
+  );
+  T.expectEq(
+    pipe.stylesHdl.unsafeGet(context, outId).color,
+    Colors.black(),
+    "outer text still black",
+  );
+  T.expectEq(
+    paintTickHdl.unsafeGet(context, outId).value,
+    outPaintTickBefore,
+    "outer paint not recomputed",
+  );
+}
+
+module end;

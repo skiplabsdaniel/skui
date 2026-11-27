@@ -33,7 +33,12 @@ fun nodeChildren(context: mutable SKStore.Context, node: Node): Array<Node> {
   | Align{child} -> Array[child.get(context)]
   | Constrained{child} -> Array[child.get(context)]
   | Layer{child} -> Array[child.get(context)]
-  | Shape _ -> Array[]
+  | ThemeScope{child} -> Array[child.get(context)]
+  | Shape _
+  | Text _
+  | Icon _
+  | Label _ ->
+    Array[]
   | Component _ ->
     invariant_violation("RUi: Component must be expanded before nodeChildren")
   }
