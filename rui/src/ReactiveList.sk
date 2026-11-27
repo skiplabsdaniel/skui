@@ -1,0 +1,198 @@
+module RUi;
+
+// Reactive ordered collection separating element content from element order.
+//
+// - Each item is stored under its own stable string key in `itemsHdl`
+//   (one SKStore entry per item). Updating one item only invalidates readers
+//   of that key.
+// - The sequence of keys is stored separately in `orderProp`. Reordering
+//   (e.g. drag-and-drop), inserting, or removing an item updates `orderProp`
+//   without rewriting the entries of untouched items.
+//
+// Note: if SKStore gains a dedicated ordered-sequence directory (SeqDir),
+// `orderProp` can be backed by it without changing this API.
+class ReactiveList<T: frozen> private (
+  itemsHdl: SKStore.EHandle<SKStore.SID, BoxFile<T>>,
+  orderProp: Prop<Array<String>>,
+) {
+  static fun create(
+    context: mutable SKStore.Context,
+    name: String,
+    initial: Array<(String, T)> = Array[],
+  ): ReactiveList<T> {
+    seen = mutable Set<String>[];
+    entries = mutable Vector<(SKStore.SID, BoxFile<T>)>[];
+    order = mutable Vector<String>[];
+    for (pair in initial) {
+      (k, v) = pair;
+      invariant(
+        !seen.contains(k),
+        `RUi: duplicate key '${k}' in ReactiveList '${name}'`,
+      );
+      seen.add(k);
+      entries.push((SKStore.SID(k), BoxFile(v)));
+      order.push(k)
+    };
+    baseDir = stageDir("lists", name);
+    itemsHdl = makeInputDir(
+      SKStore.SID::keyType,
+      BoxFile<T>::type,
+      context,
+      baseDir.sub("items"),
+      entries.toArray(),
+    );
+    orderProp = Prop::create(context, `list-${name}-order`, order.toArray());
+    ReactiveList(itemsHdl, orderProp)
+  }
+
+  // Tracked read of the ordered list of stable keys.
+  fun keys(context: mutable SKStore.Context): Array<String> {
+    this.orderProp.get(context)
+  }
+
+  // Untracked read of the ordered keys (outside reactive computations).
+  fun unsafeKeys(context: readonly SKStore.Context): Array<String> {
+    this.orderProp.unsafeGet(context)
+  }
+
+  fun size(context: mutable SKStore.Context): Int {
+    this.orderProp.get(context).size()
+  }
+
+  // Tracked read of a single item by its stable key.
+  fun get(context: mutable SKStore.Context, key: String): T {
+    this.itemsHdl.get(context, SKStore.SID(key)).value
+  }
+
+  fun maybeGet(context: mutable SKStore.Context, key: String): ?T {
+    this.itemsHdl.maybeGet(context, SKStore.SID(key)).map(b -> b.value)
+  }
+
+  // Untracked reads (outside reactive computations).
+  fun unsafeGet(context: readonly SKStore.Context, key: String): T {
+    this.itemsHdl.unsafeGet(context, SKStore.SID(key)).value
+  }
+
+  fun unsafeMaybeGet(context: readonly SKStore.Context, key: String): ?T {
+    this.itemsHdl.unsafeMaybeGet(context, SKStore.SID(key)).map(b -> b.value)
+  }
+
+  // Inserts a new keyed item at `index` (clamped to [0, size]).
+  // Fails if `key` already exists or if called inside a computation.
+  fun insert(
+    context: mutable SKStore.Context,
+    key: String,
+    value: T,
+    optIndex: ?Int = None(),
+  ): void {
+    assertOutsideComputation(context);
+    cur = this.orderProp.unsafeGet(context);
+    invariant(
+      this.itemsHdl.unsafeMaybeGet(context, SKStore.SID(key)).isNone(),
+      `RUi: key '${key}' already exists in ReactiveList`,
+    );
+    idx = Math.clamp(optIndex.default(cur.size()), 0, cur.size());
+    next = mutable Vector<String>[];
+    for (i in Range(0, cur.size())) {
+      if (i == idx) next.push(key);
+      next.push(cur[i])
+    };
+    if (idx == cur.size()) next.push(key);
+    writeValue(context, this.itemsHdl, SKStore.SID(key), BoxFile(value));
+    this.orderProp.set(context, next.toArray())
+  }
+
+  // Appends a new keyed item at the end.
+  fun push(context: mutable SKStore.Context, key: String, value: T): void {
+    this.insert(context, key, value, None())
+  }
+
+  // Replaces the value of an existing key without touching `orderProp`.
+  fun setItem(context: mutable SKStore.Context, key: String, value: T): void {
+    assertOutsideComputation(context);
+    invariant(
+      this.itemsHdl.unsafeMaybeGet(context, SKStore.SID(key)).isSome(),
+      `RUi: unknown key '${key}' in ReactiveList.setItem`,
+    );
+    writeValue(context, this.itemsHdl, SKStore.SID(key), BoxFile(value))
+  }
+
+  // Removes an item by key (no-op if absent).
+  fun remove(context: mutable SKStore.Context, key: String): void {
+    assertOutsideComputation(context);
+    cur = this.orderProp.unsafeGet(context);
+    next = cur.filter(k -> k != key);
+    if (next.size() != cur.size()) {
+      removeValue(context, this.itemsHdl, SKStore.SID(key));
+      this.orderProp.set(context, next)
+    }
+  }
+
+  // Moves an existing key to `toIndex` (clamped to [0, size - 1]) without
+  // touching `itemsHdl`: untouched items keep their identity and cached data.
+  fun move(context: mutable SKStore.Context, key: String, toIndex: Int): void {
+    assertOutsideComputation(context);
+    cur = this.orderProp.unsafeGet(context);
+    without = cur.filter(k -> k != key);
+    invariant(
+      without.size() == cur.size() - 1,
+      `RUi: unknown key '${key}' in ReactiveList.move`,
+    );
+    idx = Math.clamp(toIndex, 0, without.size());
+    next = mutable Vector<String>[];
+    for (i in Range(0, without.size())) {
+      if (i == idx) next.push(key);
+      next.push(without[i])
+    };
+    if (idx == without.size()) next.push(key);
+    this.orderProp.set(context, next.toArray())
+  }
+
+  // Replaces the ordering with a permutation of the existing keys, without
+  // touching `itemsHdl`.
+  fun setOrder(
+    context: mutable SKStore.Context,
+    newOrder: Array<String>,
+  ): void {
+    assertOutsideComputation(context);
+    cur = this.orderProp.unsafeGet(context);
+    invariant(
+      newOrder.size() == cur.size(),
+      "RUi: setOrder length must match current ReactiveList size",
+    );
+    seen = mutable Set<String>[];
+    for (k in newOrder) {
+      invariant(!seen.contains(k), `RUi: duplicate key '${k}' in setOrder`);
+      invariant(
+        this.itemsHdl.unsafeMaybeGet(context, SKStore.SID(k)).isSome(),
+        `RUi: unknown key '${k}' in setOrder`,
+      );
+      seen.add(k)
+    };
+    this.orderProp.set(context, newOrder)
+  }
+}
+
+// Child collection for multi-child containers (Flex, Stack, ...).
+// Supports:
+// - `StaticNodes`: fixed structure (each slot can still be a reactive Value<Node>).
+// - `KeyedNodes`: dynamic/reorderable list backed by a `ReactiveList<Value<Node>>`,
+//   so reordering or updating one item keeps all other items' ElementIds and
+//   cached style/layout/paint intact.
+// Combined with `Value<NodeList>`, this covers the full
+// `Value<ReactiveList<Value<Node>>>` pattern.
+base class NodeList {
+  children =
+  | StaticNodes(entries: Array<Value<Node>>)
+  | KeyedNodes(list: ReactiveList<Value<Node>>)
+
+  static fun fromArray(nodes: Array<Node>): NodeList {
+    StaticNodes(nodes.map(n -> (Const(n) : Value<Node>)))
+  }
+
+  static fun fromReactive(list: ReactiveList<Value<Node>>): NodeList {
+    KeyedNodes(list)
+  }
+}
+
+module end;

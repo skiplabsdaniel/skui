@@ -138,12 +138,28 @@ class Button{
   `Component{render: Context ~> Node}`. They are how applications compose
   nodes; they do not get special treatment by the framework.
 
-### 4.2 Elements and identity
+### 4.2 Elements, identity and reactive lists
 
 The element tree is the descriptions expanded into one entry per node, keyed
-by an `ElementId` (the path of keys from the root). Children get their key
-from `key` when given, from their index otherwise; content hashes (today's
-`engine`) are not used, so two equal children stay distinct.
+by an `ElementId` (the path of keys from the root).
+
+For multi-child containers (`Flex`, `Stack`, ...), child lists use
+`Value<NodeList>`:
+
+- `StaticNodes(entries: Array<Value<Node>>)`: fixed structural children
+  (each slot can still be reactive). Keys come from `Node.key` when given,
+  index otherwise.
+- `KeyedNodes(list: ReactiveList<Value<Node>>)`: dynamic or reorderable
+  lists (e.g. drag-and-drop inside a `Flex`). `ReactiveList` separates item
+  content (one SKStore entry per stable string key) from display order
+  (`orderProp`). Reordering (`move`, `setOrder`) only changes the order:
+  children keep their `NamedKey` `ElementId`s, so their state, styles,
+  memoized layouts and paints are untouched.
+
+Content hashes (today's `engine`) are never used, so two equal children stay
+distinct. Note: if SKStore later adds a dedicated ordered-sequence directory
+(`SeqDir`), `ReactiveList` can adopt it internally without changing the RUi
+API.
 
 An element record holds its node, its parent and its children ids. Expanding
 a component reads its props: when a prop changes, only that component's

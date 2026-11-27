@@ -272,23 +272,25 @@ fun layoutFlexHorizontalAndFactors(): void {
     crossAxisAlignment => RUi.Const(RUi.CrossCenter()),
     gap => RUi.Const(10.0),
     items => RUi.Const(
-      Array[
-        box(40.0, 20.0, Colors.red(), Some("fixed")),
-        box(
-          0.0,
-          30.0,
-          Colors.green(),
-          Some("flex1"),
-          Some(RUi.FlexData{flex => 1}),
-        ),
-        box(
-          0.0,
-          50.0,
-          Colors.blue(),
-          Some("flex2"),
-          Some(RUi.FlexData{flex => 2}),
-        ),
-      ],
+      RUi.NodeList::fromArray(
+        Array[
+          box(40.0, 20.0, Colors.red(), Some("fixed")),
+          box(
+            0.0,
+            30.0,
+            Colors.green(),
+            Some("flex1"),
+            Some(RUi.FlexData{flex => 1}),
+          ),
+          box(
+            0.0,
+            50.0,
+            Colors.blue(),
+            Some("flex2"),
+            Some(RUi.FlexData{flex => 2}),
+          ),
+        ],
+      ),
     ),
   };
   pipe = RUi.Pipeline::create(
@@ -341,10 +343,12 @@ fun layoutFlexMainAlignmentAndStretch(): void {
     mainAxisAlignment => RUi.Const(RUi.MainSpaceBetween()),
     crossAxisAlignment => RUi.Const(RUi.CrossStretch()),
     items => RUi.Const(
-      Array[
-        box(10.0, 20.0, Colors.red(), Some("a")),
-        box(10.0, 30.0, Colors.blue(), Some("b")),
-      ],
+      RUi.NodeList::fromArray(
+        Array[
+          box(10.0, 20.0, Colors.red(), Some("a")),
+          box(10.0, 30.0, Colors.blue(), Some("b")),
+        ],
+      ),
     ),
   };
   pipe = RUi.Pipeline::create(
@@ -383,30 +387,32 @@ fun layoutStackAlignedAndPositioned(): void {
   root = RUi.Stack{
     alignment => RUi.Const(RUi.Alignment::bottomRight),
     items => RUi.Const(
-      Array[
-        box(50.0, 30.0, Colors.red(), Some("aligned")),
-        box(
-          0.0,
-          0.0,
-          Colors.green(),
-          Some("pinned"),
-          Some(
-            RUi.StackData{
-              left => Some(10.0),
-              top => Some(15.0),
-              right => Some(20.0),
-              height => Some(40.0),
-            },
+      RUi.NodeList::fromArray(
+        Array[
+          box(50.0, 30.0, Colors.red(), Some("aligned")),
+          box(
+            0.0,
+            0.0,
+            Colors.green(),
+            Some("pinned"),
+            Some(
+              RUi.StackData{
+                left => Some(10.0),
+                top => Some(15.0),
+                right => Some(20.0),
+                height => Some(40.0),
+              },
+            ),
           ),
-        ),
-        box(
-          20.0,
-          20.0,
-          Colors.blue(),
-          Some("topRight"),
-          Some(RUi.StackData{alignment => Some(RUi.Alignment::topRight)}),
-        ),
-      ],
+          box(
+            20.0,
+            20.0,
+            Colors.blue(),
+            Some("topRight"),
+            Some(RUi.StackData{alignment => Some(RUi.Alignment::topRight)}),
+          ),
+        ],
+      ),
     ),
   };
   pipe = RUi.Pipeline::create(
@@ -454,7 +460,9 @@ fun elementIdentityDistinctForEqualChildren(): void {
   context = SKStore.Context::create{}.mclone();
   // Two identical unkeyed children must keep distinct ElementIds (IndexKey 0 and 1).
   same = box(30.0, 20.0, Colors.red());
-  root = RUi.Flex{items => RUi.Const(Array[same, same])};
+  root = RUi.Flex{
+    items => RUi.Const(RUi.NodeList::fromArray(Array[same, same])),
+  };
   pipe = RUi.Pipeline::create(
     context,
     root,
@@ -495,14 +503,16 @@ fun depthOrderingAndLayerSwitchIndependentOfPaint(): void {
   // First child is wrapped in a reactive Layer, second child is on BaseLayer.
   root = RUi.Stack{
     items => RUi.Const(
-      Array[
-        RUi.Layer{
-          key => Some("layer"),
-          layer => RUi.Bound(layerProp),
-          child => RUi.Const(box(40.0, 40.0, Colors.red(), Some("first"))),
-        },
-        box(40.0, 40.0, Colors.blue(), Some("second")),
-      ],
+      RUi.NodeList::fromArray(
+        Array[
+          RUi.Layer{
+            key => Some("layer"),
+            layer => RUi.Bound(layerProp),
+            child => RUi.Const(box(40.0, 40.0, Colors.red(), Some("first"))),
+          },
+          box(40.0, 40.0, Colors.blue(), Some("second")),
+        ],
+      ),
     ),
   };
   pipe = RUi.Pipeline::create(
@@ -650,10 +660,12 @@ fun duplicateChildKeyThrows(): void {
   context = SKStore.Context::create{}.mclone();
   root = RUi.Flex{
     items => RUi.Const(
-      Array[
-        box(10.0, 10.0, Colors.red(), Some("dup")),
-        box(10.0, 10.0, Colors.blue(), Some("dup")),
-      ],
+      RUi.NodeList::fromArray(
+        Array[
+          box(10.0, 10.0, Colors.red(), Some("dup")),
+          box(10.0, 10.0, Colors.blue(), Some("dup")),
+        ],
+      ),
     ),
   };
   threw = try {
@@ -678,18 +690,20 @@ fun paintNotRecomputedWhenSiblingMoves(): void {
   leftWidth = RUi.Prop::create(context, "left-width", 20.0);
   root = RUi.Flex{
     items => RUi.Const(
-      Array[
-        RUi.Constrained{
-          key => Some("left"),
-          constraints => RUi.Bound(
-            leftWidth.map(context, "left-c", w ~>
-              RUi.BoxConstraints::tight(w, 40.0)
+      RUi.NodeList::fromArray(
+        Array[
+          RUi.Constrained{
+            key => Some("left"),
+            constraints => RUi.Bound(
+              leftWidth.map(context, "left-c", w ~>
+                RUi.BoxConstraints::tight(w, 40.0)
+              ),
             ),
-          ),
-          child => RUi.Const(box(10.0, 10.0, Colors.red(), Some("lbox"))),
-        },
-        box(50.0, 40.0, Colors.blue(), Some("right")),
-      ],
+            child => RUi.Const(box(10.0, 10.0, Colors.red(), Some("lbox"))),
+          },
+          box(50.0, 40.0, Colors.blue(), Some("right")),
+        ],
+      ),
     ),
   };
   pipe = RUi.Pipeline::create(

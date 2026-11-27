@@ -1,0 +1,241 @@
+module alias T = SKTest;
+
+module SKUIRUiTest;
+
+@test
+fun reactiveListCrudAndMove(): void {
+  context = SKStore.Context::create{}.mclone();
+  list = RUi.ReactiveList::create(
+    context,
+    "crud",
+    Array[("a", 1), ("b", 2), ("c", 3)],
+  );
+  T.expectEq(list.keys(context), Array["a", "b", "c"], "initial keys");
+  T.expectEq(list.get(context, "b"), 2, "get b");
+
+  list.insert(context, "z", 0, Some(0));
+  context.update();
+  T.expectEq(list.keys(context), Array["z", "a", "b", "c"], "after insert 0");
+
+  list.move(context, "c", 1);
+  context.update();
+  T.expectEq(list.keys(context), Array["z", "c", "a", "b"], "after move c->1");
+
+  list.setItem(context, "a", 10);
+  context.update();
+  T.expectEq(list.get(context, "a"), 10, "updated a");
+  T.expectEq(list.keys(context), Array["z", "c", "a", "b"], "order unchanged");
+
+  list.remove(context, "z");
+  context.update();
+  T.expectEq(list.keys(context), Array["c", "a", "b"], "after remove z");
+  T.expectEq(list.maybeGet(context, "z"), None(), "z gone");
+}
+
+@test
+fun flexDragDropReorderDoesNotRecomputeChildStyleOrPaint(): void {
+  context = SKStore.Context::create{}.mclone();
+  cardList: RUi.ReactiveList<RUi.Value<RUi.Node>> = RUi.ReactiveList::create(
+    context,
+    "cards",
+    Array[
+      ("c1", (RUi.Const(box(40.0, 30.0, Colors.red())) : RUi.Value<RUi.Node>)),
+      (
+        "c2",
+        (RUi.Const(box(60.0, 30.0, Colors.green())) : RUi.Value<RUi.Node>),
+      ),
+      ("c3", (RUi.Const(box(50.0, 30.0, Colors.blue())) : RUi.Value<RUi.Node>)),
+    ],
+  );
+  root = RUi.Flex{
+    direction => RUi.Const(Ui.HorizontalAxis()),
+    gap => RUi.Const(10.0),
+    items => RUi.Const(RUi.NodeList::fromReactive(cardList)),
+  };
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(300.0, 100.0),
+    MockSupport(),
+    "dnd-flex",
+  );
+  styleTickHdl = pipe.stylesHdl.map(
+    RUi.ElementId::keyType,
+    SKStore.IntFile::type,
+    context,
+    RUi.stageDir("dnd-flex", "style-tick"),
+    (context, writer, key, _values) ~> {
+      writer.set(key, SKStore.IntFile(context.getTick().value))
+    },
+  );
+  paintTickHdl = pipe.paintHdl.map(
+    RUi.ElementId::keyType,
+    SKStore.IntFile::type,
+    context,
+    RUi.stageDir("dnd-flex", "paint-tick"),
+    (context, writer, key, _values) ~> {
+      writer.set(key, SKStore.IntFile(context.getTick().value))
+    },
+  );
+  context.update();
+
+  id1 = RUi.ElementId::root.childNamed("c1");
+  id2 = RUi.ElementId::root.childNamed("c2");
+  id3 = RUi.ElementId::root.childNamed("c3");
+
+  // Initial positions: c1@0 (w=40), c2@50 (w=60), c3@120 (w=50).
+  expectRect(
+    pipe.geometryHdl.unsafeGet(context, id1).rect(),
+    0.0,
+    35.0,
+    40.0,
+    30.0,
+    "c1 init",
+  );
+  expectRect(
+    pipe.geometryHdl.unsafeGet(context, id2).rect(),
+    50.0,
+    35.0,
+    60.0,
+    30.0,
+    "c2 init",
+  );
+  expectRect(
+    pipe.geometryHdl.unsafeGet(context, id3).rect(),
+    120.0,
+    35.0,
+    50.0,
+    30.0,
+    "c3 init",
+  );
+
+  s1 = styleTickHdl.unsafeGet(context, id1).value;
+  s2 = styleTickHdl.unsafeGet(context, id2).value;
+  s3 = styleTickHdl.unsafeGet(context, id3).value;
+  p1 = paintTickHdl.unsafeGet(context, id1).value;
+  p2 = paintTickHdl.unsafeGet(context, id2).value;
+  p3 = paintTickHdl.unsafeGet(context, id3).value;
+
+  // Simulate drag-and-drop: move c3 to index 0 -> [c3, c1, c2].
+  cardList.move(context, "c3", 0);
+  context.update();
+
+  // New positions: c3@0 (w=50), c1@60 (w=40), c2@110 (w=60).
+  expectRect(
+    pipe.geometryHdl.unsafeGet(context, id3).rect(),
+    0.0,
+    35.0,
+    50.0,
+    30.0,
+    "c3 moved",
+  );
+  expectRect(
+    pipe.geometryHdl.unsafeGet(context, id1).rect(),
+    60.0,
+    35.0,
+    40.0,
+    30.0,
+    "c1 shifted",
+  );
+  expectRect(
+    pipe.geometryHdl.unsafeGet(context, id2).rect(),
+    110.0,
+    35.0,
+    60.0,
+    30.0,
+    "c2 shifted",
+  );
+
+  // None of the three children had their style or paint recomputed!
+  T.expectEq(
+    styleTickHdl.unsafeGet(context, id1).value,
+    s1,
+    "c1 style untouched",
+  );
+  T.expectEq(
+    styleTickHdl.unsafeGet(context, id2).value,
+    s2,
+    "c2 style untouched",
+  );
+  T.expectEq(
+    styleTickHdl.unsafeGet(context, id3).value,
+    s3,
+    "c3 style untouched",
+  );
+  T.expectEq(
+    paintTickHdl.unsafeGet(context, id1).value,
+    p1,
+    "c1 paint untouched",
+  );
+  T.expectEq(
+    paintTickHdl.unsafeGet(context, id2).value,
+    p2,
+    "c2 paint untouched",
+  );
+  T.expectEq(
+    paintTickHdl.unsafeGet(context, id3).value,
+    p3,
+    "c3 paint untouched",
+  );
+}
+
+@test
+fun reactiveItemInsideReactiveListUpdatesOnlyItself(): void {
+  context = SKStore.Context::create{}.mclone();
+  c1Prop: RUi.Prop<RUi.Node> = RUi.Prop::create(
+    context,
+    "card-1-node",
+    box(40.0, 30.0, Colors.red()),
+  );
+  cardList: RUi.ReactiveList<RUi.Value<RUi.Node>> = RUi.ReactiveList::create(
+    context,
+    "nested-reactive",
+    Array[
+      ("c1", (RUi.Bound(c1Prop) : RUi.Value<RUi.Node>)),
+      (
+        "c2",
+        (RUi.Const(box(60.0, 30.0, Colors.green())) : RUi.Value<RUi.Node>),
+      ),
+    ],
+  );
+  root = RUi.Flex{items => RUi.Const(RUi.NodeList::fromReactive(cardList))};
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(200.0, 100.0),
+    MockSupport(),
+    "nested-list",
+  );
+  paintTickHdl = pipe.paintHdl.map(
+    RUi.ElementId::keyType,
+    SKStore.IntFile::type,
+    context,
+    RUi.stageDir("nested-list", "paint-tick"),
+    (context, writer, key, _values) ~> {
+      writer.set(key, SKStore.IntFile(context.getTick().value))
+    },
+  );
+  context.update();
+
+  id1 = RUi.ElementId::root.childNamed("c1");
+  id2 = RUi.ElementId::root.childNamed("c2");
+  p2Before = paintTickHdl.unsafeGet(context, id2).value;
+
+  // Replace c1's node via its Prop (color red -> blue, same size).
+  c1Prop.set(context, box(40.0, 30.0, Colors.blue()));
+  context.update();
+
+  // c1 repainted blue; c2 paint untouched.
+  T.expectEq(
+    pipe.stylesHdl.unsafeGet(context, id1).color,
+    Colors.blue(),
+    "c1 updated to blue",
+  );
+  T.expectEq(
+    paintTickHdl.unsafeGet(context, id2).value,
+    p2Before,
+    "c2 paint untouched",
+  );
+}
+
+module end;

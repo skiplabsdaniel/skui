@@ -2,8 +2,13 @@ module RUi;
 
 // An expanded element in the element tree, keyed by ElementId.
 // Holds its concrete (non-Component) node, its parent id, and its ordered
-// children ids. Component nodes are expanded into their rendered node while
-// keeping the Component's own key/parentData when the rendered node has none.
+// child ids.
+//
+// For dynamic/reorderable lists (`KeyedNodes`), each child's ElementId uses
+// the list's stable `NamedKey(key)`. When the list is reordered, the child
+// ElementIds and their own Element records stay identical (SKStore preserves
+// unchanged outputs per key), so styles, memoized layouts, and paint of the
+// children are not invalidated.
 class Element(
   id: ElementId,
   parent: ?ElementId,
@@ -15,8 +20,8 @@ class Element(
 // Wrapper to store a root Node in an input directory.
 class NodeFile(node: Node) extends SKStore.File
 
-// Assigns a ChildKey to each child node, ensuring uniqueness among siblings:
-// explicit Node.key -> NamedKey, otherwise IndexKey(index).
+// Assigns a ChildKey for a static child slot: explicit Node.key -> NamedKey,
+// otherwise IndexKey(index).
 fun childKeyFor(node: Node, index: Int): ChildKey {
   node.key match {
   | Some(name) -> NamedKey(name)
@@ -24,23 +29,54 @@ fun childKeyFor(node: Node, index: Int): ChildKey {
   }
 }
 
-// Extracts the direct child nodes of a concrete (non-Component) node.
-fun nodeChildren(context: mutable SKStore.Context, node: Node): Array<Node> {
+// Extracts the direct keyed child nodes of a concrete (non-Component) node.
+// Returns (ChildKey, Node) pairs in display order.
+fun nodeKeyedChildren(
+  context: mutable SKStore.Context,
+  node: Node,
+): Array<(ChildKey, Node)> {
+  expandList = (nl: NodeList) ->
+    nl match {
+    | StaticNodes(entries) ->
+      out = mutable Vector<(ChildKey, Node)>[];
+      for (i in Range(0, entries.size())) {
+        child = entries[i].get(context);
+        out.push((childKeyFor(child, i), child))
+      };
+      out.toArray()
+    | KeyedNodes(list) ->
+      list.keys(context).map(k -> {
+        child = list.get(context, k).get(context);
+        (NamedKey(k), child)
+      })
+    };
   node match {
-  | Flex{items} -> items.get(context)
-  | Stack{items} -> items.get(context)
-  | Padding{child} -> Array[child.get(context)]
-  | Align{child} -> Array[child.get(context)]
-  | Constrained{child} -> Array[child.get(context)]
-  | Layer{child} -> Array[child.get(context)]
-  | ThemeScope{child} -> Array[child.get(context)]
+  | Flex{items} -> expandList(items.get(context))
+  | Stack{items} -> expandList(items.get(context))
+  | Padding{child} ->
+    c = child.get(context);
+    Array[(childKeyFor(c, 0), c)]
+  | Align{child} ->
+    c = child.get(context);
+    Array[(childKeyFor(c, 0), c)]
+  | Constrained{child} ->
+    c = child.get(context);
+    Array[(childKeyFor(c, 0), c)]
+  | Layer{child} ->
+    c = child.get(context);
+    Array[(childKeyFor(c, 0), c)]
+  | ThemeScope{child} ->
+    c = child.get(context);
+    Array[(childKeyFor(c, 0), c)]
   | Shape _
   | Text _
   | Icon _
   | Label _ ->
     Array[]
   | Component _ ->
-    invariant_violation("RUi: Component must be expanded before nodeChildren")
+    invariant_violation(
+      "RUi: Component must be expanded before nodeKeyedChildren",
+    )
   }
 }
 
@@ -68,12 +104,11 @@ fun expandElement(
       !parentData = node.parentData
     }
   };
-  rawChildren = nodeChildren(context, node);
+  keyedChildren = nodeKeyedChildren(context, node);
   seenKeys = mutable Set<ChildKey>[];
   childIds = mutable Vector<ElementId>[];
-  for (i in Range(0, rawChildren.size())) {
-    childNode = rawChildren[i];
-    ck = childKeyFor(childNode, i);
+  for (pair in keyedChildren) {
+    (ck, childNode) = pair;
     invariant(
       !seenKeys.contains(ck),
       `RUi: duplicate child key '${ck}' under ${id}`,

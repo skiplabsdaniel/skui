@@ -116,14 +116,16 @@ fun iconPathAndLabelLayoutAndPaint(): void {
     direction => RUi.Const(Ui.VerticalAxis()),
     crossAxisAlignment => RUi.Const(RUi.CrossStart()),
     items => RUi.Const(
-      Array[
-        RUi.Icon{key => Some("ic"), icon => RUi.Const(ic)},
-        RUi.Label{
-          key => Some("lbl"),
-          text => RUi.Const("Ok"),
-          icon => RUi.Const(Some(ic)),
-        },
-      ],
+      RUi.NodeList::fromArray(
+        Array[
+          RUi.Icon{key => Some("ic"), icon => RUi.Const(ic)},
+          RUi.Label{
+            key => Some("lbl"),
+            text => RUi.Const("Ok"),
+            icon => RUi.Const(Some(ic)),
+          },
+        ],
+      ),
     ),
   };
   pipe = RUi.Pipeline::create(
@@ -237,16 +239,18 @@ fun themeScopeOverridesSubtreeOnly(): void {
 
   root = RUi.Flex{
     items => RUi.Const(
-      Array[
-        RUi.Text{key => Some("out"), text => RUi.Const("A")},
-        RUi.ThemeScope{
-          key => Some("scope"),
-          theme => RUi.Bound(innerThemeProp),
-          child => RUi.Const(
-            RUi.Text{key => Some("in"), text => RUi.Const("B")},
-          ),
-        },
-      ],
+      RUi.NodeList::fromArray(
+        Array[
+          RUi.Text{key => Some("out"), text => RUi.Const("A")},
+          RUi.ThemeScope{
+            key => Some("scope"),
+            theme => RUi.Bound(innerThemeProp),
+            child => RUi.Const(
+              RUi.Text{key => Some("in"), text => RUi.Const("B")},
+            ),
+          },
+        ],
+      ),
     ),
   };
   pipe = RUi.Pipeline::create(

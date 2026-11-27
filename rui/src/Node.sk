@@ -96,13 +96,13 @@ class Flex{
   crossAxisAlignment: Value<CrossAxisAlignment> = Const(CrossCenter()),
   mainAxisSize: Value<MainAxisSize> = Const(MainMax()),
   gap: Value<Float> = Const(0.0),
-  items: Value<Array<Node>>,
+  items: Value<NodeList>,
 } extends Node
 
 class Stack{
   alignment: Value<Alignment> = Const(Alignment::topLeft),
   fit: Value<StackFit> = Const(StackLoose()),
-  items: Value<Array<Node>>,
+  items: Value<NodeList>,
 } extends Node
 
 class Padding{insets: Value<Geometry.Insets>, child: Value<Node>} extends Node
