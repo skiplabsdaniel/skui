@@ -1,0 +1,9 @@
+[package]
+name = "skui_rui"
+version = "0.1.0"
+
+[dependencies]
+std = { path = "../skip/skiplang/prelude" }
+
+[dev-dependencies]
+sktest = { path = "../skip/skiplang/sktest" }

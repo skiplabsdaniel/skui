@@ -517,8 +517,10 @@ reducers and layout) and is usable on its own.
    tests.
 2. **Renderer.** Drawables with element, clip id and z; the clip prelude in
    all existing programs; a sorted draw list. Offscreen tests: rounded clip
-   of each primitive, ordering of translucent drawables. This step is in
-   `opengl/` and can be used by `framework/` too.
+   of each primitive, ordering of translucent drawables. Verify lighting and
+   texture handling as well, with `sdl` examples (e.g. `button1`,
+   `tex_button1` and new light/texture examples). This step is in `opengl/`
+   and can be used by `framework/` too.
 3. **Core.** Descriptions, element tree, layout protocol, `Flex`, `Stack`,
    `Padding`, `Align`, `Constrained`, geometry stage, depth stage, paint of
    plain shapes. A first `sdl` example on top of it.

@@ -1,0 +1,185 @@
+module alias T = SKTest;
+
+module SKUIRUiTest;
+
+@test
+fun dirNames(): void {
+  T.expectEq(RUi.rootDir.toString(), "/rui/", "root");
+  T.expectEq(RUi.moduleDir("layout").toString(), "/rui/layout/", "module");
+  T.expectEq(
+    RUi.stageDir("layout", "resolved-sizes").toString(),
+    "/rui/layout/resolved-sizes/",
+    "stage",
+  );
+  T.expectEq(RUi.globalKey("debug"), "RUi.debug", "global");
+}
+
+@test
+fun propCreateReadWrite(): void {
+  context = SKStore.Context::create{}.mclone();
+  count = RUi.Prop::create(context, "count", 1);
+  T.expectEq(count.isWritable(), true, "writable");
+  T.expectEq(count.dirName().toString(), "/rui/props/values/count/", "dir");
+  T.expectEq(count.get(context), 1, "initial get");
+  T.expectEq(count.unsafeGet(context), 1, "initial unsafeGet");
+
+  count.set(context, 42);
+  context.update();
+  T.expectEq(count.get(context), 42, "updated get");
+  T.expectEq(count.unsafeGet(context), 42, "updated unsafeGet");
+
+  count.clear(context);
+  context.update();
+  T.expectEq(count.maybeGet(context), None(), "cleared maybeGet");
+  T.expectEq(count.unsafeMaybeGet(context), None(), "cleared unsafeMaybeGet");
+}
+
+@test
+fun propEmpty(): void {
+  context = SKStore.Context::create{}.mclone();
+  label: RUi.Prop<String> = RUi.Prop::createEmpty(context, "label");
+  T.expectEq(label.maybeGet(context), None(), "initially empty");
+  label.set(context, "hello");
+  context.update();
+  T.expectEq(label.maybeGet(context), Some("hello"), "after set");
+}
+
+@test
+fun propDerivedAndIncremental(): void {
+  context = SKStore.Context::create{}.mclone();
+  a = RUi.Prop::create(context, "a", 2);
+  b = RUi.Prop::create(context, "b", 10);
+  sum = RUi.Prop::derived(context, "sum", context ~>
+    a.get(context) + b.get(context)
+  );
+  doubled = a.map(context, "doubled", x ~> x * 2);
+
+  T.expectEq(sum.isWritable(), false, "derived not writable");
+  T.expectEq(sum.get(context), 12, "initial sum");
+  T.expectEq(doubled.get(context), 4, "initial doubled");
+
+  a.set(context, 5);
+  context.update();
+  T.expectEq(sum.get(context), 15, "sum after a");
+  T.expectEq(doubled.get(context), 10, "doubled after a");
+
+  // Derived properties are read-only.
+  threw = try {
+    sum.set(context, 99);
+    false
+  } catch {
+  | InvariantViolation _ -> true
+  | _ -> false
+  };
+  T.expectEq(threw, true, "set on derived throws");
+}
+
+@test
+fun valueConstAndBound(): void {
+  context = SKStore.Context::create{}.mclone();
+  p = RUi.Prop::create(context, "title", "v1");
+  c: RUi.Value<String> = RUi.Const("fixed");
+  b: RUi.Value<String> = RUi.Bound(p);
+
+  T.expectEq(c.get(context), "fixed", "const get");
+  T.expectEq(c.unsafeGet(context), "fixed", "const unsafeGet");
+  T.expectEq(b.get(context), "v1", "bound initial");
+
+  p.set(context, "v2");
+  context.update();
+  T.expectEq(b.get(context), "v2", "bound updated");
+  T.expectEq(b.unsafeGet(context), "v2", "bound unsafeGet");
+}
+
+@test
+fun writeInsideMapThrows(): void {
+  context = SKStore.Context::create{}.mclone();
+  srcHdl = RUi.makeInputDir(
+    SKStore.IID::keyType,
+    SKStore.IntFile::type,
+    context,
+    RUi.stageDir("test", "src"),
+    Array[(SKStore.IID(0), SKStore.IntFile(1))],
+  );
+  sideProp = RUi.Prop::create(context, "side", 0);
+
+  threw = try {
+    _ = srcHdl.map(
+      SKStore.IID::keyType,
+      SKStore.IntFile::type,
+      context,
+      RUi.stageDir("test", "dst"),
+      (context, writer, key, values) ~> {
+        sideProp.set(context, values.first.value);
+        writer.set(key, values.first)
+      },
+    );
+    context.update();
+    false
+  } catch {
+  | InvariantViolation _ -> true
+  | _ -> false
+  };
+  T.expectEq(threw, true, "write inside map must fail");
+}
+
+@test
+fun writeInsideLazyThrows(): void {
+  context = SKStore.Context::create{}.mclone();
+  sideProp = RUi.Prop::create(context, "side-lazy", 0);
+  bad = RUi.Prop::derived(context, "bad", context ~> {
+    sideProp.set(context, 1);
+    1
+  });
+
+  threw = try {
+    _ = bad.get(context);
+    false
+  } catch {
+  | InvariantViolation _ -> true
+  | _ -> false
+  };
+  T.expectEq(threw, true, "write inside lazy must fail");
+}
+
+@test
+fun eagerMapRecomputesOnlyChangedKey(): void {
+  context = SKStore.Context::create{}.mclone();
+  inputHdl = RUi.makeInputDir(
+    SKStore.IID::keyType,
+    SKStore.IntFile::type,
+    context,
+    RUi.stageDir("test", "in"),
+    Array[
+      (SKStore.IID(1), SKStore.IntFile(10)),
+      (SKStore.IID(2), SKStore.IntFile(20)),
+    ],
+  );
+  outHdl = inputHdl.map(
+    SKStore.IID::keyType,
+    SKStore.IntFile::type,
+    context,
+    RUi.stageDir("test", "out"),
+    (context, writer, key, values) ~> {
+      // Stamp each computed key with the current tick to detect recomputation.
+      writer.set(
+        key,
+        SKStore.IntFile(values.first.value * 1000 + context.getTick().value),
+      )
+    },
+  );
+  context.update();
+  v1Initial = outHdl.unsafeGet(context, SKStore.IID(1)).value;
+  v2Initial = outHdl.unsafeGet(context, SKStore.IID(2)).value;
+  T.expectEq(v1Initial / 1000, 10, "k1 initial");
+  T.expectEq(v2Initial / 1000, 20, "k2 initial");
+
+  RUi.writeValue(context, inputHdl, SKStore.IID(1), SKStore.IntFile(11));
+  context.update();
+  v1After = outHdl.unsafeGet(context, SKStore.IID(1)).value;
+  v2After = outHdl.unsafeGet(context, SKStore.IID(2)).value;
+  T.expectEq(v1After / 1000, 11, "k1 updated");
+  T.expectEq(v2After, v2Initial, "k2 untouched");
+}
+
+module end;

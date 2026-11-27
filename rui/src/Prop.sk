@@ -1,0 +1,193 @@
+module RUi;
+
+// Generic file wrapper so any frozen value can live in an SKStore directory
+// without per-type property modules. Uses Downcastable (same pattern as
+// SKStore.MaxKeyFile) so the runtime type check in `type` succeeds even for
+// a polymorphic parameter T.
+base class IBoxFile extends SKStore.File uses Unsafe.Downcastable
+
+class BoxFile<+T: frozen>(value: T) extends IBoxFile {
+  static fun type(obj: SKStore.File): this {
+    obj match {
+    | x @ IBoxFile _ -> Unsafe.cast(x, static)
+    | _ -> invariant_violation("RUi: expected BoxFile")
+    }
+  }
+}
+
+// A read-only view of a reactive property. Covariant in T so Value<+T> can
+// accept a Prop of a subtype (e.g. Value<Node> holding a Prop<Button>).
+base class ReadProp<+T: frozen> {
+  fun dirName(): SKStore.DirName;
+
+  // Tracked read, for use inside reactive computations.
+  fun get(context: mutable SKStore.Context): T;
+
+  // Tracked optional read, for use inside reactive computations.
+  fun maybeGet(context: mutable SKStore.Context): ?T;
+
+  // Untracked read, only for code outside the reactive graph (reducers,
+  // renderer, platform bridges).
+  fun unsafeGet(context: readonly SKStore.Context): T;
+
+  // Untracked optional read, only for code outside the reactive graph.
+  fun unsafeMaybeGet(context: readonly SKStore.Context): ?T;
+
+  // Derives a new read-only property by applying f to this property.
+  fun map<U: frozen>(
+    context: mutable SKStore.Context,
+    name: String,
+    f: T ~> U,
+  ): Prop<U> {
+    Prop::derived(context, name, context ~> f(this.get(context)))
+  }
+}
+
+// A reactive property holding a value of type T.
+//
+// - Prop::create creates a writable property backed by an input directory
+//   under /rui/props/values/.
+// - Prop::derived creates a read-only property backed by a derived directory
+//   (mapped from other properties or stages). Calling set on a derived
+//   property fails.
+// - Reads in reactive code use get/maybeGet (tracked). Reads outside the
+//   graph (reducers, renderer, platform bridges) use unsafeGet/unsafeMaybeGet.
+class Prop<T: frozen> private (
+  hdl: SKStore.Handle<SKStore.UnitID, BoxFile<T>>,
+  writable: ?SKStore.EHandle<SKStore.UnitID, BoxFile<T>>,
+) extends ReadProp<T> {
+  static fun create(
+    context: mutable SKStore.Context,
+    name: String,
+    initial: T,
+  ): Prop<T> {
+    dirName = stageDir("props", "values").sub(name);
+    hdl = makeInputDir(
+      SKStore.UnitID::keyType,
+      BoxFile<T>::type,
+      context,
+      dirName,
+      Array[(SKStore.UnitID::singleton, BoxFile(initial))],
+    );
+    Prop(hdl, Some(hdl))
+  }
+
+  static fun createEmpty(
+    context: mutable SKStore.Context,
+    name: String,
+  ): Prop<T> {
+    dirName = stageDir("props", "values").sub(name);
+    hdl = makeInputDir(
+      SKStore.UnitID::keyType,
+      BoxFile<T>::type,
+      context,
+      dirName,
+    );
+    Prop(hdl, Some(hdl))
+  }
+
+  // A read-only property derived lazily from other reactive reads.
+  static fun derived(
+    context: mutable SKStore.Context,
+    name: String,
+    compute: mutable SKStore.Context ~> T,
+  ): Prop<T> {
+    dirName = stageDir("props", "derived").sub(name);
+    hdl = makeLazyDir(
+      SKStore.UnitID::keyType,
+      BoxFile<T>::type,
+      context,
+      dirName,
+      (context, _self, _key) ~> BoxFile(compute(context)),
+    );
+    Prop(hdl, None())
+  }
+
+  // Wraps an existing single-value handle as a read-only property.
+  static fun fromHandle(
+    hdl: SKStore.Handle<SKStore.UnitID, BoxFile<T>>,
+  ): Prop<T> {
+    Prop(hdl, None())
+  }
+
+  fun isWritable(): Bool {
+    this.writable.isSome()
+  }
+
+  fun dirName(): SKStore.DirName {
+    this.hdl.dirName
+  }
+
+  // Tracked read, for use inside reactive computations.
+  fun get(context: mutable SKStore.Context): T {
+    this.hdl.get(context, SKStore.UnitID::singleton).value
+  }
+
+  // Tracked optional read, for use inside reactive computations.
+  fun maybeGet(context: mutable SKStore.Context): ?T {
+    this.hdl.maybeGet(context, SKStore.UnitID::singleton).map(box -> box.value)
+  }
+
+  // Untracked read, only for code outside the reactive graph (reducers,
+  // renderer, platform bridges).
+  fun unsafeGet(context: readonly SKStore.Context): T {
+    this.hdl.unsafeGet(context, SKStore.UnitID::singleton).value
+  }
+
+  // Untracked optional read, only for code outside the reactive graph.
+  fun unsafeMaybeGet(context: readonly SKStore.Context): ?T {
+    this.hdl.unsafeMaybeGet(context, SKStore.UnitID::singleton).map(box ->
+      box.value
+    )
+  }
+
+  // Sets the property value. Allowed only on writable properties and outside
+  // of reactive computations.
+  fun set(context: mutable SKStore.Context, value: T): void {
+    this.writable match {
+    | Some(ehdl) ->
+      writeValue(context, ehdl, SKStore.UnitID::singleton, BoxFile(value))
+    | None() ->
+      invariant_violation(
+        `RUi: cannot set read-only property ${this.hdl.dirName}`,
+      )
+    }
+  }
+
+  // Clears the property value. Allowed only on writable properties and
+  // outside of reactive computations.
+  fun clear(context: mutable SKStore.Context): void {
+    this.writable match {
+    | Some(ehdl) -> removeValue(context, ehdl, SKStore.UnitID::singleton)
+    | None() ->
+      invariant_violation(
+        `RUi: cannot clear read-only property ${this.hdl.dirName}`,
+      )
+    }
+  }
+}
+
+// A node field: either a constant value or bound to a reactive property.
+base class Value<+T: frozen> {
+  children =
+  | Const(value: T)
+  | Bound(prop: ReadProp<T>)
+
+  fun get(context: mutable SKStore.Context): T
+  | Const(value) -> value
+  | Bound(prop) -> prop.get(context)
+
+  fun maybeGet(context: mutable SKStore.Context): ?T
+  | Const(value) -> Some(value)
+  | Bound(prop) -> prop.maybeGet(context)
+
+  fun unsafeGet(context: readonly SKStore.Context): T
+  | Const(value) -> value
+  | Bound(prop) -> prop.unsafeGet(context)
+
+  fun unsafeMaybeGet(context: readonly SKStore.Context): ?T
+  | Const(value) -> Some(value)
+  | Bound(prop) -> prop.unsafeMaybeGet(context)
+}
+
+module end;

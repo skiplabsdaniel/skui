@@ -1,0 +1,115 @@
+module RUi;
+
+// Reactive conventions for RUi (see DESIGN.md section 11):
+// - Every directory lives under /rui/<module>/<stage>/, built with DirName.sub.
+// - Writes are allowed only outside of reactive computations (never inside a
+//   map or lazy callback).
+// - Tracked reads (get/maybeGet) and untracked reads (unsafeGet/unsafeMaybeGet)
+//   are distinct methods: there is no runtime isUntracked flag.
+// - No pre directories.
+
+const rootDir: SKStore.DirName = SKStore.DirName::create("/rui/");
+
+// The root directory for a module: /rui/<module>/.
+fun moduleDir(name: String): SKStore.DirName {
+  rootDir.sub(name)
+}
+
+// A stage directory under a module: /rui/<module>/<stage>/.
+fun stageDir(moduleName: String, stage: String): SKStore.DirName {
+  rootDir.sub(moduleName).sub(stage)
+}
+
+// Prefix for non-reactive configuration globals.
+fun globalKey(name: String): String {
+  `RUi.${name}`
+}
+
+// Invariant enforced on every input write: writing inside a reactive
+// computation is a bug, never postponed.
+fun assertOutsideComputation(context: readonly SKStore.Context): void {
+  invariant(
+    context.currentArrow().isNone(),
+    "RUi: cannot write to an input directory inside a reactive computation",
+  )
+}
+
+// Creates a typed input directory. Must be called outside of a computation.
+fun makeInputDir<K: SKStore.Key, V: SKStore.File>(
+  keyType: SKStore.Key ~> K,
+  valueType: SKStore.File ~> V,
+  context: mutable SKStore.Context,
+  dirName: SKStore.DirName,
+  content: Array<(K, V)> = Array[],
+  ignoreIfExists: Bool = false,
+): SKStore.EHandle<K, V> {
+  assertOutsideComputation(context);
+  context.mkdir(keyType, valueType, dirName, content, ignoreIfExists)
+}
+
+// Writes a single value to key in an input directory. Fails if called inside
+// a reactive computation.
+fun writeValue<K: SKStore.Key, V: SKStore.File>(
+  context: mutable SKStore.Context,
+  hdl: SKStore.EHandle<K, V>,
+  key: K,
+  value: V,
+): void {
+  assertOutsideComputation(context);
+  hdl.writeArray(context, key, Array[value])
+}
+
+// Removes key from an input directory. Fails if called inside a reactive
+// computation.
+fun removeValue<K: SKStore.Key, V: SKStore.File>(
+  context: mutable SKStore.Context,
+  hdl: SKStore.EHandle<K, V>,
+  key: K,
+): void {
+  assertOutsideComputation(context);
+  hdl.writeArray(context, key, Array[])
+}
+
+// Creates a lazy directory that produces one value per key.
+fun makeLazyDir<K: SKStore.Key, V: SKStore.File>(
+  keyType: SKStore.Key ~> K,
+  valueType: SKStore.File ~> V,
+  context: mutable SKStore.Context,
+  dirName: SKStore.DirName,
+  f: (mutable SKStore.Context, SKStore.LHandle<K, V>, K) ~> V,
+  collect: Bool = true,
+): SKStore.LHandle<K, V> {
+  SKStore.LHandle::create(
+    keyType,
+    valueType,
+    context,
+    dirName,
+    (context, self, key) ~> Array[f(context, self, key)],
+    collect,
+  )
+}
+
+// Creates a lazy directory that produces an optional value per key.
+fun makeOptLazyDir<K: SKStore.Key, V: SKStore.File>(
+  keyType: SKStore.Key ~> K,
+  valueType: SKStore.File ~> V,
+  context: mutable SKStore.Context,
+  dirName: SKStore.DirName,
+  f: (mutable SKStore.Context, SKStore.LHandle<K, V>, K) ~> ?V,
+  collect: Bool = true,
+): SKStore.LHandle<K, V> {
+  SKStore.LHandle::create(
+    keyType,
+    valueType,
+    context,
+    dirName,
+    (context, self, key) ~>
+      f(context, self, key) match {
+      | Some(v) -> Array[v]
+      | None() -> Array[]
+      },
+    collect,
+  )
+}
+
+module end;
