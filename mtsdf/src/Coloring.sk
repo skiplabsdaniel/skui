@@ -411,12 +411,12 @@ fun edgeToEdgeDistance(a: EdgeSegment, b: EdgeSegment, precision: Int): Float {
   for (i in Range(0, precision)) {
     t = iFac * i.toFloat();
     (_, sd) = a.signedDistance(b.point(t));
-    !minDistance = Math.min(minDistance, Math.abs(sd.distance));
+    !minDistance = Math.min(minDistance, fabs(sd.distance));
   };
   for (i in Range(0, precision)) {
     t = iFac * i.toFloat();
     (_, sd) = b.signedDistance(a.point(t));
-    !minDistance = Math.min(minDistance, Math.abs(sd.distance));
+    !minDistance = Math.min(minDistance, fabs(sd.distance));
   };
   minDistance;
 }
@@ -656,7 +656,7 @@ value class EdgeColoringInkTrapCorner(
 
 fun isCorner(aDir: Vector2, bDir: Vector2, crossThreshold: Float): Bool {
   aDir.dotProduct(bDir) <= 0.0 ||
-    Math.abs(aDir.crossProduct(bDir)) > crossThreshold;
+    fabs(aDir.crossProduct(bDir)) > crossThreshold;
 }
 
 fun estimateEdgeLength(edge: EdgeSegment): Float {

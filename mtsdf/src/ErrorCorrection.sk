@@ -82,7 +82,7 @@ mutable class ErrorCorrection(
         right = idx -> sdf.elem(x + 1, y, idx);
         lm = fmedian(left(0), left(1), left(2));
         rm = fmedian(right(0), right(1), right(2));
-        if (Math.abs(lm - 0.5) + Math.abs(rm - 0.5) < radius) {
+        if (fabs(lm - 0.5) + fabs(rm - 0.5) < radius) {
           mask = edgeBetweenTexels(left, right);
           protectExtremeChannels(
             conv -> this.stencil.updateOne(x, y, conv),
@@ -109,7 +109,7 @@ mutable class ErrorCorrection(
         top = idx -> sdf.elem(x, y + 1, idx);
         bm = fmedian(bottom(0), bottom(1), bottom(2));
         tm = fmedian(top(0), top(1), top(2));
-        if (Math.abs(bm - 0.5) + Math.abs(tm - 0.5) < radius) {
+        if (fabs(bm - 0.5) + fabs(tm - 0.5) < radius) {
           mask = edgeBetweenTexels(bottom, top);
           protectExtremeChannels(
             conv -> this.stencil.updateOne(x, y, conv),
@@ -143,7 +143,7 @@ mutable class ErrorCorrection(
         mrb = fmedian(rb(0), rb(1), rb(2));
         mlt = fmedian(lt(0), lt(1), lt(2));
         mrt = fmedian(rt(0), rt(1), rt(2));
-        if (Math.abs(mlb - 0.5) + Math.abs(mrt - 0.5) < radius) {
+        if (fabs(mlb - 0.5) + fabs(mrt - 0.5) < radius) {
           mask = edgeBetweenTexels(lb, rt);
           protectExtremeChannels(
             conv -> this.stencil.updateOne(x, y, conv),
@@ -158,7 +158,7 @@ mutable class ErrorCorrection(
             mask,
           );
         };
-        if (Math.abs(mrb - 0.5) + Math.abs(mlt - 0.5) < radius) {
+        if (fabs(mrb - 0.5) + fabs(mlt - 0.5) < radius) {
           mask = edgeBetweenTexels(rb, lt);
           protectExtremeChannels(
             conv -> this.stencil.updateOne(x + 1, y, conv),

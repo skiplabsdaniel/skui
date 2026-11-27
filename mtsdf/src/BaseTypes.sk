@@ -1,5 +1,12 @@
 module MTSDF;
 
+// The absolute value of x, like Math.abs, which negates floats with a call to
+// the runtime (SKIP_Float_negate): too slow for the distance computations.
+@always_inline
+fun fabs(x: Float): Float {
+  if (x < 0.0) 0.0 - x else x
+}
+
 base class Mode uses Equality {
   children =
   | Single()
@@ -126,7 +133,7 @@ value class SignedDistance(
   }
 
   fun compare(other: SignedDistance): Order {
-    comp = Math.abs(this.distance).compare(Math.abs(other.distance));
+    comp = fabs(this.distance).compare(fabs(other.distance));
     if (comp == EQ()) {
       this.dot.compare(other.dot)
     } else {

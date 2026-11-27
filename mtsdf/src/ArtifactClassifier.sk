@@ -60,7 +60,7 @@ mutable class ShapeDistanceClassifier(
         // Compute the color that would be currently interpolated at the artifact candidate's position.
         oldMSD = this.checker.sdf.interpolate(sdfCoord);
         // Compute the color that would be interpolated at the artifact candidate's position if error correction was applied on the current texel.
-        aWeight = (1.0 - Math.abs(tVector.x)) * (1.0 - Math.abs(tVector.y));
+        aWeight = (1.0 - fabs(tVector.x)) * (1.0 - fabs(tVector.y));
         aPSD = fmedian(
           this.checker.msd(0),
           this.checker.msd(1),
@@ -77,8 +77,8 @@ mutable class ShapeDistanceClassifier(
         ) as SingleDistance _;
         refPSD = this.checker.invRange * distance.value + 0.5;
         // Compare the differences of the exact distance and the before and after distances.
-        this.checker.minImproveRatio * Math.abs(newPSD - refPSD) <
-          Math.abs(oldPSD - refPSD);
+        this.checker.minImproveRatio * fabs(newPSD - refPSD) <
+          fabs(oldPSD - refPSD);
       }
     } else {
       false
@@ -190,7 +190,7 @@ fun hasLinearArtifact(
   b: Int -> Float,
 ): Bool {
   bm = fmedian(b(0), b(1), b(2));
-  (Math.abs(am - 0.5) >= Math.abs(bm - 0.5) && // Out of the pair, only report artifacts for the texel further from the edge to minimize side effects.
+  (fabs(am - 0.5) >= fabs(bm - 0.5) && // Out of the pair, only report artifacts for the texel further from the edge to minimize side effects.
     (hasLinearArtifactInner( // Check points where each pair of color channels meets.
       classifier,
       am,
@@ -230,7 +230,7 @@ fun hasDiagonalArtifact(
 ): Bool {
   dm = fmedian(d(0), d(1), d(2));
   // Out of the pair, only report artifacts for the texel further from the edge to minimize side effects.
-  if (Math.abs(am - 0.5) >= Math.abs(dm - 0.5)) {
+  if (fabs(am - 0.5) >= fabs(dm - 0.5)) {
     abc = Array[a(0) - b(0) - c(0), a(1) - b(1) - c(1), a(2) - b(2) - c(2)];
     // Compute the linear terms for bilinear interpolation.
     l = Array[-a(0) - abc[0], -a(1) - abc[1], -a(2) - abc[2]];

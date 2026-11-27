@@ -87,8 +87,8 @@ base class EdgeSegment{
         pseudoDistance = aq.crossProduct(dir);
         if (
           Math.lowerOrEquals(
-            Math.abs(pseudoDistance),
-            Math.abs(distance.distance),
+            fabs(pseudoDistance),
+            fabs(distance.distance),
             precision,
           )
         ) {
@@ -103,8 +103,8 @@ base class EdgeSegment{
         pseudoDistance = bq.crossProduct(dir);
         if (
           Math.lowerOrEquals(
-            Math.abs(pseudoDistance),
-            Math.abs(distance.distance),
+            fabs(pseudoDistance),
+            fabs(distance.distance),
             precision,
           )
         ) {
@@ -162,7 +162,7 @@ class LinearSegment{start: Vector2, end: Vector2} extends EdgeSegment {
     endpointDistance = eq.length();
     if (param > 0.0 && param < 1.0) {
       orthoDistance = ab.orthonormal(false).dotProduct(aq);
-      if (Math.abs(orthoDistance) < endpointDistance) {
+      if (fabs(orthoDistance) < endpointDistance) {
         return (param, SignedDistance(orthoDistance, 0.0))
       };
     };
@@ -170,7 +170,7 @@ class LinearSegment{start: Vector2, end: Vector2} extends EdgeSegment {
       param,
       SignedDistance(
         nonZeroSign(aq.crossProduct(ab)) * endpointDistance,
-        Math.abs(ab.normalize().dotProduct(eq.normalize())),
+        fabs(ab.normalize().dotProduct(eq.normalize())),
       ),
     );
   }
@@ -309,7 +309,7 @@ class QuadraticSegment{
     param = -qa.dotProduct(epDir) / epDir.dotProduct(epDir);
     !epDir = this.direction(1.0);
     distance = (this.end - origin).length(); // distance from B
-    if (distance < Math.abs(minDistance)) {
+    if (distance < fabs(minDistance)) {
       !minDistance =
         nonZeroSign(epDir.crossProduct(this.end - origin)) * distance;
       !param =
@@ -319,7 +319,7 @@ class QuadraticSegment{
       if (v > 0.0 && v < 1.0) {
         qe = qa + ab.mult(2.0 * v) + br.mult(v * v);
         dist = qe.length();
-        if (dist <= Math.abs(minDistance)) {
+        if (dist <= fabs(minDistance)) {
           !minDistance = nonZeroSign((ab + br.mult(v)).crossProduct(qe)) * dist;
           !param = v;
         }
@@ -332,7 +332,7 @@ class QuadraticSegment{
         param,
         SignedDistance(
           minDistance,
-          Math.abs(this.direction(0.0).normalize().dotProduct(qa.normalize())),
+          fabs(this.direction(0.0).normalize().dotProduct(qa.normalize())),
         ),
       )
     } else {
@@ -340,7 +340,7 @@ class QuadraticSegment{
         param,
         SignedDistance(
           minDistance,
-          Math.abs(
+          fabs(
             this.direction(1.0)
               .normalize()
               .dotProduct((this.end - origin).normalize()),
@@ -413,7 +413,7 @@ class QuadraticSegment{
       if (total > 0) {
         !total = total - 1;
       } else {
-        if (Math.abs(this.end.y - y) < Math.abs(this.start.y - y)) {
+        if (fabs(this.end.y - y) < fabs(this.start.y - y)) {
           xs.set(total, this.end.x)
         };
         dys.set(total, nextDY);
@@ -578,7 +578,7 @@ class CubicSegment{
     param = -qa.dotProduct(epDir) / epDir.dotProduct(epDir);
     !epDir = this.direction(1.0);
     distance = (this.end - origin).length(); // distance from B
-    if (distance < Math.abs(minDistance)) {
+    if (distance < fabs(minDistance)) {
       !minDistance =
         nonZeroSign(epDir.crossProduct(this.end - origin)) * distance;
       !param =
@@ -601,7 +601,7 @@ class CubicSegment{
           br.mult(3.0 * t * t) +
           asv.mult(t * t * t);
         dist = qe.length();
-        if (dist < Math.abs(minDistance)) {
+        if (dist < fabs(minDistance)) {
           !minDistance = nonZeroSign(d1.crossProduct(qe)) * dist;
           !param = t;
         }
@@ -615,7 +615,7 @@ class CubicSegment{
         param,
         SignedDistance(
           minDistance,
-          Math.abs(this.direction(0.0).normalize().dotProduct(qa.normalize())),
+          fabs(this.direction(0.0).normalize().dotProduct(qa.normalize())),
         ),
       )
     } else {
@@ -623,7 +623,7 @@ class CubicSegment{
         param,
         SignedDistance(
           minDistance,
-          Math.abs(
+          fabs(
             this.direction(1.0)
               .normalize()
               .dotProduct((this.end - origin).normalize()),
@@ -723,7 +723,7 @@ class CubicSegment{
       if (total > 0) {
         !total = total - 1;
       } else {
-        if (Math.abs(this.end.y - y) < Math.abs(this.start.y - y)) {
+        if (fabs(this.end.y - y) < fabs(this.start.y - y)) {
           xs.set(total, this.end.x)
         };
         dys.set(total, nextDY);
@@ -856,15 +856,11 @@ class CubicSegment{
     if (start) {
       !this.fControl =
         this.fControl +
-        (dir + normal.mult(sign(h).toFloat() * Math.sqrt(Math.abs(h)))).mult(
-          amount,
-        )
+        (dir + normal.mult(sign(h).toFloat() * Math.sqrt(fabs(h)))).mult(amount)
     } else {
       !this.sControl =
         this.sControl -
-        (dir - normal.mult(sign(h).toFloat() * Math.sqrt(Math.abs(h)))).mult(
-          amount,
-        )
+        (dir - normal.mult(sign(h).toFloat() * Math.sqrt(fabs(h)))).mult(amount)
     };
     this
   }

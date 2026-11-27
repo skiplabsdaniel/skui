@@ -52,11 +52,11 @@ mutable class TrueDistanceSelector(
     _nextEdge: EdgeSegment,
   ): EdgeCache {
     delta = distanceDeltaFactor * (this.p - cache.point).length();
-    if (cache.absDistance - delta <= Math.abs(this.minDistance.distance)) {
+    if (cache.absDistance - delta <= fabs(this.minDistance.distance)) {
       (_, distance) = edge.signedDistance(this.p);
       if (distance < this.minDistance) this.!minDistance = distance;
       !cache.point = this.p;
-      !cache.absDistance = Math.abs(distance.distance)
+      !cache.absDistance = fabs(distance.distance)
     };
     cache
   }
@@ -85,7 +85,7 @@ fun getPseudoDistance(
   ts = ep.dotProduct(edgeDir);
   if (ts > 0.0) {
     pseudoDistance = ep.crossProduct(edgeDir);
-    if (Math.abs(pseudoDistance) < Math.abs(distance)) {
+    if (fabs(pseudoDistance) < fabs(distance)) {
       return (true, pseudoDistance)
     }
   };
@@ -106,17 +106,17 @@ mutable base class PseudoDistanceSelectorBase(
       minTrueDistance.distance +
       nonZeroSign(minTrueDistance.distance) * delta;
     this.!minTrueDistance = minTrueDistance;
-    this.!minNegativePseudoDistance = -Math.abs(minTrueDistance.distance);
-    this.!minPositivePseudoDistance = Math.abs(minTrueDistance.distance);
+    this.!minNegativePseudoDistance = -fabs(minTrueDistance.distance);
+    this.!minPositivePseudoDistance = fabs(minTrueDistance.distance);
     this.!nearEdge = None();
     this.!nearEdgeParam = 0.0;
   }
 
   readonly fun isEdgeRelevant(cache: EdgeCache, p: Vector2): Bool {
     delta = distanceDeltaFactor * (p - cache.point).length();
-    (cache.absDistance - delta <= Math.abs(this.minTrueDistance.distance) ||
-      Math.abs(cache.aDomainDistance) < delta ||
-      Math.abs(cache.bDomainDistance) < delta ||
+    (cache.absDistance - delta <= fabs(this.minTrueDistance.distance) ||
+      fabs(cache.aDomainDistance) < delta ||
+      fabs(cache.bDomainDistance) < delta ||
       (cache.aDomainDistance > 0.0 &&
         (if (cache.aPseudoDistance < 0.0) {
           cache.aPseudoDistance + delta >= this.minNegativePseudoDistance
@@ -186,7 +186,7 @@ mutable base class PseudoDistanceSelectorBase(
         p,
         this.nearEdgeParam,
       );
-      if (Math.abs(distance.distance) < Math.abs(minDistance)) {
+      if (fabs(distance.distance) < fabs(minDistance)) {
         !minDistance = distance.distance
       };
     });
@@ -218,7 +218,7 @@ mutable class PseudoDistanceSelector(
       (param, distance) = edge.signedDistance(this.p);
       this.addEdgeTrueDistance(edge, distance, param);
       !cache.point = this.p;
-      !cache.absDistance = Math.abs(distance.distance);
+      !cache.absDistance = fabs(distance.distance);
 
       ap = this.p - edge.point(0.0);
       bp = this.p - edge.point(1.0);
@@ -289,7 +289,7 @@ mutable base class MultiDistanceSelectorBase(
         this.b.addEdgeTrueDistance(edge, distance, param)
       };
       !cache.point = this.p;
-      !cache.absDistance = Math.abs(distance.distance);
+      !cache.absDistance = fabs(distance.distance);
       ap = this.p - edge.point(0.0);
       bp = this.p - edge.point(1.0);
       aDir = edge.direction(0.0).normalize(true);
@@ -462,7 +462,7 @@ mutable class OverlappingSelectors private (
     winding = 0;
     if (
       innerScalarDistance >= 0.0 &&
-      Math.abs(innerScalarDistance) <= Math.abs(outerScalarDistance)
+      fabs(innerScalarDistance) <= fabs(outerScalarDistance)
     ) {
       !distance = innerDistance;
       !winding = 1;
@@ -470,14 +470,14 @@ mutable class OverlappingSelectors private (
         if (this.windings[i] > 0) {
           resolved = contourDistance.resolve();
           if (
-            Math.abs(resolved) < Math.abs(outerScalarDistance) &&
+            fabs(resolved) < fabs(outerScalarDistance) &&
             resolved > distance.resolve()
           ) !distance = contourDistance;
         }
       });
     } else if (
       outerScalarDistance <= 0.0 &&
-      Math.abs(outerScalarDistance) < Math.abs(innerScalarDistance)
+      fabs(outerScalarDistance) < fabs(innerScalarDistance)
     ) {
       !distance = outerDistance;
       !winding = -1;
@@ -485,7 +485,7 @@ mutable class OverlappingSelectors private (
         if (this.windings[i] < 0) {
           resolved = contourDistance.resolve();
           if (
-            Math.abs(resolved) < Math.abs(innerScalarDistance) &&
+            fabs(resolved) < fabs(innerScalarDistance) &&
             resolved < distance.resolve()
           ) !distance = contourDistance;
         }
@@ -499,7 +499,7 @@ mutable class OverlappingSelectors private (
         distanceResolved = distance.resolve();
         if (
           resolved * distanceResolved >= 0.0 &&
-          Math.abs(resolved) < Math.abs(distanceResolved)
+          fabs(resolved) < fabs(distanceResolved)
         ) !distance = contourDistance;
       }
     });
