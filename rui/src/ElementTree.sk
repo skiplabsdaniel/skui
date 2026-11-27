@@ -1,0 +1,108 @@
+module RUi;
+
+// An expanded element in the element tree, keyed by ElementId.
+// Holds its concrete (non-Component) node, its parent id, and its ordered
+// children ids. Component nodes are expanded into their rendered node while
+// keeping the Component's own key/parentData when the rendered node has none.
+class Element(
+  id: ElementId,
+  parent: ?ElementId,
+  node: Node,
+  parentData: ?ParentData,
+  childIds: Array<ElementId>,
+) extends SKStore.File
+
+// Wrapper to store a root Node in an input directory.
+class NodeFile(node: Node) extends SKStore.File
+
+// Assigns a ChildKey to each child node, ensuring uniqueness among siblings:
+// explicit Node.key -> NamedKey, otherwise IndexKey(index).
+fun childKeyFor(node: Node, index: Int): ChildKey {
+  node.key match {
+  | Some(name) -> NamedKey(name)
+  | None() -> IndexKey(index)
+  }
+}
+
+// Extracts the direct child nodes of a concrete (non-Component) node.
+fun nodeChildren(context: mutable SKStore.Context, node: Node): Array<Node> {
+  node match {
+  | Flex{items} -> items.get(context)
+  | Stack{items} -> items.get(context)
+  | Padding{child} -> Array[child.get(context)]
+  | Align{child} -> Array[child.get(context)]
+  | Constrained{child} -> Array[child.get(context)]
+  | Layer{child} -> Array[child.get(context)]
+  | Shape _ -> Array[]
+  | Component _ ->
+    invariant_violation("RUi: Component must be expanded before nodeChildren")
+  }
+}
+
+// Expands a Node recursively into an SKStore writer keyed by ElementId.
+// Component nodes are expanded on the fly; because render reads its Props
+// through context, SKStore tracks those reads automatically.
+fun expandElement(
+  context: mutable SKStore.Context,
+  writer: mutable SKStore.TWriter<ElementId, Element>,
+  id: ElementId,
+  parent: ?ElementId,
+  rawNode: Node,
+  inheritedParentData: ?ParentData = None(),
+): void {
+  // Unwrap nested Component nodes, preserving outermost parentData if any.
+  node = rawNode;
+  parentData = inheritedParentData match {
+  | Some(_) -> inheritedParentData
+  | None() -> rawNode.parentData
+  };
+  while (node is Component _) {
+    comp = node as Component _;
+    !node = comp.render(context);
+    if (parentData is None()) {
+      !parentData = node.parentData
+    }
+  };
+  rawChildren = nodeChildren(context, node);
+  seenKeys = mutable Set<ChildKey>[];
+  childIds = mutable Vector<ElementId>[];
+  for (i in Range(0, rawChildren.size())) {
+    childNode = rawChildren[i];
+    ck = childKeyFor(childNode, i);
+    invariant(
+      !seenKeys.contains(ck),
+      `RUi: duplicate child key '${ck}' under ${id}`,
+    );
+    seenKeys.add(ck);
+    cid = id.child(ck);
+    childIds.push(cid);
+    expandElement(
+      context,
+      writer,
+      cid,
+      Some(id),
+      childNode,
+      childNode.parentData,
+    )
+  };
+  writer.set(id, Element(id, parent, node, parentData, childIds.toArray()))
+}
+
+// Builds the eager element-tree directory from a root-node input directory.
+fun buildElementTree(
+  context: mutable SKStore.Context,
+  rootNodeHdl: SKStore.EHandle<SKStore.UnitID, NodeFile>,
+  dirName: SKStore.DirName,
+): SKStore.EHandle<ElementId, Element> {
+  rootNodeHdl.map(
+    ElementId::keyType,
+    Element::type,
+    context,
+    dirName,
+    (context, writer, _key, values) ~> {
+      expandElement(context, writer, ElementId::root, None(), values.first.node)
+    },
+  )
+}
+
+module end;

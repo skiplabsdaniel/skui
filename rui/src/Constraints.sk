@@ -1,0 +1,132 @@
+module RUi;
+
+// Flutter-style box constraints: min/max width and height.
+// Constraints flow down the tree; sizes flow back up.
+value class BoxConstraints(
+  minWidth: Float = 0.0,
+  maxWidth: Float = Float::inf,
+  minHeight: Float = 0.0,
+  maxHeight: Float = Float::inf,
+) uses Hashable, Orderable, Show {
+  static fun tight(width: Float, height: Float): BoxConstraints {
+    BoxConstraints(width, width, height, height)
+  }
+
+  static fun tightFor{
+    width: ?Float = None(),
+    height: ?Float = None(),
+  }: BoxConstraints {
+    BoxConstraints(
+      width.default(0.0),
+      width.default(Float::inf),
+      height.default(0.0),
+      height.default(Float::inf),
+    )
+  }
+
+  static fun loose(size: Geometry.Size): BoxConstraints {
+    BoxConstraints(0.0, size.width, 0.0, size.height)
+  }
+
+  static fun unbounded(): BoxConstraints {
+    BoxConstraints(0.0, Float::inf, 0.0, Float::inf)
+  }
+
+  fun loosen(): BoxConstraints {
+    BoxConstraints(0.0, this.maxWidth, 0.0, this.maxHeight)
+  }
+
+  fun isTight(): Bool {
+    this.minWidth >= this.maxWidth && this.minHeight >= this.maxHeight
+  }
+
+  fun hasBoundedWidth(): Bool {
+    this.maxWidth < Float::inf
+  }
+
+  fun hasBoundedHeight(): Bool {
+    this.maxHeight < Float::inf
+  }
+
+  fun biggest(): Geometry.Size {
+    Geometry.Size(
+      this.constrainWidth(Float::inf),
+      this.constrainHeight(Float::inf),
+    )
+  }
+
+  fun smallest(): Geometry.Size {
+    Geometry.Size(this.constrainWidth(0.0), this.constrainHeight(0.0))
+  }
+
+  fun constrainWidth(width: Float): Float {
+    Math.clamp(width, this.minWidth, this.maxWidth)
+  }
+
+  fun constrainHeight(height: Float): Float {
+    Math.clamp(height, this.minHeight, this.maxHeight)
+  }
+
+  fun constrain(size: Geometry.Size): Geometry.Size {
+    Geometry.Size(
+      this.constrainWidth(size.width),
+      this.constrainHeight(size.height),
+    )
+  }
+
+  // Enforces this constraints box onto other: other is clamped to stay within
+  // this box's min/max bounds.
+  fun enforce(other: BoxConstraints): BoxConstraints {
+    BoxConstraints(
+      Math.clamp(other.minWidth, this.minWidth, this.maxWidth),
+      Math.clamp(other.maxWidth, this.minWidth, this.maxWidth),
+      Math.clamp(other.minHeight, this.minHeight, this.maxHeight),
+      Math.clamp(other.maxHeight, this.minHeight, this.maxHeight),
+    )
+  }
+
+  // Tightens this constraints box where width or height is given, staying
+  // within the existing bounds.
+  fun tighten{width: ?Float = None(), height: ?Float = None()}: BoxConstraints {
+    BoxConstraints(
+      width match {
+      | Some(w) -> Math.clamp(w, this.minWidth, this.maxWidth)
+      | None() -> this.minWidth
+      },
+      width match {
+      | Some(w) -> Math.clamp(w, this.minWidth, this.maxWidth)
+      | None() -> this.maxWidth
+      },
+      height match {
+      | Some(h) -> Math.clamp(h, this.minHeight, this.maxHeight)
+      | None() -> this.minHeight
+      },
+      height match {
+      | Some(h) -> Math.clamp(h, this.minHeight, this.maxHeight)
+      | None() -> this.maxHeight
+      },
+    )
+  }
+
+  // Shrinks the constraints by insets, keeping minimums non-negative.
+  fun deflate(insets: Geometry.Insets): BoxConstraints {
+    horiz = insets.horizontal();
+    vert = insets.vertical();
+    defMinW = Math.max(0.0, this.minWidth - horiz);
+    defMinH = Math.max(0.0, this.minHeight - vert);
+    BoxConstraints(
+      defMinW,
+      Math.max(defMinW, this.maxWidth - horiz),
+      defMinH,
+      Math.max(defMinH, this.maxHeight - vert),
+    )
+  }
+
+  fun toString(): String {
+    `BoxConstraints(${this.minWidth}..${this.maxWidth}, ${this.minHeight}..${
+      this.maxHeight
+    })`
+  }
+}
+
+module end;

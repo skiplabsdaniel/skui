@@ -1,0 +1,738 @@
+module alias T = SKTest;
+
+module SKUIRUiTest;
+
+// Minimal mock Drawable and DrawableSupport for headless tests of paint,
+// translation, depth ordering and incrementality (no OpenGL required).
+class MockDrawable(
+  kind: String,
+  offset: Geometry.Offset,
+  dims: Geometry.Size,
+  color: .Color,
+  radius: Float = 0.0,
+) extends Ui.Drawable {
+  fun toOrigin(): this {
+    !this.offset = Geometry.Offset::zero;
+    this
+  }
+
+  fun translate(delta: Geometry.Offset): this {
+    !this.offset = this.offset + delta;
+    this
+  }
+
+  fun size(): Geometry.Size {
+    this.dims
+  }
+}
+
+class MockSupport() extends Ui.DrawableSupport {
+  fun init(
+    _context: mutable SKStore.Context,
+    _drawables: SKStore.EHandle<Ui.KLayer, Ui.Drawables>,
+  ): void {
+    void
+  }
+
+  fun msdf(
+    _offset: Geometry.Offset,
+    _size: Geometry.Size,
+    _picture: Ui.Picture,
+    _conv: Geometry.Rect ~> Geometry.Rect,
+    _pxRange: Int,
+    _thickness: Float,
+    _paint: Ui.Paint,
+    _effects: Ui.TextEffects = Ui.TextEffects::none,
+  ): Ui.Drawable {
+    invariant_violation("unexpected msdf in MockSupport")
+  }
+
+  fun ellipse(
+    offset: Geometry.Offset,
+    size: Geometry.Size,
+    paint: Ui.Paint,
+  ): Ui.Drawable {
+    c = paint match {
+    | col @ .Color _ -> col
+    | _ -> Colors.black()
+    };
+    MockDrawable("ellipse", offset, size, c)
+  }
+
+  fun disk(
+    _offset: Geometry.Offset,
+    _size: Geometry.Size,
+    _paint: Ui.Paint,
+    _thickness: Float,
+  ): Ui.Drawable {
+    invariant_violation("unexpected disk in MockSupport")
+  }
+
+  fun roundedRectangle(
+    offset: Geometry.Offset,
+    size: Geometry.Size,
+    color: .Color,
+    radius: Float,
+    _smooth: Float = 2.0,
+    _optBorder: ?Ui.Border = None(),
+  ): Ui.Drawable {
+    MockDrawable("rrect", offset, size, color, radius)
+  }
+
+  fun rectangle(
+    offset: Geometry.Offset,
+    size: Geometry.Size,
+    paint: Ui.Paint,
+  ): Ui.Drawable {
+    c = paint match {
+    | col @ .Color _ -> col
+    | _ -> Colors.black()
+    };
+    MockDrawable("rect", offset, size, c)
+  }
+
+  fun diagonal(
+    _offset: Geometry.Offset,
+    _size: Geometry.Size,
+    _fromTopLeft: Bool,
+    _thickness: Float,
+    _color: .Color,
+  ): Ui.Drawable {
+    invariant_violation("unexpected diagonal in MockSupport")
+  }
+
+  fun triangle(
+    _offset: Geometry.Offset,
+    _size: Geometry.Size,
+    _paint: Ui.Paint,
+    _side: .UiSide,
+  ): Ui.Drawable {
+    invariant_violation("unexpected triangle in MockSupport")
+  }
+
+  fun progress(
+    _offset: Geometry.Offset,
+    _size: Geometry.Size,
+    _progress: Float,
+    _color1: .Color,
+    _color2: .Color,
+    _thickness: Float,
+  ): Ui.Drawable {
+    invariant_violation("unexpected progress in MockSupport")
+  }
+
+  fun loading(
+    _offset: Geometry.Offset,
+    _size: Geometry.Size,
+    _color1: .Color,
+    _color2: .Color,
+    _step: Int,
+  ): Ui.Drawable {
+    invariant_violation("unexpected loading in MockSupport")
+  }
+
+  fun image(
+    _offset: Geometry.Offset,
+    _size: Geometry.Size,
+    _picture: Ui.Picture,
+  ): Ui.Drawable {
+    invariant_violation("unexpected image in MockSupport")
+  }
+
+  fun boxShadow(
+    _offset: Geometry.Offset,
+    _size: Geometry.Size,
+    _sigma: Float,
+    _paint: Ui.Paint,
+    _radius: Float = 0.0,
+    _shadowOffset: Geometry.Offset = Geometry.Offset::zero,
+    _spread: Float = 0.0,
+    _clip: Bool = false,
+  ): Ui.Drawable {
+    invariant_violation("unexpected boxShadow in MockSupport")
+  }
+
+  fun shape(_path: Shape.Path, _paint: Ui.Paint): Ui.Drawable {
+    invariant_violation("unexpected shape in MockSupport")
+  }
+}
+
+fun expectRect(
+  actual: Geometry.Rect,
+  left: Float,
+  top: Float,
+  width: Float,
+  height: Float,
+  msg: String,
+): void {
+  expected = Geometry.Rect::fromLTWH(left, top, width, height);
+  if (!actual.like(expected)) {
+    throw T.ExpectationError(
+      msg,
+      `Rect(${left}, ${top}, ${width}x${height})`,
+      `Rect(${actual.left}, ${
+        actual.top
+      }, ${actual.width()}x${actual.height()})`,
+    )
+  }
+}
+
+fun box(
+  width: Float,
+  height: Float,
+  color: .Color = Colors.red(),
+  key: ?String = None(),
+  parentData: ?RUi.ParentData = None(),
+): RUi.Node {
+  RUi.Shape{
+    key,
+    parentData,
+    color => RUi.Const(color),
+    preferredSize => RUi.Const(Geometry.Size(width, height)),
+  }
+}
+
+@test
+fun layoutPaddingAlignConstrained(): void {
+  context = SKStore.Context::create{}.mclone();
+  root = RUi.Padding{
+    insets => RUi.Const(Geometry.Insets::fromLTRB(10.0, 20.0, 30.0, 40.0)),
+    child => RUi.Const(
+      RUi.Align{
+        key => Some("align"),
+        alignment => RUi.Const(RUi.Alignment::center),
+        child => RUi.Const(
+          RUi.Constrained{
+            key => Some("box"),
+            constraints => RUi.Const(RUi.BoxConstraints::tight(60.0, 40.0)),
+            child => RUi.Const(box(10.0, 10.0, Colors.blue(), Some("leaf"))),
+          },
+        ),
+      },
+    ),
+  };
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(200.0, 200.0),
+    MockSupport(),
+  );
+  context.update();
+
+  // Root fills window (200x200).
+  expectRect(
+    pipe.geometryHdl.unsafeGet(context, RUi.ElementId::root).rect(),
+    0.0,
+    0.0,
+    200.0,
+    200.0,
+    "root",
+  );
+  // Align gets deflated area: (10, 20), size (200-40, 200-60) = (160, 140).
+  alignId = RUi.ElementId::root.childNamed("align");
+  expectRect(
+    pipe.geometryHdl.unsafeGet(context, alignId).rect(),
+    10.0,
+    20.0,
+    160.0,
+    140.0,
+    "align",
+  );
+  // Constrained child is 60x40 centered inside 160x140 -> offset (50, 50)
+  // relative to align -> absolute (60, 70).
+  boxId = alignId.childNamed("box");
+  expectRect(
+    pipe.geometryHdl.unsafeGet(context, boxId).rect(),
+    60.0,
+    70.0,
+    60.0,
+    40.0,
+    "box",
+  );
+  leafId = boxId.childNamed("leaf");
+  expectRect(
+    pipe.geometryHdl.unsafeGet(context, leafId).rect(),
+    60.0,
+    70.0,
+    60.0,
+    40.0,
+    "leaf",
+  );
+}
+
+@test
+fun layoutFlexHorizontalAndFactors(): void {
+  context = SKStore.Context::create{}.mclone();
+  root = RUi.Flex{
+    direction => RUi.Const(Ui.HorizontalAxis()),
+    crossAxisAlignment => RUi.Const(RUi.CrossCenter()),
+    gap => RUi.Const(10.0),
+    items => RUi.Const(
+      Array[
+        box(40.0, 20.0, Colors.red(), Some("fixed")),
+        box(
+          0.0,
+          30.0,
+          Colors.green(),
+          Some("flex1"),
+          Some(RUi.FlexData{flex => 1}),
+        ),
+        box(
+          0.0,
+          50.0,
+          Colors.blue(),
+          Some("flex2"),
+          Some(RUi.FlexData{flex => 2}),
+        ),
+      ],
+    ),
+  };
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(360.0, 100.0),
+    MockSupport(),
+  );
+  context.update();
+
+  // Total width 360: fixed=40, 2 gaps=20 -> 300 left split 1:2 => 100 and 200.
+  // Cross height = 100 (tight from window), CrossCenter centers each vertically.
+  expectRect(
+    pipe.geometryHdl
+      .unsafeGet(context, RUi.ElementId::root.childNamed("fixed"))
+      .rect(),
+    0.0,
+    40.0,
+    40.0,
+    20.0,
+    "fixed",
+  );
+  expectRect(
+    pipe.geometryHdl
+      .unsafeGet(context, RUi.ElementId::root.childNamed("flex1"))
+      .rect(),
+    50.0,
+    35.0,
+    100.0,
+    30.0,
+    "flex1",
+  );
+  expectRect(
+    pipe.geometryHdl
+      .unsafeGet(context, RUi.ElementId::root.childNamed("flex2"))
+      .rect(),
+    160.0,
+    25.0,
+    200.0,
+    50.0,
+    "flex2",
+  );
+}
+
+@test
+fun layoutFlexMainAlignmentAndStretch(): void {
+  context = SKStore.Context::create{}.mclone();
+  root = RUi.Flex{
+    direction => RUi.Const(Ui.VerticalAxis()),
+    mainAxisAlignment => RUi.Const(RUi.MainSpaceBetween()),
+    crossAxisAlignment => RUi.Const(RUi.CrossStretch()),
+    items => RUi.Const(
+      Array[
+        box(10.0, 20.0, Colors.red(), Some("a")),
+        box(10.0, 30.0, Colors.blue(), Some("b")),
+      ],
+    ),
+  };
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(120.0, 200.0),
+    MockSupport(),
+  );
+  context.update();
+
+  expectRect(
+    pipe.geometryHdl
+      .unsafeGet(context, RUi.ElementId::root.childNamed("a"))
+      .rect(),
+    0.0,
+    0.0,
+    120.0,
+    20.0,
+    "a stretched at top",
+  );
+  expectRect(
+    pipe.geometryHdl
+      .unsafeGet(context, RUi.ElementId::root.childNamed("b"))
+      .rect(),
+    0.0,
+    170.0,
+    120.0,
+    30.0,
+    "b stretched at bottom",
+  );
+}
+
+@test
+fun layoutStackAlignedAndPositioned(): void {
+  context = SKStore.Context::create{}.mclone();
+  root = RUi.Stack{
+    alignment => RUi.Const(RUi.Alignment::bottomRight),
+    items => RUi.Const(
+      Array[
+        box(50.0, 30.0, Colors.red(), Some("aligned")),
+        box(
+          0.0,
+          0.0,
+          Colors.green(),
+          Some("pinned"),
+          Some(
+            RUi.StackData{
+              left => Some(10.0),
+              top => Some(15.0),
+              right => Some(20.0),
+              height => Some(40.0),
+            },
+          ),
+        ),
+        box(
+          20.0,
+          20.0,
+          Colors.blue(),
+          Some("topRight"),
+          Some(RUi.StackData{alignment => Some(RUi.Alignment::topRight)}),
+        ),
+      ],
+    ),
+  };
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(200.0, 100.0),
+    MockSupport(),
+  );
+  context.update();
+
+  expectRect(
+    pipe.geometryHdl
+      .unsafeGet(context, RUi.ElementId::root.childNamed("aligned"))
+      .rect(),
+    150.0,
+    70.0,
+    50.0,
+    30.0,
+    "default bottomRight",
+  );
+  expectRect(
+    pipe.geometryHdl
+      .unsafeGet(context, RUi.ElementId::root.childNamed("pinned"))
+      .rect(),
+    10.0,
+    15.0,
+    170.0,
+    40.0,
+    "pinned left+right+top+height",
+  );
+  expectRect(
+    pipe.geometryHdl
+      .unsafeGet(context, RUi.ElementId::root.childNamed("topRight"))
+      .rect(),
+    180.0,
+    0.0,
+    20.0,
+    20.0,
+    "per-child alignment",
+  );
+}
+
+@test
+fun elementIdentityDistinctForEqualChildren(): void {
+  context = SKStore.Context::create{}.mclone();
+  // Two identical unkeyed children must keep distinct ElementIds (IndexKey 0 and 1).
+  same = box(30.0, 20.0, Colors.red());
+  root = RUi.Flex{items => RUi.Const(Array[same, same])};
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(100.0, 40.0),
+    MockSupport(),
+  );
+  context.update();
+
+  id0 = RUi.ElementId::root.childIndex(0);
+  id1 = RUi.ElementId::root.childIndex(1);
+  T.expectEq(id0 == id1, false, "distinct ids");
+  expectRect(
+    pipe.geometryHdl.unsafeGet(context, id0).rect(),
+    0.0,
+    10.0,
+    30.0,
+    20.0,
+    "first",
+  );
+  expectRect(
+    pipe.geometryHdl.unsafeGet(context, id1).rect(),
+    30.0,
+    10.0,
+    30.0,
+    20.0,
+    "second",
+  );
+}
+
+@test
+fun depthOrderingAndLayerSwitchIndependentOfPaint(): void {
+  context = SKStore.Context::create{}.mclone();
+  layerProp = RUi.Prop::create(
+    context,
+    "dialog-layer",
+    (RUi.BaseLayer() : RUi.StackingLayer),
+  );
+  // First child is wrapped in a reactive Layer, second child is on BaseLayer.
+  root = RUi.Stack{
+    items => RUi.Const(
+      Array[
+        RUi.Layer{
+          key => Some("layer"),
+          layer => RUi.Bound(layerProp),
+          child => RUi.Const(box(40.0, 40.0, Colors.red(), Some("first"))),
+        },
+        box(40.0, 40.0, Colors.blue(), Some("second")),
+      ],
+    ),
+  };
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(100.0, 100.0),
+    MockSupport(),
+  );
+  context.update();
+
+  firstId = RUi.ElementId::root.childNamed("layer").childNamed("first");
+  secondId = RUi.ElementId::root.childNamed("second");
+
+  // Initially both are on BaseLayer -> tree pre-order: first behind second.
+  list1 = pipe.drawList(context);
+  T.expectEq(list1.size(), 2, "two drawables initially");
+  T.expectEq(list1[0].id, firstId, "first drawn first on base");
+  T.expectEq(list1[1].id, secondId, "second drawn on top on base");
+  T.expectEq(list1[0].depth.z > list1[1].depth.z, true, "nearer has smaller z");
+
+  // Observe paint and geometry recomputation via downstream tick-stamped maps
+  // so we prove a depth-only change does not re-run paint or layout/geometry.
+  paintTickHdl = pipe.paintHdl.map(
+    RUi.ElementId::keyType,
+    SKStore.IntFile::type,
+    context,
+    RUi.stageDir("test-depth", "paint-tick"),
+    (context, writer, key, _values) ~> {
+      writer.set(key, SKStore.IntFile(context.getTick().value))
+    },
+  );
+  geomTickHdl = pipe.geometryHdl.map(
+    RUi.ElementId::keyType,
+    SKStore.IntFile::type,
+    context,
+    RUi.stageDir("test-depth", "geom-tick"),
+    (context, writer, key, _values) ~> {
+      writer.set(key, SKStore.IntFile(context.getTick().value))
+    },
+  );
+  context.update();
+
+  paintTickBefore = paintTickHdl.unsafeGet(context, firstId).value;
+  geomTickBefore = geomTickHdl.unsafeGet(context, firstId).value;
+
+  // Move first to ModalLayer: now first draws above second, with z strictly smaller.
+  layerProp.set(context, RUi.ModalLayer());
+  context.update();
+
+  list2 = pipe.drawList(context);
+  T.expectEq(list2.size(), 2, "two drawables after restack");
+  T.expectEq(list2[0].id, secondId, "second now behind");
+  T.expectEq(list2[1].id, firstId, "first now on top in ModalLayer");
+  T.expectEq(list2[1].depth.layer, RUi.ModalLayer(), "modal layer recorded");
+  T.expectEq(list2[0].depth.z > list2[1].depth.z, true, "z updated");
+  T.expectEq(
+    paintTickHdl.unsafeGet(context, firstId).value,
+    paintTickBefore,
+    "paint not recomputed on depth change",
+  );
+  T.expectEq(
+    geomTickHdl.unsafeGet(context, firstId).value,
+    geomTickBefore,
+    "geometry not recomputed on depth change",
+  );
+}
+
+@test
+fun componentExpansionAndReactiveUpdate(): void {
+  context = SKStore.Context::create{}.mclone();
+  sizeProp = RUi.Prop::create(context, "size", 30.0);
+  colorProp = RUi.Prop::create(context, "color", Colors.red());
+
+  comp = RUi.Component{
+    key => Some("card"),
+    render => context ~> {
+      s = sizeProp.get(context);
+      RUi.Shape{
+        kind => RUi.Const(RUi.RoundedRectShape(8.0)),
+        color => RUi.Bound(colorProp),
+        preferredSize => RUi.Const(Geometry.Size(s, s)),
+      }
+    },
+  };
+  root = RUi.Align{
+    alignment => RUi.Const(RUi.Alignment::center),
+    child => RUi.Const(comp),
+  };
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(100.0, 100.0),
+    MockSupport(),
+  );
+  context.update();
+
+  cardId = RUi.ElementId::root.childNamed("card");
+  expectRect(
+    pipe.geometryHdl.unsafeGet(context, cardId).rect(),
+    35.0,
+    35.0,
+    30.0,
+    30.0,
+    "initial centered 30x30",
+  );
+
+  // Changing only color updates paint without moving geometry.
+  colorProp.set(context, Colors.green());
+  context.update();
+  listColor = pipe.drawList(context);
+  T.expectEq(listColor.size(), 1, "one drawable");
+  d = listColor[0].drawable as MockDrawable _;
+  T.expectEq(d.kind, "rrect", "rounded rect");
+  T.expectEq(d.radius, 8.0, "radius");
+  T.expectEq(d.color, Colors.green(), "updated color");
+  T.expectEq(d.offset, Geometry.Offset(35.0, 35.0), "translated to window");
+
+  // Changing size re-expands component and re-centers.
+  sizeProp.set(context, 50.0);
+  context.update();
+  expectRect(
+    pipe.geometryHdl.unsafeGet(context, cardId).rect(),
+    25.0,
+    25.0,
+    50.0,
+    50.0,
+    "resized centered 50x50",
+  );
+
+  // Resizing window re-centers again.
+  pipe.setWindowSize(context, Geometry.Size(200.0, 100.0));
+  context.update();
+  expectRect(
+    pipe.geometryHdl.unsafeGet(context, cardId).rect(),
+    75.0,
+    25.0,
+    50.0,
+    50.0,
+    "window resized",
+  );
+}
+
+@test
+fun duplicateChildKeyThrows(): void {
+  context = SKStore.Context::create{}.mclone();
+  root = RUi.Flex{
+    items => RUi.Const(
+      Array[
+        box(10.0, 10.0, Colors.red(), Some("dup")),
+        box(10.0, 10.0, Colors.blue(), Some("dup")),
+      ],
+    ),
+  };
+  threw = try {
+    _ = RUi.Pipeline::create(
+      context,
+      root,
+      Geometry.Size(100.0, 100.0),
+      MockSupport(),
+    );
+    context.update();
+    false
+  } catch {
+  | InvariantViolation _ -> true
+  | _ -> false
+  };
+  T.expectEq(threw, true, "duplicate sibling keys must fail");
+}
+
+@test
+fun paintNotRecomputedWhenSiblingMoves(): void {
+  context = SKStore.Context::create{}.mclone();
+  leftWidth = RUi.Prop::create(context, "left-width", 20.0);
+  root = RUi.Flex{
+    items => RUi.Const(
+      Array[
+        RUi.Constrained{
+          key => Some("left"),
+          constraints => RUi.Bound(
+            leftWidth.map(context, "left-c", w ~>
+              RUi.BoxConstraints::tight(w, 40.0)
+            ),
+          ),
+          child => RUi.Const(box(10.0, 10.0, Colors.red(), Some("lbox"))),
+        },
+        box(50.0, 40.0, Colors.blue(), Some("right")),
+      ],
+    ),
+  };
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(200.0, 100.0),
+    MockSupport(),
+  );
+  paintTickHdl = pipe.paintHdl.map(
+    RUi.ElementId::keyType,
+    SKStore.IntFile::type,
+    context,
+    RUi.stageDir("test-move", "paint-tick"),
+    (context, writer, key, _values) ~> {
+      writer.set(key, SKStore.IntFile(context.getTick().value))
+    },
+  );
+  context.update();
+
+  rightId = RUi.ElementId::root.childNamed("right");
+  expectRect(
+    pipe.geometryHdl.unsafeGet(context, rightId).rect(),
+    20.0,
+    30.0,
+    50.0,
+    40.0,
+    "right initial",
+  );
+  rightPaintTickBefore = paintTickHdl.unsafeGet(context, rightId).value;
+
+  // Widen left sibling: right shifts from x=20 to x=60, same size (50x40),
+  // so right's local paint must not be recomputed.
+  leftWidth.set(context, 60.0);
+  context.update();
+  expectRect(
+    pipe.geometryHdl.unsafeGet(context, rightId).rect(),
+    60.0,
+    30.0,
+    50.0,
+    40.0,
+    "right shifted",
+  );
+  T.expectEq(
+    paintTickHdl.unsafeGet(context, rightId).value,
+    rightPaintTickBefore,
+    "right paint untouched on pure translation",
+  );
+}
+
+module end;

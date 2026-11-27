@@ -1,0 +1,455 @@
+module RUi;
+
+// Placement of a single child relative to its parent's origin, together with
+// the constraints used to lay it out (so the geometry stage can look up the
+// memoized layout result of that child).
+class ChildPlacement(
+  id: ElementId,
+  offset: Geometry.Offset,
+  constraints: BoxConstraints,
+) uses Hashable, Equality
+
+// Result of laying out an element under given BoxConstraints.
+class LayoutResult(
+  size: Geometry.Size,
+  placements: Array<ChildPlacement> = Array[],
+  optBaseline: ?Float = None(),
+) extends SKStore.File
+
+// Key for the memoized layout directory: (element id, constraints).
+class LayoutKey(
+  id: ElementId,
+  constraints: BoxConstraints,
+) extends SKStore.Key uses Hashable {
+  fun toString(): String {
+    `${this.id}@${this.constraints}`
+  }
+}
+
+// Handle passed to layouts so they can measure their children through the
+// shared memoized lazy directory.
+class Layouter(
+  elementsHdl: SKStore.EHandle<ElementId, Element>,
+  layoutHdl: SKStore.LHandle<LayoutKey, LayoutResult>,
+) {
+  fun measure(
+    context: mutable SKStore.Context,
+    childId: ElementId,
+    constraints: BoxConstraints,
+  ): Geometry.Size {
+    this.layoutHdl.get(context, LayoutKey(childId, constraints)).size
+  }
+
+  fun parentData(
+    context: mutable SKStore.Context,
+    childId: ElementId,
+  ): ?ParentData {
+    this.elementsHdl.get(context, childId).parentData
+  }
+}
+
+// Creates the shared lazy layout directory memoized by (ElementId, constraints).
+fun buildLayoutDir(
+  context: mutable SKStore.Context,
+  elementsHdl: SKStore.EHandle<ElementId, Element>,
+  dirName: SKStore.DirName,
+): SKStore.LHandle<LayoutKey, LayoutResult> {
+  makeLazyDir(
+    LayoutKey::keyType,
+    LayoutResult::type,
+    context,
+    dirName,
+    (context, self, key) ~> {
+      element = elementsHdl.get(context, key.id);
+      layouter = Layouter(elementsHdl, self);
+      computeLayout(context, element, key.constraints, layouter)
+    },
+  )
+}
+
+fun computeLayout(
+  context: mutable SKStore.Context,
+  element: Element,
+  constraints: BoxConstraints,
+  layouter: Layouter,
+): LayoutResult {
+  element.node match {
+  | node @ Flex _ -> layoutFlex(context, node, element, constraints, layouter)
+  | node @ Stack _ -> layoutStack(context, node, element, constraints, layouter)
+  | node @ Padding _ ->
+    layoutPadding(context, node, element, constraints, layouter)
+  | node @ Align _ -> layoutAlign(context, node, element, constraints, layouter)
+  | node @ Constrained _ ->
+    layoutConstrained(context, node, element, constraints, layouter)
+  | Layer _ -> layoutPassthrough(context, element, constraints, layouter)
+  | node @ Shape _ -> layoutShape(context, node, constraints)
+  | Component _ ->
+    invariant_violation("RUi: Component must be expanded before layout")
+  }
+}
+
+fun layoutShape(
+  context: mutable SKStore.Context,
+  node: Shape,
+  constraints: BoxConstraints,
+): LayoutResult {
+  LayoutResult(constraints.constrain(node.preferredSize.get(context)))
+}
+
+fun layoutPassthrough(
+  context: mutable SKStore.Context,
+  element: Element,
+  constraints: BoxConstraints,
+  layouter: Layouter,
+): LayoutResult {
+  if (element.childIds.isEmpty()) {
+    return LayoutResult(constraints.smallest())
+  };
+  childId = element.childIds[0];
+  size = layouter.measure(context, childId, constraints);
+  LayoutResult(
+    constraints.constrain(size),
+    Array[ChildPlacement(childId, Geometry.Offset::zero, constraints)],
+  )
+}
+
+fun layoutPadding(
+  context: mutable SKStore.Context,
+  node: Padding,
+  element: Element,
+  constraints: BoxConstraints,
+  layouter: Layouter,
+): LayoutResult {
+  insets = node.insets.get(context);
+  if (element.childIds.isEmpty()) {
+    return LayoutResult(
+      constraints.constrain(
+        Geometry.Size(insets.horizontal(), insets.vertical()),
+      ),
+    )
+  };
+  childId = element.childIds[0];
+  innerConstraints = constraints.deflate(insets);
+  childSize = layouter.measure(context, childId, innerConstraints);
+  totalSize = constraints.constrain(insets.inflateSize(childSize));
+  LayoutResult(
+    totalSize,
+    Array[ChildPlacement(childId, insets.topLeft(), innerConstraints)],
+  )
+}
+
+fun layoutConstrained(
+  context: mutable SKStore.Context,
+  node: Constrained,
+  element: Element,
+  constraints: BoxConstraints,
+  layouter: Layouter,
+): LayoutResult {
+  additional = node.constraints.get(context);
+  effective = constraints.enforce(additional);
+  if (element.childIds.isEmpty()) {
+    return LayoutResult(effective.smallest())
+  };
+  childId = element.childIds[0];
+  childSize = layouter.measure(context, childId, effective);
+  LayoutResult(
+    constraints.constrain(childSize),
+    Array[ChildPlacement(childId, Geometry.Offset::zero, effective)],
+  )
+}
+
+fun layoutAlign(
+  context: mutable SKStore.Context,
+  node: Align,
+  element: Element,
+  constraints: BoxConstraints,
+  layouter: Layouter,
+): LayoutResult {
+  alignment = node.alignment.get(context);
+  widthFactor = node.widthFactor.get(context);
+  heightFactor = node.heightFactor.get(context);
+  shrinkWrapWidth = widthFactor.isSome() || !constraints.hasBoundedWidth();
+  shrinkWrapHeight = heightFactor.isSome() || !constraints.hasBoundedHeight();
+  if (element.childIds.isEmpty()) {
+    w = if (shrinkWrapWidth) 0.0 else Float::inf;
+    h = if (shrinkWrapHeight) 0.0 else Float::inf;
+    return LayoutResult(constraints.constrain(Geometry.Size(w, h)))
+  };
+  childId = element.childIds[0];
+  childConstraints = constraints.loosen();
+  childSize = layouter.measure(context, childId, childConstraints);
+  rawW = if (shrinkWrapWidth) {
+    childSize.width * widthFactor.default(1.0)
+  } else {
+    Float::inf
+  };
+  rawH = if (shrinkWrapHeight) {
+    childSize.height * heightFactor.default(1.0)
+  } else {
+    Float::inf
+  };
+  size = constraints.constrain(Geometry.Size(rawW, rawH));
+  offset = alignment.alongOffset(
+    Geometry.Size(size.width - childSize.width, size.height - childSize.height),
+  );
+  LayoutResult(size, Array[ChildPlacement(childId, offset, childConstraints)])
+}
+
+fun layoutFlex(
+  context: mutable SKStore.Context,
+  node: Flex,
+  element: Element,
+  constraints: BoxConstraints,
+  layouter: Layouter,
+): LayoutResult {
+  axis = node.direction.get(context);
+  mainAlign = node.mainAxisAlignment.get(context);
+  crossAlign = node.crossAxisAlignment.get(context);
+  mainAxisSize = node.mainAxisSize.get(context);
+  gap = Math.max(0.0, node.gap.get(context));
+  childIds = element.childIds;
+  n = childIds.size();
+  if (n == 0) {
+    return LayoutResult(constraints.smallest())
+  };
+
+  isHoriz = axis is Ui.HorizontalAxis _;
+  maxMain = if (isHoriz) constraints.maxWidth else constraints.maxHeight;
+  minMain = if (isHoriz) constraints.minWidth else constraints.minHeight;
+  maxCross = if (isHoriz) constraints.maxHeight else constraints.maxWidth;
+  minCross = if (isHoriz) constraints.minHeight else constraints.minWidth;
+  canFlex = maxMain < Float::inf;
+  totalGap = gap * (n - 1).toFloat();
+
+  // Pass 1: lay out non-flex children with unbounded main axis, sum flex factors.
+  childSizes = Array::mfill(n, Geometry.Size::zero);
+  childConstraints = Array::mfill(n, constraints);
+  flexFactors = Array::mfill(n, 0);
+  flexFits = Array::mfill(n, (FlexTight() : FlexFit));
+  totalFlex = 0;
+  allocatedMain = totalGap;
+  crossExtent = 0.0;
+
+  makeInnerConstraints = (minM: Float, maxM: Float, stretchCross: Bool) -> {
+    cMin = if (stretchCross && maxCross < Float::inf) maxCross else 0.0;
+    if (isHoriz) {
+      BoxConstraints(minM, maxM, cMin, maxCross)
+    } else {
+      BoxConstraints(cMin, maxCross, minM, maxM)
+    }
+  };
+  stretch = crossAlign is CrossStretch _;
+
+  for (i in Range(0, n)) {
+    cid = childIds[i];
+    flex = layouter.parentData(context, cid) match {
+    | Some(fd @ FlexData _) ->
+      flexFits.set(i, fd.fit);
+      Math.max(0, fd.flex)
+    | _ -> 0
+    };
+    flexFactors.set(i, flex);
+    if (flex > 0) {
+      !totalFlex = totalFlex + flex
+    } else {
+      ic = makeInnerConstraints(0.0, Float::inf, stretch);
+      sz = layouter.measure(context, cid, ic);
+      childConstraints.set(i, ic);
+      childSizes.set(i, sz);
+      !allocatedMain = allocatedMain + axis.main(sz);
+      !crossExtent = Math.max(crossExtent, axis.cross(sz))
+    }
+  };
+
+  // Pass 2: distribute remaining main-axis space across flex children.
+  if (totalFlex > 0) {
+    freeSpace = if (canFlex) Math.max(0.0, maxMain - allocatedMain) else 0.0;
+    spacePerFlex = if (canFlex) freeSpace / totalFlex.toFloat() else Float::inf;
+    for (i in Range(0, n)) {
+      flex = flexFactors[i];
+      if (flex > 0) {
+        maxChildMain = if (canFlex) spacePerFlex * flex.toFloat() else {
+          Float::inf
+        };
+        minChildMain = flexFits[i] match {
+        | FlexTight() if (canFlex) -> maxChildMain
+        | _ -> 0.0
+        };
+        ic = makeInnerConstraints(minChildMain, maxChildMain, stretch);
+        sz = layouter.measure(context, childIds[i], ic);
+        childConstraints.set(i, ic);
+        childSizes.set(i, sz);
+        !allocatedMain = allocatedMain + axis.main(sz);
+        !crossExtent = Math.max(crossExtent, axis.cross(sz))
+      }
+    }
+  };
+
+  // Compute container size.
+  idealMain = mainAxisSize match {
+  | MainMax() if (canFlex) -> Math.max(maxMain, allocatedMain)
+  | _ -> allocatedMain
+  };
+  actualMain = Math.clamp(idealMain, minMain, maxMain);
+  actualCross = Math.clamp(crossExtent, minCross, maxCross);
+  containerSize = axis.size(actualMain, actualCross);
+
+  // Position children along main and cross axes.
+  remainingSpace = Math.max(0.0, actualMain - allocatedMain);
+  (leadingSpace, betweenSpace) = mainAlign match {
+  | MainStart() -> (0.0, gap)
+  | MainEnd() -> (remainingSpace, gap)
+  | MainCenter() -> (remainingSpace * 0.5, gap)
+  | MainSpaceBetween() ->
+    extra = if (n > 1) remainingSpace / (n - 1).toFloat() else 0.0;
+    (0.0, gap + extra)
+  | MainSpaceAround() ->
+    extra = remainingSpace / n.toFloat();
+    (extra * 0.5, gap + extra)
+  | MainSpaceEvenly() ->
+    extra = remainingSpace / (n + 1).toFloat();
+    (extra, gap + extra)
+  };
+
+  placements = mutable Vector<ChildPlacement>[];
+  posMain = leadingSpace;
+  for (i in Range(0, n)) {
+    sz = childSizes[i];
+    childCross = axis.cross(sz);
+    posCross = crossAlign match {
+    | CrossStart()
+    | CrossStretch() ->
+      0.0
+    | CrossEnd() -> actualCross - childCross
+    | CrossCenter() -> (actualCross - childCross) * 0.5
+    };
+    placements.push(
+      ChildPlacement(
+        childIds[i],
+        axis.offset(posMain, posCross),
+        childConstraints[i],
+      ),
+    );
+    !posMain = posMain + axis.main(sz) + betweenSpace
+  };
+
+  LayoutResult(containerSize, placements.toArray())
+}
+
+fun layoutStack(
+  context: mutable SKStore.Context,
+  node: Stack,
+  element: Element,
+  constraints: BoxConstraints,
+  layouter: Layouter,
+): LayoutResult {
+  defaultAlign = node.alignment.get(context);
+  fit = node.fit.get(context);
+  childIds = element.childIds;
+  n = childIds.size();
+  if (n == 0) {
+    return LayoutResult(constraints.smallest())
+  };
+
+  nonPosConstraints = fit match {
+  | StackLoose() -> constraints.loosen()
+  | StackExpand() ->
+    BoxConstraints::tight(constraints.maxWidth, constraints.maxHeight)
+  | StackPassthrough() -> constraints
+  };
+
+  // Pass 1: lay out non-positioned children to determine the stack size.
+  childSizes = Array::mfill(n, Geometry.Size::zero);
+  childConstraints = Array::mfill(n, nonPosConstraints);
+  stackData = Array::mfill(n, (None() : ?StackData));
+  isPositioned = Array::mfill(n, false);
+  width = constraints.minWidth;
+  height = constraints.minHeight;
+  hasNonPositioned = false;
+
+  for (i in Range(0, n)) {
+    sd = layouter.parentData(context, childIds[i]) match {
+    | Some(d @ StackData _) -> Some(d)
+    | _ -> None()
+    };
+    stackData.set(i, sd);
+    pos = sd match {
+    | Some(d) ->
+      d.left.isSome() ||
+        d.top.isSome() ||
+        d.right.isSome() ||
+        d.bottom.isSome() ||
+        d.width.isSome() ||
+        d.height.isSome()
+    | None() -> false
+    };
+    isPositioned.set(i, pos);
+    if (!pos) {
+      !hasNonPositioned = true;
+      sz = layouter.measure(context, childIds[i], nonPosConstraints);
+      childSizes.set(i, sz);
+      childConstraints.set(i, nonPosConstraints);
+      !width = Math.max(width, sz.width);
+      !height = Math.max(height, sz.height)
+    }
+  };
+
+  containerSize = if (hasNonPositioned) {
+    constraints.constrain(Geometry.Size(width, height))
+  } else {
+    constraints.biggest()
+  };
+
+  // Pass 2: lay out positioned children against containerSize, and place all.
+  placements = mutable Vector<ChildPlacement>[];
+  for (i in Range(0, n)) {
+    if (!isPositioned[i]) {
+      align = stackData[i].flatMap(d -> d.alignment).default(defaultAlign);
+      sz = childSizes[i];
+      offset = align.alongOffset(
+        Geometry.Size(
+          containerSize.width - sz.width,
+          containerSize.height - sz.height,
+        ),
+      );
+      placements.push(ChildPlacement(childIds[i], offset, childConstraints[i]))
+    } else {
+      d = stackData[i].fromSome();
+      wOpt = (d.left, d.right, d.width) match {
+      | (Some(l), Some(r), _) ->
+        Some(Math.max(0.0, containerSize.width - l - r))
+      | (_, _, Some(w)) -> Some(w)
+      | _ -> None()
+      };
+      hOpt = (d.top, d.bottom, d.height) match {
+      | (Some(t), Some(b), _) ->
+        Some(Math.max(0.0, containerSize.height - t - b))
+      | (_, _, Some(h)) -> Some(h)
+      | _ -> None()
+      };
+      pc = BoxConstraints::tightFor{width => wOpt, height => hOpt};
+      sz = layouter.measure(context, childIds[i], pc);
+      x = (d.left, d.right) match {
+      | (Some(l), _) -> l
+      | (None(), Some(r)) -> containerSize.width - r - sz.width
+      | (None(), None()) ->
+        d.alignment
+          .default(defaultAlign)
+          .alongOffset(Geometry.Size(containerSize.width - sz.width, 0.0)).dx
+      };
+      y = (d.top, d.bottom) match {
+      | (Some(t), _) -> t
+      | (None(), Some(b)) -> containerSize.height - b - sz.height
+      | (None(), None()) ->
+        d.alignment
+          .default(defaultAlign)
+          .alongOffset(Geometry.Size(0.0, containerSize.height - sz.height)).dy
+      };
+      placements.push(ChildPlacement(childIds[i], Geometry.Offset(x, y), pc))
+    }
+  };
+
+  LayoutResult(containerSize, placements.toArray())
+}
+
+module end;

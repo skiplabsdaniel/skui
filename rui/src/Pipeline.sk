@@ -1,0 +1,344 @@
+module RUi;
+
+// Window size stored in an input directory.
+class WindowSizeFile(size: Geometry.Size) extends SKStore.File
+
+// Geometry of an element in window coordinates.
+class ElementGeometry(
+  id: ElementId,
+  offset: Geometry.Offset,
+  size: Geometry.Size,
+) extends SKStore.File {
+  fun rect(): Geometry.Rect {
+    Geometry.Rect::fromOffsetSize(this.offset, this.size)
+  }
+}
+
+// Stacking order of an element, computed apart from layout and paint.
+// A higher order (or higher z) draws above a lower one.
+// `z` is mapped into (-1.0, 1.0) for OpenGL depth ordering; painter's
+// algorithm sorts by `order` ascending (back to front).
+class ElementDepth(
+  id: ElementId,
+  layer: StackingLayer,
+  order: Int,
+  z: Float,
+) extends SKStore.File
+
+// Local-coordinate paint output of an element: an array of Drawables in
+// painter order (background -> content -> foreground, all local to this
+// element). Does not depend on depth or absolute offset.
+class ElementPaint(drawables: Array<Ui.Drawable>) extends SKStore.File
+
+// One entry of the final sorted draw list produced by the pipeline.
+class DrawEntry(
+  id: ElementId,
+  offset: Geometry.Offset,
+  depth: ElementDepth,
+  drawable: Ui.Drawable,
+)
+
+// Helper for depth sorting: collects (layer, preOrder, id) entries.
+private class DepthItem(
+  layer: StackingLayer,
+  preOrder: Int,
+  id: ElementId,
+) uses Orderable {
+  fun compare(other: DepthItem): Order {
+    this.layer.compare(other.layer) match {
+    | EQ() -> this.preOrder.compare(other.preOrder)
+    | ord -> ord
+    }
+  }
+}
+
+// Walks the layout tree from ElementId::root to compute absolute window
+// geometry for every laid-out element.
+fun collectGeometry(
+  context: mutable SKStore.Context,
+  layoutHdl: SKStore.LHandle<LayoutKey, LayoutResult>,
+  writer: mutable SKStore.TWriter<ElementId, ElementGeometry>,
+  id: ElementId,
+  constraints: BoxConstraints,
+  absOffset: Geometry.Offset,
+): void {
+  res = layoutHdl.get(context, LayoutKey(id, constraints));
+  writer.set(id, ElementGeometry(id, absOffset, res.size));
+  for (placement in res.placements) {
+    collectGeometry(
+      context,
+      layoutHdl,
+      writer,
+      placement.id,
+      placement.constraints,
+      absOffset + placement.offset,
+    )
+  }
+}
+
+// Walks the element tree in pre-order to collect (layer, preOrder, id) for
+// every element. `Layer` nodes switch the active stacking layer for their
+// subtree; changing a Layer's value only recomputes this depth stage.
+fun collectDepthItems(
+  context: mutable SKStore.Context,
+  elementsHdl: SKStore.EHandle<ElementId, Element>,
+  id: ElementId,
+  inheritedLayer: StackingLayer,
+  counter: mutable Ref<Int>,
+  out: mutable Vector<DepthItem>,
+): void {
+  element = elementsHdl.get(context, id);
+  layer = element.node match {
+  | Layer{layer => layerVal} -> layerVal.get(context)
+  | _ -> inheritedLayer
+  };
+  order = counter.value;
+  counter.!value = order + 1;
+  out.push(DepthItem(layer, order, id));
+  for (cid in element.childIds) {
+    collectDepthItems(context, elementsHdl, cid, layer, counter, out)
+  }
+}
+
+// Computes the depth stage: maps each element to its StackingLayer, global
+// stacking order (0 = furthest back, n-1 = frontmost), and OpenGL z value.
+// Higher order -> smaller NDC z in (-1, 1) (OpenGL default GL_LESS: nearer
+// surfaces have smaller z; painters sort by `order` ascending).
+fun buildDepthDir(
+  context: mutable SKStore.Context,
+  elementsHdl: SKStore.EHandle<ElementId, Element>,
+  dirName: SKStore.DirName,
+): SKStore.EHandle<ElementId, ElementDepth> {
+  // Drive from the root element so the whole tree's stacking order is computed
+  // in one pass without depending on layout or paint.
+  rootOnly = elementsHdl.map(
+    SKStore.UnitID::keyType,
+    Element::type,
+    context,
+    dirName.sub("trigger"),
+    (_context, writer, key, values) ~> {
+      if (key.isRoot()) {
+        writer.set(SKStore.UnitID::singleton, values.first)
+      }
+    },
+  );
+  rootOnly.map(
+    ElementId::keyType,
+    ElementDepth::type,
+    context,
+    dirName,
+    (context, writer, _key, _values) ~> {
+      items = mutable Vector<DepthItem>[];
+      counter = mutable Ref(0);
+      collectDepthItems(
+        context,
+        elementsHdl,
+        ElementId::root,
+        BaseLayer(),
+        counter,
+        items,
+      );
+      sorted = items.toArray().sorted();
+      n = sorted.size();
+      denom = (n + 1).toFloat();
+      for (i in Range(0, n)) {
+        item = sorted[i];
+        // Map order i in [0, n-1] strictly inside (-1, 1), back -> +1, front -> -1.
+        z = 1.0 - 2.0 * (i + 1).toFloat() / denom;
+        writer.set(item.id, ElementDepth(item.id, item.layer, i, z))
+      }
+    },
+  )
+}
+
+// Paints a single element in its local coordinates (origin 0, 0).
+// Does not depend on depth or absolute position, so restacking or shifting
+// an element does not re-run paint.
+fun paintElement(
+  context: mutable SKStore.Context,
+  support: Ui.DrawableSupport,
+  element: Element,
+  size: Geometry.Size,
+): Array<Ui.Drawable> {
+  element.node match {
+  | Shape{kind, color, border} ->
+    c = color.get(context);
+    b = border.get(context);
+    origin = Geometry.Offset::zero;
+    drawable = kind.get(context) match {
+    | RectShape() ->
+      b match {
+      | Some(_) -> support.roundedRectangle(origin, size, c, 0.0, 0.0, b)
+      | None() -> support.rectangle(origin, size, c)
+      }
+    | RoundedRectShape(radius, smooth) ->
+      support.roundedRectangle(origin, size, c, radius, smooth, b)
+    | EllipseShape() -> support.ellipse(origin, size, c)
+    };
+    Array[drawable]
+  | _ -> Array[]
+  }
+}
+
+// The core incremental pipeline for RUi (step 3):
+//
+//   rootNode + windowSize
+//     -> elementsHdl  (ElementTree: Node descriptions expanded by ElementId)
+//     -> layoutHdl    (lazy memoized layout per (ElementId, BoxConstraints))
+//     -> geometryHdl  (absolute rects in window coordinates)
+//     -> depthHdl     (stacking layers -> global order and GL z, independent of layout)
+//     -> paintHdl     (local drawables per ElementId, independent of depth/offset)
+class Pipeline private (
+  rootNodeHdl: SKStore.EHandle<SKStore.UnitID, NodeFile>,
+  windowSizeHdl: SKStore.EHandle<SKStore.UnitID, WindowSizeFile>,
+  elementsHdl: SKStore.EHandle<ElementId, Element>,
+  layoutHdl: SKStore.LHandle<LayoutKey, LayoutResult>,
+  geometryHdl: SKStore.EHandle<ElementId, ElementGeometry>,
+  depthHdl: SKStore.EHandle<ElementId, ElementDepth>,
+  paintHdl: SKStore.EHandle<ElementId, ElementPaint>,
+) {
+  static fun create(
+    context: mutable SKStore.Context,
+    rootNode: Node,
+    windowSize: Geometry.Size,
+    support: Ui.DrawableSupport,
+    prefix: String = "main",
+  ): Pipeline {
+    baseDir = moduleDir(prefix);
+    rootNodeHdl = makeInputDir(
+      SKStore.UnitID::keyType,
+      NodeFile::type,
+      context,
+      baseDir.sub("root-node"),
+      Array[(SKStore.UnitID::singleton, NodeFile(rootNode))],
+    );
+    windowSizeHdl = makeInputDir(
+      SKStore.UnitID::keyType,
+      WindowSizeFile::type,
+      context,
+      baseDir.sub("window-size"),
+      Array[(SKStore.UnitID::singleton, WindowSizeFile(windowSize))],
+    );
+    elementsHdl = buildElementTree(
+      context,
+      rootNodeHdl,
+      baseDir.sub("elements"),
+    );
+    layoutHdl = buildLayoutDir(context, elementsHdl, baseDir.sub("layout"));
+    geometryHdl = windowSizeHdl.map(
+      ElementId::keyType,
+      ElementGeometry::type,
+      context,
+      baseDir.sub("geometry"),
+      (context, writer, _key, values) ~> {
+        win = values.first.size;
+        rootConstraints = BoxConstraints::tight(win.width, win.height);
+        collectGeometry(
+          context,
+          layoutHdl,
+          writer,
+          ElementId::root,
+          rootConstraints,
+          Geometry.Offset::zero,
+        )
+      },
+    );
+    depthHdl = buildDepthDir(context, elementsHdl, baseDir.sub("depth"));
+    // Paint depends on element + its own size (projected from geometry so
+    // moving an element without resizing it does not invalidate paint).
+    sizesHdl = geometryHdl.map(
+      ElementId::keyType,
+      BoxFile<Geometry.Size>::type,
+      context,
+      baseDir.sub("sizes"),
+      (_context, writer, key, values) ~> {
+        writer.set(key, BoxFile(values.first.size))
+      },
+    );
+    paintHdl = sizesHdl.map(
+      ElementId::keyType,
+      ElementPaint::type,
+      context,
+      baseDir.sub("paint"),
+      (context, writer, key, values) ~> {
+        element = elementsHdl.get(context, key);
+        drawables = paintElement(context, support, element, values.first.value);
+        writer.set(key, ElementPaint(drawables))
+      },
+    );
+    Pipeline(
+      rootNodeHdl,
+      windowSizeHdl,
+      elementsHdl,
+      layoutHdl,
+      geometryHdl,
+      depthHdl,
+      paintHdl,
+    )
+  }
+
+  // Updates the root node (outside of reactive computations).
+  fun setRoot(context: mutable SKStore.Context, rootNode: Node): void {
+    writeValue(
+      context,
+      this.rootNodeHdl,
+      SKStore.UnitID::singleton,
+      NodeFile(rootNode),
+    )
+  }
+
+  // Updates the window size (outside of reactive computations).
+  fun setWindowSize(
+    context: mutable SKStore.Context,
+    size: Geometry.Size,
+  ): void {
+    writeValue(
+      context,
+      this.windowSizeHdl,
+      SKStore.UnitID::singleton,
+      WindowSizeFile(size),
+    )
+  }
+
+  // Builds the sorted draw list (back to front by ElementDepth.order),
+  // translating local drawables to window coordinates. Called by the renderer
+  // outside of the reactive graph.
+  fun drawList(context: readonly SKStore.Context): Array<DrawEntry> {
+    depthEntries = mutable Vector<(Int, ElementDepth)>[];
+    // Collect every element that has geometry and depth.
+    // We traverse via unsafe reads outside of the graph.
+    this.collectDrawDepths(context, ElementId::root, depthEntries);
+    sorted = depthEntries.toArray().sortedBy(pair ~> pair.i0);
+    result = mutable Vector<DrawEntry>[];
+    for (pair in sorted) {
+      depth = pair.i1;
+      geom = this.geometryHdl.unsafeMaybeGet(context, depth.id);
+      paint = this.paintHdl.unsafeMaybeGet(context, depth.id);
+      (geom, paint) match {
+      | (Some(g), Some(p)) ->
+        for (d in p.drawables) {
+          result.push(
+            DrawEntry(depth.id, g.offset, depth, d.translate(g.offset)),
+          )
+        }
+      | _ -> void
+      }
+    };
+    result.toArray()
+  }
+
+  private fun collectDrawDepths(
+    context: readonly SKStore.Context,
+    id: ElementId,
+    out: mutable Vector<(Int, ElementDepth)>,
+  ): void {
+    this.depthHdl.unsafeMaybeGet(context, id).each(d -> out.push((d.order, d)));
+    this.elementsHdl.unsafeMaybeGet(context, id).each(el -> {
+      for (cid in el.childIds) {
+        this.collectDrawDepths(context, cid, out)
+      }
+    })
+  }
+}
+
+module end;

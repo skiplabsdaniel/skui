@@ -1,0 +1,87 @@
+module RUi;
+
+// Key identifying a child within its parent: either explicit (string) or
+// positional (index). Content hashes are never used, so two equal children
+// keep distinct identities.
+base class ChildKey uses Hashable, Orderable, Show {
+  children =
+  | IndexKey(index: Int)
+  | NamedKey(name: String)
+
+  fun toString(): String
+  | IndexKey(i) -> i.toString()
+  | NamedKey(s) -> s
+}
+
+// Stable identity of an element in the tree: path of ChildKeys from the root.
+class ElementId private (
+  segments: Array<ChildKey>,
+) extends SKStore.Key uses Hashable {
+  const root: ElementId = ElementId(Array[]);
+
+  fun child(key: ChildKey): ElementId {
+    ElementId(this.segments.concat(Array[key]))
+  }
+
+  fun childIndex(index: Int): ElementId {
+    this.child(IndexKey(index))
+  }
+
+  fun childNamed(name: String): ElementId {
+    this.child(NamedKey(name))
+  }
+
+  fun isRoot(): Bool {
+    this.segments.isEmpty()
+  }
+
+  fun parent(): ?ElementId {
+    if (this.segments.isEmpty()) {
+      None()
+    } else {
+      Some(ElementId(this.segments.slice(0, this.segments.size() - 1)))
+    }
+  }
+
+  fun toString(): String {
+    if (this.segments.isEmpty()) {
+      "/"
+    } else {
+      "/" + this.segments.map(s -> s.toString()).join("/")
+    }
+  }
+}
+
+// Stacking layer of an element (section 8.1). Elements are stacked in tree
+// pre-order within their layer; higher layers always draw above lower ones.
+base class StackingLayer uses Hashable, Orderable, Show {
+  children =
+  | BaseLayer()
+  | OverlayLayer()
+  | ModalLayer()
+  | TooltipLayer()
+  | DebugLayer()
+  | CustomLayer(value: Int)
+
+  fun rank(): Int
+  | BaseLayer() -> 0
+  | OverlayLayer() -> 100
+  | ModalLayer() -> 200
+  | TooltipLayer() -> 300
+  | DebugLayer() -> 400
+  | CustomLayer(r) -> r
+
+  fun compare(other: StackingLayer): Order {
+    this.rank().compare(other.rank())
+  }
+
+  fun toString(): String
+  | BaseLayer() -> "base"
+  | OverlayLayer() -> "overlay"
+  | ModalLayer() -> "modal"
+  | TooltipLayer() -> "tooltip"
+  | DebugLayer() -> "debug"
+  | CustomLayer(r) -> `custom(${r})`
+}
+
+module end;

@@ -1,0 +1,140 @@
+module RUi;
+
+// Per-child layout configuration owned by the child and read by its parent.
+// A parent only interprets the subtype it recognizes and ignores any other.
+base class ParentData
+
+base class FlexFit uses Hashable, Equality {
+  children =
+  | FlexTight()
+  | FlexLoose()
+}
+
+class FlexData{flex: Int = 0, fit: FlexFit = FlexTight()} extends ParentData
+
+// Alignment within a rectangle: (-1.0, -1.0) is top-left, (0.0, 0.0) is center,
+// (1.0, 1.0) is bottom-right.
+value class Alignment(x: Float, y: Float) uses Hashable, Orderable, Show {
+  const topLeft: Alignment = Alignment(-1.0, -1.0);
+  const topCenter: Alignment = Alignment(0.0, -1.0);
+  const topRight: Alignment = Alignment(1.0, -1.0);
+  const centerLeft: Alignment = Alignment(-1.0, 0.0);
+  const center: Alignment = Alignment(0.0, 0.0);
+  const centerRight: Alignment = Alignment(1.0, 0.0);
+  const bottomLeft: Alignment = Alignment(-1.0, 1.0);
+  const bottomCenter: Alignment = Alignment(0.0, 1.0);
+  const bottomRight: Alignment = Alignment(1.0, 1.0);
+
+  fun alongOffset(diff: Geometry.Size): Geometry.Offset {
+    Geometry.Offset(
+      (this.x + 1.0) * 0.5 * diff.width,
+      (this.y + 1.0) * 0.5 * diff.height,
+    )
+  }
+
+  fun toString(): String {
+    `Alignment(${this.x}, ${this.y})`
+  }
+}
+
+class StackData{
+  alignment: ?Alignment = None(),
+  left: ?Float = None(),
+  top: ?Float = None(),
+  right: ?Float = None(),
+  bottom: ?Float = None(),
+  width: ?Float = None(),
+  height: ?Float = None(),
+} extends ParentData
+
+base class MainAxisAlignment uses Hashable, Equality {
+  children =
+  | MainStart()
+  | MainCenter()
+  | MainEnd()
+  | MainSpaceBetween()
+  | MainSpaceAround()
+  | MainSpaceEvenly()
+}
+
+base class CrossAxisAlignment uses Hashable, Equality {
+  children =
+  | CrossStart()
+  | CrossCenter()
+  | CrossEnd()
+  | CrossStretch()
+}
+
+base class MainAxisSize uses Hashable, Equality {
+  children =
+  | MainMin()
+  | MainMax()
+}
+
+base class StackFit uses Hashable, Equality {
+  children =
+  | StackLoose()
+  | StackExpand()
+  | StackPassthrough()
+}
+
+// Base description of every UI element.
+// Nodes carry only data (constants or reactive properties) and no layout,
+// painting or event code.
+base class Node{key: ?String = None(), parentData: ?ParentData = None()}
+
+// A reactive component: expands its render function inside the element-tree
+// stage. When a Prop read inside render changes, only this component's subtree
+// is expanded again.
+class Component{render: mutable SKStore.Context ~> Node} extends Node
+
+// Layout nodes.
+
+class Flex{
+  direction: Value<Ui.Axis> = Const(Ui.HorizontalAxis()),
+  mainAxisAlignment: Value<MainAxisAlignment> = Const(MainStart()),
+  crossAxisAlignment: Value<CrossAxisAlignment> = Const(CrossCenter()),
+  mainAxisSize: Value<MainAxisSize> = Const(MainMax()),
+  gap: Value<Float> = Const(0.0),
+  items: Value<Array<Node>>,
+} extends Node
+
+class Stack{
+  alignment: Value<Alignment> = Const(Alignment::topLeft),
+  fit: Value<StackFit> = Const(StackLoose()),
+  items: Value<Array<Node>>,
+} extends Node
+
+class Padding{insets: Value<Geometry.Insets>, child: Value<Node>} extends Node
+
+class Align{
+  alignment: Value<Alignment> = Const(Alignment::center),
+  widthFactor: Value<?Float> = Const(None()),
+  heightFactor: Value<?Float> = Const(None()),
+  child: Value<Node>,
+} extends Node
+
+class Constrained{
+  constraints: Value<BoxConstraints>,
+  child: Value<Node>,
+} extends Node
+
+// Starts a stacking context on the given layer without affecting layout.
+class Layer{layer: Value<StackingLayer>, child: Value<Node>} extends Node
+
+// Plain geometric shape node for step 3 (and low-level drawing).
+base class ShapeKind uses Hashable, Equality {
+  children =
+  | RectShape()
+  | RoundedRectShape(radius: Float, smooth: Float = 2.0)
+  | EllipseShape()
+}
+
+class Shape{
+  kind: Value<ShapeKind> = Const(RectShape()),
+  color: Value<.Color>,
+  border: Value<?Ui.Border> = Const(None()),
+  preferredSize: Value<Geometry.Size> = Const(Geometry.Size::zero),
+} extends Node
+
+module end;
