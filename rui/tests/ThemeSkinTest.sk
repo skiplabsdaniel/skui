@@ -29,9 +29,20 @@ class PillLabelSkin() extends RUi.Skin {
     pctx: mutable RUi.PaintContext,
     node: RUi.Node,
     style: RUi.ResolvedStyle,
+    state: RUi.ElementState,
+    interaction: RUi.InteractionState,
+    theme: RUi.Theme,
     size: Geometry.Size,
   ): Array<Ui.Drawable> {
-    RUi.DefaultLabelSkin().paint(pctx, node, style, size)
+    RUi.DefaultLabelSkin().paint(
+      pctx,
+      node,
+      style,
+      state,
+      interaction,
+      theme,
+      size,
+    )
   }
 }
 

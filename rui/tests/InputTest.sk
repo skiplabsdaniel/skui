@@ -1,0 +1,365 @@
+module alias T = SKTest;
+
+module SKUIRUiTest;
+
+@test
+fun buttonClickKeyboardAndCancelOutside(): void {
+  context = SKStore.Context::create{}.mclone();
+  clicks = RUi.Prop::create(context, "btn-clicks", 0);
+
+  root = RUi.Align{
+    alignment => RUi.Const(RUi.Alignment::topLeft),
+    child => RUi.Const(
+      RUi.Button{
+        key => Some("ok"),
+        text => RUi.Const("OK"),
+        kind => RUi.Const(RUi.PrimaryButton()),
+        onPress => Some(ctx ~> {
+          clicks.set(ctx, clicks.unsafeGet(ctx) + 1);
+          ctx.update()
+        }),
+      },
+    ),
+  };
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(200.0, 100.0),
+    MockSupport(),
+    "btn-test",
+  );
+  context.update();
+
+  btnId = RUi.ElementId::root.childNamed("ok");
+  rect = pipe.geometryHdl.unsafeGet(context, btnId).rect();
+  inside = rect.center();
+  outside = Geometry.Offset(190.0, 90.0);
+
+  // Pointer press arms & focuses the button in a single dispatch.
+  _ = pipe.dispatch(context, RUi.PointerDown{position => inside});
+  T.expectEq(pipe.focused(context), Some(btnId), "focused on press");
+  T.expectEq(
+    pipe.interactionHdl.unsafeGet(context, btnId).pressed,
+    true,
+    "pressed while armed",
+  );
+  T.expectEq(clicks.unsafeGet(context), 0, "not fired yet");
+
+  // Releasing inside fires onPress and disarms.
+  _ = pipe.dispatch(context, RUi.PointerUp{position => inside});
+  T.expectEq(clicks.unsafeGet(context), 1, "fired once");
+  T.expectEq(
+    pipe.interactionHdl.unsafeGet(context, btnId).pressed,
+    false,
+    "disarmed after release",
+  );
+
+  // Press inside then drag & release outside: does NOT fire, pointer capture
+  // still disarms the button.
+  _ = pipe.dispatch(context, RUi.PointerDown{position => inside});
+  _ = pipe.dispatch(context, RUi.PointerUp{position => outside});
+  T.expectEq(clicks.unsafeGet(context), 1, "release outside cancels click");
+  T.expectEq(
+    pipe.interactionHdl.unsafeGet(context, btnId).pressed,
+    false,
+    "disarmed after release outside",
+  );
+
+  // Keyboard activation (Enter and Space) on focused button; repeats ignored.
+  _ = pipe.dispatch(context, RUi.KeyDown{key => RUi.KeyEnter()});
+  _ = pipe.dispatch(
+    context,
+    RUi.KeyDown{key => RUi.KeyEnter(), repeat => true},
+  );
+  _ = pipe.dispatch(context, RUi.KeyDown{key => RUi.KeySpace()});
+  T.expectEq(
+    clicks.unsafeGet(context),
+    3,
+    "Enter + Space fire, repeat ignored",
+  );
+
+  // Accessibility action goes through the same reducer.
+  _ = pipe.dispatch(
+    context,
+    RUi.SemanticsEvent{target => btnId, action => RUi.ActionPress()},
+  );
+  T.expectEq(clicks.unsafeGet(context), 4, "SemanticsEvent ActionPress fires");
+}
+
+@test
+fun hoverIsDerivedEvenWhenLayoutMovesUnderStillPointer(): void {
+  context = SKStore.Context::create{}.mclone();
+  spacerW = RUi.Prop::create(context, "spacer-w", 0.0);
+  root = RUi.Flex{
+    direction => RUi.Const(Ui.HorizontalAxis()),
+    crossAxisAlignment => RUi.Const(RUi.CrossStart()),
+    items => RUi.Const(
+      RUi.NodeList::fromArray(
+        Array[
+          RUi.Constrained{
+            key => Some("spacer"),
+            constraints => RUi.Bound(
+              spacerW.map(context, "spacer-c", w ~>
+                RUi.BoxConstraints::tight(w, 40.0)
+              ),
+            ),
+            child => RUi.Const(box(0.0, 0.0, Colors.transparent())),
+          },
+          RUi.Button{key => Some("b"), text => RUi.Const("Go")},
+        ],
+      ),
+    ),
+  };
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(300.0, 100.0),
+    MockSupport(),
+    "hover-derived",
+  );
+  context.update();
+
+  btnId = RUi.ElementId::root.childNamed("b");
+  // Move pointer to (120, 15): initially outside the button (button is at x=0..64).
+  _ = pipe.dispatch(
+    context,
+    RUi.PointerMove{position => Geometry.Offset(120.0, 15.0)},
+  );
+  T.expectEq(pipe.hovered(context), None(), "not hovered initially");
+  T.expectEq(
+    pipe.interactionHdl.unsafeGet(context, btnId).hovered,
+    false,
+    "button interaction not hovered",
+  );
+
+  // Widen spacer to 100px WITHOUT moving the pointer: the button slides under
+  // the stationary pointer (x=100..164), so derived hover turns true.
+  spacerW.set(context, 100.0);
+  context.update();
+  T.expectEq(pipe.hovered(context), Some(btnId), "hovered after layout shift");
+  T.expectEq(
+    pipe.interactionHdl.unsafeGet(context, btnId).hovered,
+    true,
+    "button interaction hovered",
+  );
+
+  // PointerLeave clears hover.
+  _ = pipe.dispatch(context, RUi.PointerLeave{});
+  T.expectEq(pipe.hovered(context), None(), "hover cleared on leave");
+}
+
+@test
+fun hoverOnlyRepaintsHoveredElement(): void {
+  context = SKStore.Context::create{}.mclone();
+  root = RUi.Flex{
+    direction => RUi.Const(Ui.HorizontalAxis()),
+    crossAxisAlignment => RUi.Const(RUi.CrossStart()),
+    gap => RUi.Const(10.0),
+    items => RUi.Const(
+      RUi.NodeList::fromArray(
+        Array[
+          RUi.Button{key => Some("b1"), text => RUi.Const("One")},
+          RUi.Button{key => Some("b2"), text => RUi.Const("Two")},
+        ],
+      ),
+    ),
+  };
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(300.0, 100.0),
+    MockSupport(),
+    "hover-inc",
+  );
+  paintTickHdl = pipe.paintHdl.map(
+    RUi.ElementId::keyType,
+    SKStore.IntFile::type,
+    context,
+    RUi.stageDir("hover-inc", "paint-tick"),
+    (context, writer, key, _values) ~> {
+      writer.set(key, SKStore.IntFile(context.getTick().value))
+    },
+  );
+  context.update();
+
+  b1 = RUi.ElementId::root.childNamed("b1");
+  b2 = RUi.ElementId::root.childNamed("b2");
+  p2Before = paintTickHdl.unsafeGet(context, b2).value;
+
+  // Hover b1: b1 repaints with hover overlay, b2 is untouched.
+  r1 = pipe.geometryHdl.unsafeGet(context, b1).rect();
+  _ = pipe.dispatch(context, RUi.PointerMove{position => r1.center()});
+  T.expectEq(pipe.hovered(context), Some(b1), "b1 hovered");
+  T.expectEq(
+    paintTickHdl.unsafeGet(context, b2).value,
+    p2Before,
+    "b2 paint untouched when b1 hovered",
+  );
+}
+
+@test
+fun toggleControlledUncontrolledAndDisabled(): void {
+  context = SKStore.Context::create{}.mclone();
+  controlledProp = RUi.Prop::create(context, "dark-mode", false);
+  root = RUi.Flex{
+    direction => RUi.Const(Ui.VerticalAxis()),
+    crossAxisAlignment => RUi.Const(RUi.CrossStart()),
+    gap => RUi.Const(8.0),
+    items => RUi.Const(
+      RUi.NodeList::fromArray(
+        Array[
+          RUi.Toggle{
+            key => Some("ctrl"),
+            label => RUi.Const("Dark"),
+            kind => RUi.Const(RUi.SwitchToggle()),
+            checked => RUi.Bound(controlledProp),
+            checkedProp => Some(controlledProp),
+          },
+          RUi.Toggle{
+            key => Some("unctrl"),
+            label => RUi.Const("Agree"),
+            checked => RUi.Const(false),
+          },
+          RUi.Toggle{
+            key => Some("dis"),
+            label => RUi.Const("Locked"),
+            checked => RUi.Const(false),
+            enabled => RUi.Const(false),
+          },
+        ],
+      ),
+    ),
+  };
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(200.0, 200.0),
+    MockSupport(),
+    "toggle-test",
+  );
+  context.update();
+
+  ctrlId = RUi.ElementId::root.childNamed("ctrl");
+  unctrlId = RUi.ElementId::root.childNamed("unctrl");
+  disId = RUi.ElementId::root.childNamed("dis");
+
+  // Controlled toggle: click updates controlledProp in one batch transaction.
+  rCtrl = pipe.geometryHdl.unsafeGet(context, ctrlId).rect();
+  _ = pipe.dispatchBatch(
+    context,
+    Array[
+      RUi.PointerDown{position => rCtrl.center()},
+      RUi.PointerUp{position => rCtrl.center()},
+    ],
+  );
+  T.expectEq(controlledProp.unsafeGet(context), true, "controlled prop set");
+  T.expectEq(
+    pipe.semanticsHdl.unsafeGet(context, ctrlId).checked,
+    Some(true),
+    "controlled semantics checked",
+  );
+  T.expectEq(
+    pipe.semanticsHdl.unsafeGet(context, ctrlId).role,
+    RUi.RoleSwitch(),
+    "switch role",
+  );
+
+  // Uncontrolled toggle: ActionToggle flips ToggleState.checked.
+  _ = pipe.dispatch(
+    context,
+    RUi.SemanticsEvent{target => unctrlId, action => RUi.ActionToggle()},
+  );
+  T.expectEq(
+    pipe.semanticsHdl.unsafeGet(context, unctrlId).checked,
+    Some(true),
+    "uncontrolled checked",
+  );
+
+  // Disabled toggle ignores input and is not focusable.
+  rDis = pipe.geometryHdl.unsafeGet(context, disId).rect();
+  _ = pipe.dispatchBatch(
+    context,
+    Array[
+      RUi.PointerDown{position => rDis.center()},
+      RUi.PointerUp{position => rDis.center()},
+    ],
+  );
+  T.expectEq(
+    pipe.semanticsHdl.unsafeGet(context, disId).checked,
+    Some(false),
+    "disabled toggle unchanged",
+  );
+  T.expectEq(
+    pipe.semanticsHdl.unsafeGet(context, disId).focusable,
+    false,
+    "disabled not focusable",
+  );
+}
+
+@test
+fun tabFocusTraversalFollowsSemanticsOrder(): void {
+  context = SKStore.Context::create{}.mclone();
+  root = RUi.Flex{
+    items => RUi.Const(
+      RUi.NodeList::fromArray(
+        Array[
+          RUi.Button{key => Some("a"), text => RUi.Const("A")},
+          RUi.Button{
+            key => Some("disabled"),
+            text => RUi.Const("X"),
+            enabled => RUi.Const(false),
+          },
+          RUi.Toggle{key => Some("b"), label => RUi.Const("B")},
+          RUi.Semantics{
+            key => Some("custom"),
+            role => RUi.Const(Some(RUi.RoleGroup())),
+            label => RUi.Const(Some("Custom focusable")),
+            focusable => RUi.Const(Some(true)),
+            child => RUi.Const(box(20.0, 20.0, Colors.red())),
+          },
+        ],
+      ),
+    ),
+  };
+  pipe = RUi.Pipeline::create(
+    context,
+    root,
+    Geometry.Size(400.0, 100.0),
+    MockSupport(),
+    "tab-focus",
+  );
+  context.update();
+
+  idA = RUi.ElementId::root.childNamed("a");
+  idB = RUi.ElementId::root.childNamed("b");
+  idCustom = RUi.ElementId::root.childNamed("custom");
+
+  // Disabled button is excluded from focusOrder.
+  T.expectEq(
+    pipe.focusOrder(context),
+    Array[idA, idB, idCustom],
+    "focus order",
+  );
+
+  _ = pipe.dispatch(context, RUi.KeyDown{key => RUi.KeyTab()});
+  T.expectEq(pipe.focused(context), Some(idA), "first Tab -> a");
+  _ = pipe.dispatch(context, RUi.KeyDown{key => RUi.KeyTab()});
+  T.expectEq(pipe.focused(context), Some(idB), "second Tab -> b");
+  _ = pipe.dispatch(context, RUi.KeyDown{key => RUi.KeyTab()});
+  T.expectEq(pipe.focused(context), Some(idCustom), "third Tab -> custom");
+  _ = pipe.dispatch(context, RUi.KeyDown{key => RUi.KeyTab()});
+  T.expectEq(pipe.focused(context), Some(idA), "Tab wraps -> a");
+
+  // Shift-Tab moves backwards and wraps.
+  _ = pipe.dispatch(
+    context,
+    RUi.KeyDown{key => RUi.KeyTab(), modifiers => RUi.Modifiers{shift => true}},
+  );
+  T.expectEq(
+    pipe.focused(context),
+    Some(idCustom),
+    "Shift-Tab wraps -> custom",
+  );
+}
+
+module end;

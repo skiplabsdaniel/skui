@@ -125,6 +125,54 @@ class Layer{layer: Value<StackingLayer>, child: Value<Node>} extends Node
 // Overrides the active Theme for its subtree without affecting layout.
 class ThemeScope{theme: Value<Theme>, child: Value<Node>} extends Node
 
+// Adds or overrides accessibility semantics for its child without affecting layout.
+class Semantics{
+  role: Value<?SemanticRole> = Const(None()),
+  label: Value<?String> = Const(None()),
+  focusable: Value<?Bool> = Const(None()),
+  child: Value<Node>,
+} extends Node
+
+// Control nodes: semantic descriptions only (look comes from Skins, behavior
+// comes from pure reducers in Behavior.sk).
+
+base class ButtonKind uses Hashable, Equality {
+  children =
+  | StandardButton()
+  | PrimaryButton()
+  | SubtleButton()
+}
+
+class Button{
+  text: Value<String>,
+  icon: Value<?IconData> = Const(None()),
+  kind: Value<ButtonKind> = Const(StandardButton()),
+  enabled: Value<Bool> = Const(true),
+  onPress: ?(mutable SKStore.Context ~> void) = None(),
+  variant: Value<?String> = Const(None()),
+} extends Node
+
+base class ToggleKind uses Hashable, Equality {
+  children =
+  | CheckboxToggle()
+  | SwitchToggle()
+}
+
+// A checkbox or switch control.
+// - Controlled: pass `checked => Bound(prop)` together with `checkedProp =>
+//   Some(prop)` (so the reducer writes directly to `prop` in the same
+//   transaction) and/or `onChange`.
+// - Uncontrolled: pass `checked => Const(initial)`; ToggleState holds the value.
+class Toggle{
+  label: Value<String> = Const(""),
+  kind: Value<ToggleKind> = Const(CheckboxToggle()),
+  checked: Value<Bool> = Const(false),
+  checkedProp: ?Prop<Bool> = None(),
+  enabled: Value<Bool> = Const(true),
+  onChange: ?((mutable SKStore.Context, Bool) ~> void) = None(),
+  variant: Value<?String> = Const(None()),
+} extends Node
+
 // Vector or glyph icon specification.
 base class IconData {
   children =

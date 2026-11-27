@@ -1,0 +1,164 @@
+module RUi;
+
+// Accessibility semantics (DESIGN.md section 9).
+// Controls get semantics from their role; `Semantics` wrapper nodes add or
+// override them for application elements. The semantics directory is derived
+// in the reactive graph and also drives keyboard focus order.
+
+base class SemanticRole uses Hashable, Equality, Show {
+  children =
+  | RoleNone()
+  | RoleButton()
+  | RoleCheckbox()
+  | RoleSwitch()
+  | RoleText()
+  | RoleImage()
+  | RoleGroup()
+
+  fun toString(): String
+  | RoleNone() -> "none"
+  | RoleButton() -> "button"
+  | RoleCheckbox() -> "checkbox"
+  | RoleSwitch() -> "switch"
+  | RoleText() -> "text"
+  | RoleImage() -> "image"
+  | RoleGroup() -> "group"
+}
+
+base class SemanticAction uses Hashable, Equality, Show {
+  children =
+  | ActionPress()
+  | ActionToggle()
+  | ActionFocus()
+
+  fun toString(): String
+  | ActionPress() -> "press"
+  | ActionToggle() -> "toggle"
+  | ActionFocus() -> "focus"
+}
+
+// Derived accessibility entry for an element.
+class SemanticsInfo{
+  id: ElementId,
+  role: SemanticRole = RoleNone(),
+  label: String = "",
+  value: ?String = None(),
+  checked: ?Bool = None(),
+  disabled: Bool = false,
+  focused: Bool = false,
+  focusable: Bool = false,
+  actions: Array<SemanticAction> = Array[],
+  rect: Geometry.Rect = Geometry.Rect::zero(),
+} extends SKStore.File
+
+// Computes SemanticsInfo for a single element from its node, state, focus, and
+// geometry. Pure reactive computation.
+fun computeSemantics(
+  context: mutable SKStore.Context,
+  element: Element,
+  state: ElementState,
+  focused: Bool,
+  rect: Geometry.Rect,
+): SemanticsInfo {
+  element.node match {
+  | Button{text, enabled} ->
+    isEnabled = enabled.get(context);
+    SemanticsInfo{
+      id => element.id,
+      role => RoleButton(),
+      label => text.get(context),
+      disabled => !isEnabled,
+      focused,
+      focusable => isEnabled,
+      actions => if (isEnabled) {
+        Array[ActionPress(), ActionFocus()]
+      } else {
+        Array[]
+      },
+      rect,
+    }
+  | Toggle{label, kind, enabled, checked} ->
+    isEnabled = enabled.get(context);
+    isChecked = resolveToggleChecked(context, checked, state);
+    role: SemanticRole = kind.get(context) match {
+    | CheckboxToggle() -> RoleCheckbox()
+    | SwitchToggle() -> RoleSwitch()
+    };
+    SemanticsInfo{
+      id => element.id,
+      role,
+      label => label.get(context),
+      checked => Some(isChecked),
+      disabled => !isEnabled,
+      focused,
+      focusable => isEnabled,
+      actions => if (isEnabled) {
+        Array[ActionToggle(), ActionFocus()]
+      } else {
+        Array[]
+      },
+      rect,
+    }
+  | Text{text} ->
+    SemanticsInfo{
+      id => element.id,
+      role => RoleText(),
+      label => text.get(context),
+      rect,
+    }
+  | Label{text} ->
+    SemanticsInfo{
+      id => element.id,
+      role => RoleText(),
+      label => text.get(context),
+      rect,
+    }
+  | Semantics{role, label, focusable} ->
+    isFocusable = focusable.get(context).default(false);
+    SemanticsInfo{
+      id => element.id,
+      role => role.get(context).default(RoleGroup()),
+      label => label.get(context).default(""),
+      focused,
+      focusable => isFocusable,
+      actions => if (isFocusable) Array[ActionFocus()] else Array[],
+      rect,
+    }
+  | _ -> SemanticsInfo{id => element.id, focused, rect}
+  }
+}
+
+// Resolves a Toggle's current checked value: when `checked` is bound to a
+// writable Prop (controlled), the Prop is the source of truth; otherwise
+// `ToggleState.checked` (uncontrolled) holds the value.
+fun resolveToggleChecked(
+  context: mutable SKStore.Context,
+  checked: Value<Bool>,
+  state: ElementState,
+): Bool {
+  checked match {
+  | Bound(prop) -> prop.get(context)
+  | Const(initial) ->
+    state match {
+    | ToggleState(_, v) -> v
+    | _ -> initial
+    }
+  }
+}
+
+fun unsafeResolveToggleChecked(
+  context: readonly SKStore.Context,
+  checked: Value<Bool>,
+  state: ElementState,
+): Bool {
+  checked match {
+  | Bound(prop) -> prop.unsafeGet(context)
+  | Const(initial) ->
+    state match {
+    | ToggleState(_, v) -> v
+    | _ -> initial
+    }
+  }
+}
+
+module end;

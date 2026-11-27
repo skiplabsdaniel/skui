@@ -90,12 +90,17 @@ fun computeLayout(
   | node @ Constrained _ ->
     layoutConstrained(context, node, element, constraints, layouter)
   | Layer _
-  | ThemeScope _ ->
+  | ThemeScope _
+  | Semantics _ ->
     layoutPassthrough(context, element, constraints, layouter)
   | node @ Shape _ -> layoutShape(context, node, constraints)
   | node @ Text _ -> layoutText(context, node, element, constraints, layouter)
   | Icon _ -> layoutIcon(context, element, constraints, layouter)
   | node @ Label _ -> layoutLabel(context, node, element, constraints, layouter)
+  | node @ Button _ ->
+    layoutButton(context, node, element, constraints, layouter)
+  | node @ Toggle _ ->
+    layoutToggle(context, node, element, constraints, layouter)
   | Component _ ->
     invariant_violation("RUi: Component must be expanded before layout")
   }
@@ -166,6 +171,61 @@ fun layoutLabel(
   inner = Geometry.Size(
     iconW + gapW + textSz.width,
     Math.max(iconH, textSz.height),
+  );
+  padded = style.padding.inflateSize(inner).max(style.minSize);
+  LayoutResult(constraints.constrain(padded))
+}
+
+fun layoutButton(
+  context: mutable SKStore.Context,
+  node: Button,
+  element: Element,
+  constraints: BoxConstraints,
+  layouter: Layouter,
+): LayoutResult {
+  style = layouter.style(context, element.id);
+  textStr = node.text.get(context);
+  hasIcon = node.icon.get(context).isSome();
+  hasText = !textStr.isEmpty();
+  spec = style.font.default(FontSpec{family => "sans", size => 14.0});
+  textSz = if (hasText) {
+    layouter.fonts.measureText(context, textStr, spec, style.lineHeightFactor)
+  } else {
+    Geometry.Size::zero
+  };
+  iconW = if (hasIcon) style.iconSize else 0.0;
+  iconH = if (hasIcon) style.iconSize else 0.0;
+  gapW = if (hasIcon && hasText) style.gap else 0.0;
+  inner = Geometry.Size(
+    iconW + gapW + textSz.width,
+    Math.max(iconH, textSz.height),
+  );
+  padded = style.padding.inflateSize(inner).max(style.minSize);
+  LayoutResult(constraints.constrain(padded))
+}
+
+fun layoutToggle(
+  context: mutable SKStore.Context,
+  node: Toggle,
+  element: Element,
+  constraints: BoxConstraints,
+  layouter: Layouter,
+): LayoutResult {
+  style = layouter.style(context, element.id);
+  labelStr = node.label.get(context);
+  hasLabel = !labelStr.isEmpty();
+  spec = style.font.default(FontSpec{family => "sans", size => 14.0});
+  textSz = if (hasLabel) {
+    layouter.fonts.measureText(context, labelStr, spec, style.lineHeightFactor)
+  } else {
+    Geometry.Size::zero
+  };
+  boxW = style.iconSize;
+  boxH = style.minSize.height;
+  gapW = if (hasLabel) style.gap else 0.0;
+  inner = Geometry.Size(
+    boxW + gapW + textSz.width,
+    Math.max(boxH, textSz.height),
   );
   padded = style.padding.inflateSize(inner).max(style.minSize);
   LayoutResult(constraints.constrain(padded))

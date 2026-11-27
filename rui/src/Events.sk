@@ -1,0 +1,147 @@
+module RUi;
+
+// Input events, facts, element states, interaction state, and reducer types
+// (DESIGN.md section 7).
+//
+// Facts (pointer position, focused element) and element states live in input
+// directories written only at the platform entry, never inside reactive maps.
+// Events are never stored as state: they are reduced once in an ordered batch
+// and committed in a single `context.update()`.
+
+base class PointerButton uses Hashable, Equality, Show {
+  children =
+  | PointerPrimary()
+  | PointerSecondary()
+  | PointerMiddle()
+
+  fun toString(): String
+  | PointerPrimary() -> "primary"
+  | PointerSecondary() -> "secondary"
+  | PointerMiddle() -> "middle"
+}
+
+value class Modifiers{
+  shift: Bool = false,
+  ctrl: Bool = false,
+  alt: Bool = false,
+  meta: Bool = false,
+} uses Hashable, Equality
+
+base class KeyCode uses Hashable, Equality, Show {
+  children =
+  | KeyEnter()
+  | KeySpace()
+  | KeyTab()
+  | KeyEscape()
+  | KeyBackspace()
+  | KeyDelete()
+  | KeyArrowUp()
+  | KeyArrowDown()
+  | KeyArrowLeft()
+  | KeyArrowRight()
+  | KeyChar(char: Char)
+  | KeyNamed(name: String)
+
+  fun toString(): String
+  | KeyEnter() -> "Enter"
+  | KeySpace() -> "Space"
+  | KeyTab() -> "Tab"
+  | KeyEscape() -> "Escape"
+  | KeyBackspace() -> "Backspace"
+  | KeyDelete() -> "Delete"
+  | KeyArrowUp() -> "ArrowUp"
+  | KeyArrowDown() -> "ArrowDown"
+  | KeyArrowLeft() -> "ArrowLeft"
+  | KeyArrowRight() -> "ArrowRight"
+  | KeyChar(c) -> c.toString()
+  | KeyNamed(n) -> n
+}
+
+// Input events fed into Pipeline.dispatch in order.
+// Time is carried on the event so reducers never read the wall clock.
+base class Event{timeMs: Int = 0} {
+  children =
+  | PointerMove{position: Geometry.Offset}
+  | PointerLeave{}
+  | PointerDown{
+    position: Geometry.Offset,
+    button: PointerButton = PointerPrimary(),
+    modifiers: Modifiers = Modifiers{},
+  }
+  | PointerUp{
+    position: Geometry.Offset,
+    button: PointerButton = PointerPrimary(),
+    modifiers: Modifiers = Modifiers{},
+  }
+  | KeyDown{
+    key: KeyCode,
+    modifiers: Modifiers = Modifiers{},
+    repeat: Bool = false,
+  }
+  | KeyUp{key: KeyCode, modifiers: Modifiers = Modifiers{}}
+  | SemanticsEvent{target: ElementId, action: SemanticAction}
+  | TimerEvent{id: String}
+}
+
+// Input facts stored in SKStore input directories (outside the reactive graph).
+class PointerFact(
+  optPosition: ?Geometry.Offset = None(),
+  optCaptured: ?ElementId = None(),
+) extends SKStore.File
+
+class FocusFact(optFocused: ?ElementId = None()) extends SKStore.File
+
+// Persistent per-element control state, written only by reducers.
+base class ElementState extends SKStore.File uses Equality {
+  children =
+  | EmptyState()
+  | ButtonState(armed: Bool = false)
+  | ToggleState(armed: Bool = false, checked: Bool = false)
+
+  static fun stateType(obj: SKStore.File): ElementState {
+    obj match {
+    | x @ ElementState _ -> x
+    | _ -> invariant_violation("RUi: expected ElementState")
+    }
+  }
+}
+
+// Derived per-element interaction state passed to Skin.resolveStyle and
+// Skin.paint. Hover is derived in the graph from PointerFact + geometry +
+// depth, so it stays accurate even when layout moves under a still pointer.
+class InteractionState{
+  hovered: Bool = false,
+  pressed: Bool = false,
+  focused: Bool = false,
+  disabled: Bool = false,
+} extends SKStore.File uses Hashable, Equality {
+  const normal: InteractionState = InteractionState{};
+}
+
+// Effects returned by pure reducers.
+// - Transaction effects (SetFocus, WriteProp) are applied before the commit's
+//   `context.update()`, so one event takes a single update.
+// - Post-commit effects (Notify) run after `context.update()`.
+// - Host effects (ScheduleTimer) are returned to the platform caller.
+base class Effect {
+  children =
+  | SetFocus(target: ?ElementId)
+  | WriteProp(apply: mutable SKStore.Context ~> void)
+  | Notify(run: mutable SKStore.Context ~> void)
+  | ScheduleTimer(id: String, delayMs: Int)
+}
+
+// Output of a pure element reducer.
+class Reduced(
+  state: ElementState,
+  handled: Bool = false,
+  capturePointer: Bool = false,
+  releasePointer: Bool = false,
+  effects: Array<Effect> = Array[],
+) {
+  static fun ignored(state: ElementState): Reduced {
+    Reduced(state, false)
+  }
+}
+
+module end;

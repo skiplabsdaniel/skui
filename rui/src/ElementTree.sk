@@ -68,10 +68,15 @@ fun nodeKeyedChildren(
   | ThemeScope{child} ->
     c = child.get(context);
     Array[(childKeyFor(c, 0), c)]
+  | Semantics{child} ->
+    c = child.get(context);
+    Array[(childKeyFor(c, 0), c)]
   | Shape _
   | Text _
   | Icon _
-  | Label _ ->
+  | Label _
+  | Button _
+  | Toggle _ ->
     Array[]
   | Component _ ->
     invariant_violation(

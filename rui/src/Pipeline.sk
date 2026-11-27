@@ -215,32 +215,108 @@ fun paintElement(
   element: Element,
   theme: Theme,
   style: ResolvedStyle,
+  state: ElementState,
+  interaction: InteractionState,
   size: Geometry.Size,
 ): Array<Ui.Drawable> {
   nodeSkinKey(pctx.context, element.node) match {
   | Some(sk) ->
     theme.skinFor(sk.kind, sk.variant) match {
-    | Some(skin) -> skin.paint(pctx, element.node, style, size)
+    | Some(skin) ->
+      skin.paint(pctx, element.node, style, state, interaction, theme, size)
     | None() -> Array[]
     }
   | None() -> Array[]
   }
 }
 
-// The incremental pipeline for RUi (steps 3-4):
+// Whether an element is interactive (eligible as a hover/hit target).
+fun isInteractiveNode(node: Node): Bool {
+  node match {
+  | Button _
+  | Toggle _ ->
+    true
+  | _ -> false
+  }
+}
+
+// Whether an element is currently disabled.
+fun isNodeDisabled(context: mutable SKStore.Context, node: Node): Bool {
+  node match {
+  | Button{enabled} -> !enabled.get(context)
+  | Toggle{enabled} -> !enabled.get(context)
+  | _ -> false
+  }
+}
+
+// Whether an element is currently pressed (armed).
+fun isStatePressed(state: ElementState): Bool {
+  state match {
+  | ButtonState(armed) -> armed
+  | ToggleState(armed, _) -> armed
+  | EmptyState() -> false
+  }
+}
+
+// Finds the topmost interactive element at `pos` using tracked reads of
+// elements, geometry, and depth so hover updates automatically when layout
+// moves under a stationary pointer.
+fun findHoveredElement(
+  context: mutable SKStore.Context,
+  elementsHdl: SKStore.EHandle<ElementId, Element>,
+  geometryHdl: SKStore.EHandle<ElementId, ElementGeometry>,
+  depthHdl: SKStore.EHandle<ElementId, ElementDepth>,
+  pos: Geometry.Offset,
+): ?ElementId {
+  bestId: ?ElementId = None();
+  bestOrder = -1;
+  stack = mutable Vector<ElementId>[ElementId::root];
+  while (!stack.isEmpty()) {
+    id = stack.pop();
+    elementsHdl.maybeGet(context, id).each(el -> {
+      if (isInteractiveNode(el.node)) {
+        geometryHdl.maybeGet(context, id).each(geom -> {
+          if (geom.rect().contains(pos)) {
+            depthHdl.maybeGet(context, id).each(d -> {
+              if (d.order > bestOrder) {
+                !bestOrder = d.order;
+                !bestId = Some(id)
+              }
+            })
+          }
+        })
+      };
+      for (cid in el.childIds) {
+        stack.push(cid)
+      }
+    })
+  };
+  bestId
+}
+
+// The incremental pipeline for RUi (steps 3-5):
 //
-//   rootNode + windowSize + rootTheme + fonts
+//   inputs: rootNode + windowSize + rootTheme + fonts + pointerFact + focusFact + states
 //     -> elementsHdl      (Node descriptions expanded by ElementId)
 //     -> elementThemesHdl (active Theme per ElementId, respecting ThemeScope)
 //     -> stylesHdl        (ResolvedStyle per ElementId via Skin + Theme)
 //     -> layoutHdl        (lazy memoized layout per (ElementId, BoxConstraints))
 //     -> geometryHdl      (absolute rects in window coordinates)
 //     -> depthHdl         (stacking layers -> global order and GL z)
+//     -> hoveredHdl       (derived topmost hovered ElementId from pointer + geometry + depth)
+//     -> interactionHdl   (derived per-element InteractionState: hover, pressed, focused, disabled)
+//     -> semanticsHdl     (derived per-element SemanticsInfo for accessibility & focus order)
 //     -> paintHdl         (local drawables per ElementId via Skin)
+//
+//   input events (outside the graph):
+//     Pipeline.dispatch(context, events) -> route -> pure reducers -> commit -> update -> effects
 class Pipeline private (
   rootNodeHdl: SKStore.EHandle<SKStore.UnitID, NodeFile>,
   windowSizeHdl: SKStore.EHandle<SKStore.UnitID, WindowSizeFile>,
   themeHdl: SKStore.EHandle<SKStore.UnitID, Theme>,
+  pointerHdl: SKStore.EHandle<SKStore.UnitID, PointerFact>,
+  focusHdl: SKStore.EHandle<SKStore.UnitID, FocusFact>,
+  statesHdl: SKStore.EHandle<ElementId, ElementState>,
   fonts: FontStore,
   elementsHdl: SKStore.EHandle<ElementId, Element>,
   elementThemesHdl: SKStore.LHandle<ElementId, Theme>,
@@ -248,6 +324,9 @@ class Pipeline private (
   layoutHdl: SKStore.LHandle<LayoutKey, LayoutResult>,
   geometryHdl: SKStore.EHandle<ElementId, ElementGeometry>,
   depthHdl: SKStore.EHandle<ElementId, ElementDepth>,
+  hoveredHdl: SKStore.EHandle<SKStore.UnitID, BoxFile<?ElementId>>,
+  interactionHdl: SKStore.EHandle<ElementId, InteractionState>,
+  semanticsHdl: SKStore.EHandle<ElementId, SemanticsInfo>,
   paintHdl: SKStore.EHandle<ElementId, ElementPaint>,
 ) {
   static fun create(
@@ -280,6 +359,26 @@ class Pipeline private (
       context,
       baseDir.sub("theme"),
       Array[(SKStore.UnitID::singleton, optTheme.default(Theme::default()))],
+    );
+    pointerHdl = makeInputDir(
+      SKStore.UnitID::keyType,
+      PointerFact::type,
+      context,
+      baseDir.sub("pointer"),
+      Array[(SKStore.UnitID::singleton, PointerFact())],
+    );
+    focusHdl = makeInputDir(
+      SKStore.UnitID::keyType,
+      FocusFact::type,
+      context,
+      baseDir.sub("focus"),
+      Array[(SKStore.UnitID::singleton, FocusFact())],
+    );
+    statesHdl = makeInputDir(
+      ElementId::keyType,
+      ElementState::stateType,
+      context,
+      baseDir.sub("states"),
     );
     fonts = optFonts match {
     | Some(fs) -> fs
@@ -328,8 +427,76 @@ class Pipeline private (
       },
     );
     depthHdl = buildDepthDir(context, elementsHdl, baseDir.sub("depth"));
-    // Paint depends on element + style + its own size (projected from geometry
-    // so moving an element without resizing it does not invalidate paint).
+    // Derived hover: topmost interactive element under pointer.
+    hoveredHdl = pointerHdl.map(
+      SKStore.UnitID::keyType,
+      BoxFile<?ElementId>::type,
+      context,
+      baseDir.sub("hovered"),
+      (context, writer, key, values) ~> {
+        pf = values.first;
+        optHover = pf.optPosition.flatMap(pos ->
+          findHoveredElement(context, elementsHdl, geometryHdl, depthHdl, pos)
+        );
+        writer.set(key, BoxFile(optHover))
+      },
+    );
+    // Derived per-element interaction state (hover, pressed, focused, disabled).
+    // Only elements whose interaction flags actually change invalidate paint.
+    interactionHdl = elementsHdl.map(
+      ElementId::keyType,
+      InteractionState::type,
+      context,
+      baseDir.sub("interaction"),
+      (context, writer, key, values) ~> {
+        el = values.first;
+        if (isInteractiveNode(el.node)) {
+          optHovered = hoveredHdl.get(context, SKStore.UnitID::singleton).value;
+          optFocused = focusHdl.get(
+            context,
+            SKStore.UnitID::singleton,
+          ).optFocused;
+          st = statesHdl.maybeGet(context, key).default(EmptyState());
+          writer.set(
+            key,
+            InteractionState{
+              hovered => optHovered == Some(key),
+              pressed => isStatePressed(st),
+              focused => optFocused == Some(key),
+              disabled => isNodeDisabled(context, el.node),
+            },
+          )
+        } else {
+          writer.set(key, InteractionState::normal)
+        }
+      },
+    );
+    // Derived accessibility semantics per element.
+    semanticsHdl = geometryHdl.map(
+      ElementId::keyType,
+      SemanticsInfo::type,
+      context,
+      baseDir.sub("semantics"),
+      (context, writer, key, values) ~> {
+        el = elementsHdl.get(context, key);
+        st = statesHdl.maybeGet(context, key).default(EmptyState());
+        optFocused = focusHdl.get(
+          context,
+          SKStore.UnitID::singleton,
+        ).optFocused;
+        info = computeSemantics(
+          context,
+          el,
+          st,
+          optFocused == Some(key),
+          values.first.rect(),
+        );
+        writer.set(key, info)
+      },
+    );
+    // Paint depends on element + style + state + interaction + its own size
+    // (projected from geometry so moving an element without resizing it does
+    // not invalidate paint).
     sizesHdl = geometryHdl.map(
       ElementId::keyType,
       BoxFile<Geometry.Size>::type,
@@ -348,12 +515,18 @@ class Pipeline private (
         element = elementsHdl.get(context, key);
         theme = elementThemesHdl.get(context, key);
         style = stylesHdl.get(context, key);
+        state = statesHdl.maybeGet(context, key).default(EmptyState());
+        interaction = interactionHdl
+          .maybeGet(context, key)
+          .default(InteractionState::normal);
         pctx = mutable PaintContext(context, support, fonts);
         drawables = paintElement(
           pctx,
           element,
           theme,
           style,
+          state,
+          interaction,
           values.first.value,
         );
         writer.set(key, ElementPaint(drawables))
@@ -363,6 +536,9 @@ class Pipeline private (
       rootNodeHdl,
       windowSizeHdl,
       themeHdl,
+      pointerHdl,
+      focusHdl,
+      statesHdl,
       fonts,
       elementsHdl,
       elementThemesHdl,
@@ -370,6 +546,9 @@ class Pipeline private (
       layoutHdl,
       geometryHdl,
       depthHdl,
+      hoveredHdl,
+      interactionHdl,
+      semanticsHdl,
       paintHdl,
     )
   }
@@ -400,6 +579,291 @@ class Pipeline private (
   // Updates the root theme (outside of reactive computations).
   fun setTheme(context: mutable SKStore.Context, theme: Theme): void {
     writeValue(context, this.themeHdl, SKStore.UnitID::singleton, theme)
+  }
+
+  // Sets focus explicitly (outside of reactive computations).
+  fun setFocus(context: mutable SKStore.Context, target: ?ElementId): void {
+    writeValue(
+      context,
+      this.focusHdl,
+      SKStore.UnitID::singleton,
+      FocusFact(target),
+    )
+  }
+
+  fun focused(context: readonly SKStore.Context): ?ElementId {
+    this.focusHdl.unsafeGet(context, SKStore.UnitID::singleton).optFocused
+  }
+
+  fun hovered(context: readonly SKStore.Context): ?ElementId {
+    this.hoveredHdl.unsafeGet(context, SKStore.UnitID::singleton).value
+  }
+
+  // Hit tests the committed geometry and depth (outside the graph), returning
+  // the topmost element containing `pos` (deepest/frontmost by depth order).
+  fun hitTest(
+    context: readonly SKStore.Context,
+    pos: Geometry.Offset,
+  ): ?ElementId {
+    bestId: ?ElementId = None();
+    bestOrder = -1;
+    stack = mutable Vector<ElementId>[ElementId::root];
+    while (!stack.isEmpty()) {
+      id = stack.pop();
+      this.elementsHdl.unsafeMaybeGet(context, id).each(el -> {
+        this.geometryHdl.unsafeMaybeGet(context, id).each(geom -> {
+          if (geom.rect().contains(pos)) {
+            this.depthHdl.unsafeMaybeGet(context, id).each(d -> {
+              if (d.order > bestOrder) {
+                !bestOrder = d.order;
+                !bestId = Some(id)
+              }
+            })
+          }
+        });
+        for (cid in el.childIds) {
+          stack.push(cid)
+        }
+      })
+    };
+    bestId
+  }
+
+  // Returns the ordered list of currently focusable ElementIds in tree
+  // pre-order, derived from the semantics stage.
+  fun focusOrder(context: readonly SKStore.Context): Array<ElementId> {
+    out = mutable Vector<ElementId>[];
+    this.collectFocusable(context, ElementId::root, out);
+    out.toArray()
+  }
+
+  private fun collectFocusable(
+    context: readonly SKStore.Context,
+    id: ElementId,
+    out: mutable Vector<ElementId>,
+  ): void {
+    this.semanticsHdl.unsafeMaybeGet(context, id).each(sem -> {
+      if (sem.focusable && !sem.disabled) {
+        out.push(id)
+      }
+    });
+    this.elementsHdl.unsafeMaybeGet(context, id).each(el -> {
+      for (cid in el.childIds) {
+        this.collectFocusable(context, cid, out)
+      }
+    })
+  }
+
+  // Builds the bubbling route from `target` up to `ElementId::root`.
+  private fun routeToRoot(target: ElementId): Array<ElementId> {
+    out = mutable Vector<ElementId>[];
+    cur: ?ElementId = Some(target);
+    while (cur is Some _) {
+      id = cur.fromSome();
+      out.push(id);
+      !cur = id.parent()
+    };
+    out.toArray()
+  }
+
+  // Dispatches a single event (convenience wrapper over `dispatchBatch`).
+  fun dispatch(context: mutable SKStore.Context, event: Event): Array<Effect> {
+    this.dispatchBatch(context, Array[event])
+  }
+
+  // Dispatches an ordered batch of input events outside of the reactive graph:
+  //   1. Route and reduce every event in order against the latest committed
+  //      geometry + pending in-batch states/facts.
+  //   2. Commit all state/fact/prop writes in one transaction (`context.update()`
+  //      called once).
+  //   3. Run post-commit `Notify` callbacks and return remaining host effects
+  //      (such as `ScheduleTimer`).
+  fun dispatchBatch(
+    context: mutable SKStore.Context,
+    events: Array<Event>,
+  ): Array<Effect> {
+    assertOutsideComputation(context);
+    if (events.isEmpty()) return Array[];
+
+    curPointer = this.pointerHdl.unsafeGet(context, SKStore.UnitID::singleton);
+    curFocus = this.focusHdl.unsafeGet(
+      context,
+      SKStore.UnitID::singleton,
+    ).optFocused;
+    pointerChanged = false;
+    focusChanged = false;
+    pendingStates = mutable Map<ElementId, ElementState>[];
+    propWrites = mutable Vector<mutable SKStore.Context ~> void>[];
+    postNotify = mutable Vector<mutable SKStore.Context ~> void>[];
+    hostEffects = mutable Vector<Effect>[];
+
+    readState = (id: ElementId, node: Node) -> {
+      pendingStates.maybeGet(id) match {
+      | Some(s) -> s
+      | None() ->
+        this.statesHdl.unsafeMaybeGet(context, id).default(
+          defaultElementState(context, node),
+        )
+      }
+    };
+
+    applyReducerEffects = (effects: Array<Effect>) -> {
+      for (eff in effects) {
+        eff match {
+        | SetFocus(target) ->
+          if (curFocus != target) {
+            !curFocus = target;
+            !focusChanged = true
+          }
+        | WriteProp(fn) -> propWrites.push(fn)
+        | Notify(fn) -> postNotify.push(fn)
+        | ScheduleTimer _ -> hostEffects.push(eff)
+        }
+      }
+    };
+
+    for (event in events) {
+      // Update pointer fact first when pointer moves/leaves/presses.
+      event match {
+      | PointerMove{position} ->
+        !curPointer = PointerFact(Some(position), curPointer.optCaptured);
+        !pointerChanged = true
+      | PointerDown{position} ->
+        !curPointer = PointerFact(Some(position), curPointer.optCaptured);
+        !pointerChanged = true
+      | PointerUp{position} ->
+        !curPointer = PointerFact(Some(position), curPointer.optCaptured);
+        !pointerChanged = true
+      | PointerLeave{} ->
+        !curPointer = PointerFact(None(), curPointer.optCaptured);
+        !pointerChanged = true
+      | _ -> void
+      };
+
+      // Handle Tab / Shift-Tab focus traversal at the dispatcher level.
+      event match {
+      | KeyDown{key => KeyTab(), modifiers} ->
+        order = this.focusOrder(context);
+        if (!order.isEmpty()) {
+          nextFocus = curFocus match {
+          | None() -> if (modifiers.shift) order[order.size() - 1] else order[0]
+          | Some(fid) ->
+            idxOpt: ?Int = None();
+            for (i in Range(0, order.size())) {
+              if (order[i] == fid) {
+                !idxOpt = Some(i);
+                break void
+              }
+            };
+            idxOpt match {
+            | Some(i) ->
+              nextIdx = if (modifiers.shift) {
+                (i + order.size() - 1) % order.size()
+              } else {
+                (i + 1) % order.size()
+              };
+              order[nextIdx]
+            | None() ->
+              if (modifiers.shift) order[order.size() - 1] else order[0]
+            }
+          };
+          if (curFocus != Some(nextFocus)) {
+            !curFocus = Some(nextFocus);
+            !focusChanged = true
+          }
+        };
+        continue
+      | _ -> void
+      };
+
+      // Determine route (list of ElementIds from target to root).
+      route: Array<ElementId> = event match {
+      | PointerMove{position}
+      | PointerDown{position}
+      | PointerUp{position} ->
+        curPointer.optCaptured match {
+        | Some(cap) -> Array[cap]
+        | None() ->
+          this.hitTest(context, position) match {
+          | Some(tid) -> this.routeToRoot(tid)
+          | None() -> Array[]
+          }
+        }
+      | PointerLeave{} ->
+        curPointer.optCaptured match {
+        | Some(cap) -> Array[cap]
+        | None() -> Array[]
+        }
+      | KeyDown _
+      | KeyUp _ ->
+        curFocus match {
+        | Some(fid) -> this.routeToRoot(fid)
+        | None() -> Array[]
+        }
+      | SemanticsEvent{target} -> Array[target]
+      | TimerEvent _ -> Array[]
+      };
+
+      // Run pure reducers along the route until handled.
+      for (tid in route) {
+        this.elementsHdl.unsafeMaybeGet(context, tid) match {
+        | None() -> void
+        | Some(el) ->
+          rect = this.geometryHdl.unsafeMaybeGet(context, tid)
+            .map(g -> g.rect())
+            .default(Geometry.Rect::zero());
+          st = readState(tid, el.node);
+          red = reduceElement(context, el, rect, st, event);
+          if (red.state != st) {
+            pendingStates.set(tid, red.state)
+          };
+          if (red.capturePointer && curPointer.optCaptured != Some(tid)) {
+            !curPointer = PointerFact(curPointer.optPosition, Some(tid));
+            !pointerChanged = true
+          };
+          if (red.releasePointer && curPointer.optCaptured == Some(tid)) {
+            !curPointer = PointerFact(curPointer.optPosition, None());
+            !pointerChanged = true
+          };
+          applyReducerEffects(red.effects);
+          if (red.handled) {
+            break void
+          }
+        }
+      }
+    };
+
+    // Single transaction commit: apply all writes, then one `context.update()`.
+    if (pointerChanged) {
+      writeValue(
+        context,
+        this.pointerHdl,
+        SKStore.UnitID::singleton,
+        curPointer,
+      )
+    };
+    if (focusChanged) {
+      writeValue(
+        context,
+        this.focusHdl,
+        SKStore.UnitID::singleton,
+        FocusFact(curFocus),
+      )
+    };
+    for (kv in pendingStates.items()) {
+      (id, st) = kv;
+      writeValue(context, this.statesHdl, id, st)
+    };
+    for (fn in propWrites) {
+      fn(context)
+    };
+    context.update();
+
+    // Post-commit application notifications.
+    for (fn in postNotify) {
+      fn(context)
+    };
+    hostEffects.toArray()
   }
 
   // Builds the sorted draw list (back to front by ElementDepth.order),

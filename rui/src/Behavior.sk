@@ -1,0 +1,167 @@
+module RUi;
+
+// Pure event reducers for RUi controls (DESIGN.md section 7.2).
+//
+// Reducers run OUTSIDE the reactive graph during `Pipeline.dispatch`, reading
+// committed facts and element states via `unsafe*` methods. They never write
+// directly to SKStore; instead they return `Reduced(newState, handled,
+// capture/release, effects)`. The dispatcher commits all state/fact/prop
+// writes in a single transaction, calls `context.update()` once, and then runs
+// post-commit `Notify` callbacks.
+
+fun defaultElementState(
+  context: readonly SKStore.Context,
+  node: Node,
+): ElementState {
+  node match {
+  | Button _ -> ButtonState(false)
+  | Toggle{checked} -> ToggleState(false, checked.unsafeGet(context))
+  | _ -> EmptyState()
+  }
+}
+
+fun reduceElement(
+  context: readonly SKStore.Context,
+  element: Element,
+  rect: Geometry.Rect,
+  state: ElementState,
+  event: Event,
+): Reduced {
+  element.node match {
+  | btn @ Button _ -> reduceButton(context, element.id, btn, rect, state, event)
+  | tgl @ Toggle _ -> reduceToggle(context, element.id, tgl, rect, state, event)
+  | _ -> Reduced::ignored(state)
+  }
+}
+
+private fun reduceButton(
+  context: readonly SKStore.Context,
+  id: ElementId,
+  btn: Button,
+  rect: Geometry.Rect,
+  rawState: ElementState,
+  event: Event,
+): Reduced {
+  st = rawState match {
+  | b @ ButtonState _ -> b
+  | _ -> ButtonState(false)
+  };
+  if (!btn.enabled.unsafeGet(context)) {
+    return Reduced(ButtonState(false), false, false, st.armed)
+  };
+  fireEffects = () -> {
+    btn.onPress match {
+    | Some(cb) -> Array[(Notify(cb) : Effect)]
+    | None() -> Array[]
+    }
+  };
+  event match {
+  | PointerDown{button => PointerPrimary()} ->
+    Reduced(
+      ButtonState(true),
+      true,
+      true,
+      false,
+      Array[(SetFocus(Some(id)) : Effect)],
+    )
+  | PointerUp{position, button => PointerPrimary()} ->
+    if (st.armed) {
+      effects = if (rect.contains(position)) fireEffects() else Array[];
+      Reduced(ButtonState(false), true, false, true, effects)
+    } else {
+      Reduced::ignored(st)
+    }
+  | PointerLeave{} if (st.armed) ->
+    Reduced(ButtonState(false), true, false, true)
+  | KeyDown{key, repeat => false} ->
+    key match {
+    | KeyEnter()
+    | KeySpace() ->
+      Reduced(ButtonState(false), true, false, false, fireEffects())
+    | _ -> Reduced::ignored(st)
+    }
+  | SemanticsEvent{action} ->
+    action match {
+    | ActionPress() ->
+      Reduced(ButtonState(false), true, false, false, fireEffects())
+    | ActionFocus() ->
+      Reduced(st, true, false, false, Array[(SetFocus(Some(id)) : Effect)])
+    | _ -> Reduced::ignored(st)
+    }
+  | _ -> Reduced::ignored(st)
+  }
+}
+
+private fun reduceToggle(
+  context: readonly SKStore.Context,
+  id: ElementId,
+  tgl: Toggle,
+  rect: Geometry.Rect,
+  rawState: ElementState,
+  event: Event,
+): Reduced {
+  st = rawState match {
+  | t @ ToggleState _ -> t
+  | _ -> ToggleState(false, tgl.checked.unsafeGet(context))
+  };
+  if (!tgl.enabled.unsafeGet(context)) {
+    return Reduced(ToggleState(false, st.checked), false, false, st.armed)
+  };
+  doToggle = () -> {
+    current = unsafeResolveToggleChecked(context, tgl.checked, st);
+    next = !current;
+    effects = mutable Vector<Effect>[];
+    // Controlled toggle: if a writable Prop<Bool> is provided, update it in
+    // the same transaction before `context.update()`.
+    tgl.checkedProp.each(wp -> {
+      if (wp.isWritable()) {
+        effects.push(WriteProp(ctx ~> wp.set(ctx, next)))
+      }
+    });
+    tgl.onChange.each(cb -> effects.push(Notify(ctx ~> cb(ctx, next))));
+    (ToggleState(false, next), effects.toArray())
+  };
+  event match {
+  | PointerDown{button => PointerPrimary()} ->
+    Reduced(
+      ToggleState(true, st.checked),
+      true,
+      true,
+      false,
+      Array[(SetFocus(Some(id)) : Effect)],
+    )
+  | PointerUp{position, button => PointerPrimary()} ->
+    if (st.armed) {
+      if (rect.contains(position)) {
+        (nextState, effects) = doToggle();
+        Reduced(nextState, true, false, true, effects)
+      } else {
+        Reduced(ToggleState(false, st.checked), true, false, true)
+      }
+    } else {
+      Reduced::ignored(st)
+    }
+  | PointerLeave{} if (st.armed) ->
+    Reduced(ToggleState(false, st.checked), true, false, true)
+  | KeyDown{key, repeat => false} ->
+    key match {
+    | KeySpace()
+    | KeyEnter() ->
+      (nextState, effects) = doToggle();
+      Reduced(nextState, true, false, false, effects)
+    | _ -> Reduced::ignored(st)
+    }
+  | SemanticsEvent{action} ->
+    action match {
+    | ActionToggle()
+    | ActionPress() ->
+      (nextState, effects) = doToggle();
+      Reduced(nextState, true, false, false, effects)
+    | ActionFocus() ->
+      Reduced(st, true, false, false, Array[(SetFocus(Some(id)) : Effect)])
+    }
+  | _ -> Reduced::ignored(st)
+  }
+}
+
+module end;

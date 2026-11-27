@@ -19,14 +19,25 @@ class ThemeTokens private () {
   const iconColor: String = "color.icon";
   const surfaceColor: String = "color.surface";
   const accentColor: String = "color.accent";
+  const onAccentColor: String = "color.on-accent";
   const borderColor: String = "color.border";
+  const hoverOverlayColor: String = "color.hover-overlay";
+  const pressedOverlayColor: String = "color.pressed-overlay";
+  const focusRingColor: String = "color.focus-ring";
+  const disabledColor: String = "color.disabled";
 
   const bodyFont: String = "font.body";
   const labelFont: String = "font.label";
+  const actionFont: String = "font.action";
 
   const iconSize: String = "size.icon";
+  const toggleBoxSize: String = "size.toggle-box";
   const labelGap: String = "spacing.label-gap";
   const labelPadding: String = "insets.label-padding";
+  const buttonPadding: String = "insets.button-padding";
+  const buttonMinWidth: String = "size.button-min-width";
+  const buttonMinHeight: String = "size.button-min-height";
+  const buttonRadius: String = "radius.button";
   const lineHeightFactor: String = "text.line-height";
 }
 
@@ -70,6 +81,9 @@ base class Skin {
     pctx: mutable PaintContext,
     node: Node,
     style: ResolvedStyle,
+    state: ElementState,
+    interaction: InteractionState,
+    theme: Theme,
     size: Geometry.Size,
   ): Array<Ui.Drawable>;
 }
@@ -105,8 +119,21 @@ class Theme(
       ThemeTokens::iconColor => ColorToken(.Color::rgbaInt(24, 24, 27, 255)),
       ThemeTokens::surfaceColor => ColorToken(Colors.white()),
       ThemeTokens::accentColor => ColorToken(.Color::rgbaInt(37, 99, 235, 255)),
+      ThemeTokens::onAccentColor => ColorToken(Colors.white()),
       ThemeTokens::borderColor => ColorToken(
         .Color::rgbaInt(212, 212, 216, 255),
+      ),
+      ThemeTokens::hoverOverlayColor => ColorToken(
+        .Color::rgbaInt(0, 0, 0, 20),
+      ),
+      ThemeTokens::pressedOverlayColor => ColorToken(
+        .Color::rgbaInt(0, 0, 0, 45),
+      ),
+      ThemeTokens::focusRingColor => ColorToken(
+        .Color::rgbaInt(37, 99, 235, 180),
+      ),
+      ThemeTokens::disabledColor => ColorToken(
+        .Color::rgbaInt(161, 161, 170, 255),
       ),
       ThemeTokens::bodyFont => FontToken(
         FontSpec{family => "sans", size => 14.0},
@@ -114,9 +141,19 @@ class Theme(
       ThemeTokens::labelFont => FontToken(
         FontSpec{family => "sans", size => 14.0},
       ),
+      ThemeTokens::actionFont => FontToken(
+        FontSpec{family => "sans", size => 14.0},
+      ),
       ThemeTokens::iconSize => FloatToken(18.0),
+      ThemeTokens::toggleBoxSize => FloatToken(18.0),
       ThemeTokens::labelGap => FloatToken(6.0),
       ThemeTokens::labelPadding => InsetsToken(Geometry.Insets::zero()),
+      ThemeTokens::buttonPadding => InsetsToken(
+        Geometry.Insets::fromLTRB(14.0, 8.0, 14.0, 8.0),
+      ),
+      ThemeTokens::buttonMinWidth => FloatToken(64.0),
+      ThemeTokens::buttonMinHeight => FloatToken(34.0),
+      ThemeTokens::buttonRadius => FloatToken(6.0),
       ThemeTokens::lineHeightFactor => FloatToken(1.2),
     ];
     skins: Map<SkinKey, Skin> = Map[
@@ -124,6 +161,8 @@ class Theme(
       SkinKey("text") => DefaultTextSkin(),
       SkinKey("icon") => DefaultIconSkin(),
       SkinKey("label") => DefaultLabelSkin(),
+      SkinKey("button") => DefaultButtonSkin(),
+      SkinKey("toggle") => DefaultToggleSkin(),
     ];
     Theme(tokens, skins)
   }
@@ -211,13 +250,16 @@ fun nodeSkinKey(context: mutable SKStore.Context, node: Node): ?SkinKey {
   | Text{variant} -> Some(SkinKey("text", variant.get(context)))
   | Icon{variant} -> Some(SkinKey("icon", variant.get(context)))
   | Label{variant} -> Some(SkinKey("label", variant.get(context)))
+  | Button{variant} -> Some(SkinKey("button", variant.get(context)))
+  | Toggle{variant} -> Some(SkinKey("toggle", variant.get(context)))
   | Flex _
   | Stack _
   | Padding _
   | Align _
   | Constrained _
   | Layer _
-  | ThemeScope _ ->
+  | ThemeScope _
+  | Semantics _ ->
     None()
   | Component _ ->
     invariant_violation("RUi: Component must be expanded before nodeSkinKey")
@@ -243,6 +285,9 @@ class DefaultShapeSkin() extends Skin {
     pctx: mutable PaintContext,
     node: Node,
     style: ResolvedStyle,
+    _state: ElementState,
+    _interaction: InteractionState,
+    _theme: Theme,
     size: Geometry.Size,
   ): Array<Ui.Drawable> {
     s = node as Shape _;
@@ -299,6 +344,9 @@ class DefaultTextSkin() extends Skin {
     pctx: mutable PaintContext,
     node: Node,
     style: ResolvedStyle,
+    _state: ElementState,
+    _interaction: InteractionState,
+    _theme: Theme,
     _size: Geometry.Size,
   ): Array<Ui.Drawable> {
     t = node as Text _;
@@ -341,6 +389,9 @@ class DefaultIconSkin() extends Skin {
     pctx: mutable PaintContext,
     node: Node,
     style: ResolvedStyle,
+    _state: ElementState,
+    _interaction: InteractionState,
+    _theme: Theme,
     size: Geometry.Size,
   ): Array<Ui.Drawable> {
     ic = node as Icon _;
@@ -397,6 +448,9 @@ class DefaultLabelSkin() extends Skin {
     pctx: mutable PaintContext,
     node: Node,
     style: ResolvedStyle,
+    _state: ElementState,
+    _interaction: InteractionState,
+    _theme: Theme,
     size: Geometry.Size,
   ): Array<Ui.Drawable> {
     lbl = node as Label _;
@@ -476,6 +530,305 @@ class DefaultLabelSkin() extends Skin {
           out.push(d)
         }
       })
+    };
+    out.toArray()
+  }
+}
+
+class DefaultButtonSkin() extends Skin {
+  fun resolveStyle(
+    context: mutable SKStore.Context,
+    node: Node,
+    theme: Theme,
+  ): ResolvedStyle {
+    btn = node as Button _;
+    kind = btn.kind.get(context);
+    (bg, fg, border) = kind match {
+    | PrimaryButton() ->
+      (
+        Some(theme.color(ThemeTokens::accentColor)),
+        theme.color(ThemeTokens::onAccentColor, Colors.white()),
+        None(),
+      )
+    | SubtleButton() -> (None(), theme.color(ThemeTokens::textColor), None())
+    | StandardButton() ->
+      (
+        Some(theme.color(ThemeTokens::surfaceColor)),
+        theme.color(ThemeTokens::textColor),
+        Some(Ui.Border(theme.color(ThemeTokens::borderColor), 1.0)),
+      )
+    };
+    ResolvedStyle{
+      color => fg,
+      background => bg,
+      border,
+      cornerRadius => theme.float(ThemeTokens::buttonRadius, 6.0),
+      padding => theme.insets(
+        ThemeTokens::buttonPadding,
+        Geometry.Insets::fromLTRB(14.0, 8.0, 14.0, 8.0),
+      ),
+      minSize => Geometry.Size(
+        theme.float(ThemeTokens::buttonMinWidth, 64.0),
+        theme.float(ThemeTokens::buttonMinHeight, 34.0),
+      ),
+      gap => theme.float(ThemeTokens::labelGap, 6.0),
+      iconSize => theme.float(ThemeTokens::iconSize, 18.0),
+      font => Some(theme.font(ThemeTokens::actionFont)),
+      lineHeightFactor => theme.float(ThemeTokens::lineHeightFactor, 1.2),
+    }
+  }
+
+  fun paint(
+    pctx: mutable PaintContext,
+    node: Node,
+    style: ResolvedStyle,
+    _state: ElementState,
+    interaction: InteractionState,
+    theme: Theme,
+    size: Geometry.Size,
+  ): Array<Ui.Drawable> {
+    btn = node as Button _;
+    out = mutable Vector<Ui.Drawable>[];
+    origin = Geometry.Offset::zero;
+    fg = if (interaction.disabled) {
+      theme.color(ThemeTokens::disabledColor)
+    } else {
+      style.color
+    };
+
+    // Background + border.
+    style.background.each(bg -> {
+      out.push(
+        pctx.support.roundedRectangle(
+          origin,
+          size,
+          bg,
+          style.cornerRadius,
+          2.0,
+          style.border,
+        ),
+      )
+    });
+
+    // Interaction overlay (pressed > hovered) and focus ring.
+    if (!interaction.disabled) {
+      if (interaction.pressed) {
+        out.push(
+          pctx.support.roundedRectangle(
+            origin,
+            size,
+            theme.color(ThemeTokens::pressedOverlayColor),
+            style.cornerRadius,
+            2.0,
+          ),
+        )
+      } else if (interaction.hovered) {
+        out.push(
+          pctx.support.roundedRectangle(
+            origin,
+            size,
+            theme.color(ThemeTokens::hoverOverlayColor),
+            style.cornerRadius,
+            2.0,
+          ),
+        )
+      };
+      if (interaction.focused) {
+        out.push(
+          pctx.support.roundedRectangle(
+            origin,
+            size,
+            Colors.transparent(),
+            style.cornerRadius,
+            2.0,
+            Some(Ui.Border(theme.color(ThemeTokens::focusRingColor), 2.0)),
+          ),
+        )
+      }
+    };
+
+    // Centered icon + text.
+    textStr = btn.text.get(pctx.context);
+    optIcon = btn.icon.get(pctx.context);
+    spec = style.font.default(FontSpec{family => "sans", size => 14.0});
+    textSz = if (!textStr.isEmpty()) {
+      pctx.fonts.measureText(
+        pctx.context,
+        textStr,
+        spec,
+        style.lineHeightFactor,
+      )
+    } else {
+      Geometry.Size::zero
+    };
+    iconW = if (optIcon.isSome()) style.iconSize else 0.0;
+    gapW = if (optIcon.isSome() && !textStr.isEmpty()) style.gap else 0.0;
+    contentW = iconW + gapW + textSz.width;
+    x = Math.max(style.padding.left, (size.width - contentW) * 0.5);
+    optIcon.each(icon -> {
+      icSize = style.iconSize;
+      icY = (size.height - icSize) * 0.5;
+      rect = Geometry.Rect::fromLTWH(x, icY, icSize, icSize);
+      icon match {
+      | PathIcon(name, path, pxRange) ->
+        out.push(
+          pctx.fonts.paintIconPath(
+            pctx.context,
+            pctx.support,
+            name,
+            path,
+            rect,
+            fg,
+            pxRange,
+          ),
+        )
+      | GlyphIcon(family, codePoint) ->
+        for (d in pctx.fonts.paintText(
+          pctx.context,
+          pctx.support,
+          String::fromChars(Array[codePoint]),
+          FontSpec{family, size => icSize},
+          fg,
+          Geometry.Offset(x, icY),
+        )) {
+          out.push(d)
+        }
+      };
+      !x = x + icSize + gapW
+    });
+    if (!textStr.isEmpty()) {
+      ty = (size.height - textSz.height) * 0.5;
+      for (d in pctx.fonts.paintText(
+        pctx.context,
+        pctx.support,
+        textStr,
+        spec,
+        fg,
+        Geometry.Offset(x, ty),
+        style.lineHeightFactor,
+        style.effects,
+      )) {
+        out.push(d)
+      }
+    };
+    out.toArray()
+  }
+}
+
+class DefaultToggleSkin() extends Skin {
+  fun resolveStyle(
+    context: mutable SKStore.Context,
+    node: Node,
+    theme: Theme,
+  ): ResolvedStyle {
+    t = node as Toggle _;
+    boxSize = theme.float(ThemeTokens::toggleBoxSize, 18.0);
+    isSwitch = t.kind.get(context) is SwitchToggle _;
+    ResolvedStyle{
+      color => theme.color(ThemeTokens::textColor),
+      background => Some(theme.color(ThemeTokens::surfaceColor)),
+      border => Some(Ui.Border(theme.color(ThemeTokens::borderColor), 1.5)),
+      cornerRadius => if (isSwitch) boxSize * 0.5 else 4.0,
+      iconSize => if (isSwitch) boxSize * 1.8 else boxSize,
+      gap => theme.float(ThemeTokens::labelGap, 8.0),
+      minSize => Geometry.Size(boxSize, boxSize),
+      font => Some(theme.font(ThemeTokens::labelFont)),
+      lineHeightFactor => theme.float(ThemeTokens::lineHeightFactor, 1.2),
+    }
+  }
+
+  fun paint(
+    pctx: mutable PaintContext,
+    node: Node,
+    style: ResolvedStyle,
+    state: ElementState,
+    interaction: InteractionState,
+    theme: Theme,
+    size: Geometry.Size,
+  ): Array<Ui.Drawable> {
+    t = node as Toggle _;
+    isChecked = resolveToggleChecked(pctx.context, t.checked, state);
+    isSwitch = t.kind.get(pctx.context) is SwitchToggle _;
+    boxH = theme.float(ThemeTokens::toggleBoxSize, 18.0);
+    boxW = style.iconSize;
+    boxY = (size.height - boxH) * 0.5;
+    boxOrigin = Geometry.Offset(0.0, boxY);
+    boxSize = Geometry.Size(boxW, boxH);
+    accent = theme.color(ThemeTokens::accentColor);
+    fg = if (interaction.disabled) {
+      theme.color(ThemeTokens::disabledColor)
+    } else {
+      style.color
+    };
+
+    out = mutable Vector<Ui.Drawable>[];
+    fillColor = if (isChecked) {
+      if (interaction.disabled) theme.color(ThemeTokens::disabledColor) else {
+        accent
+      }
+    } else {
+      style.background.default(Colors.white())
+    };
+    border = if (interaction.focused && !interaction.disabled) {
+      Some(Ui.Border(theme.color(ThemeTokens::focusRingColor), 2.0))
+    } else {
+      style.border
+    };
+    out.push(
+      pctx.support.roundedRectangle(
+        boxOrigin,
+        boxSize,
+        fillColor,
+        style.cornerRadius,
+        2.0,
+        border,
+      ),
+    );
+    if (isSwitch) {
+      knobSize = boxH - 4.0;
+      knobX = if (isChecked) boxW - knobSize - 2.0 else 2.0;
+      out.push(
+        pctx.support.ellipse(
+          Geometry.Offset(knobX, boxY + 2.0),
+          Geometry.Size(knobSize, knobSize),
+          Colors.white(),
+        ),
+      )
+    } else if (isChecked) {
+      // Inner mark for checked checkbox.
+      inset = 4.0;
+      out.push(
+        pctx.support.roundedRectangle(
+          Geometry.Offset(inset, boxY + inset),
+          Geometry.Size(boxW - 2.0 * inset, boxH - 2.0 * inset),
+          theme.color(ThemeTokens::onAccentColor, Colors.white()),
+          2.0,
+          1.0,
+        ),
+      )
+    };
+    labelStr = t.label.get(pctx.context);
+    if (!labelStr.isEmpty()) {
+      spec = style.font.default(FontSpec{family => "sans", size => 14.0});
+      textSz = pctx.fonts.measureText(
+        pctx.context,
+        labelStr,
+        spec,
+        style.lineHeightFactor,
+      );
+      ty = (size.height - textSz.height) * 0.5;
+      for (d in pctx.fonts.paintText(
+        pctx.context,
+        pctx.support,
+        labelStr,
+        spec,
+        fg,
+        Geometry.Offset(boxW + style.gap, ty),
+        style.lineHeightFactor,
+        style.effects,
+      )) {
+        out.push(d)
+      }
     };
     out.toArray()
   }
