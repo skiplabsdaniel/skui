@@ -58,6 +58,10 @@ class State {
   texture: boolean;
   blend: boolean;
   blending: () => void;
+  clipEnabled: boolean;
+  clipRect: number[];
+  clipRadius: number;
+  depth: number;
 
   constructor(
     viewport: number[],
@@ -65,12 +69,20 @@ class State {
     texture: boolean,
     blend: boolean,
     blending: () => void,
+    clipEnabled: boolean = false,
+    clipRect: number[] = [0, 0, 0, 0],
+    clipRadius: number = 0,
+    depth: number = 0,
   ) {
     this.viewport = viewport;
     this.color = color;
     this.texture = texture;
     this.blend = blend;
     this.blending = blending;
+    this.clipEnabled = clipEnabled;
+    this.clipRect = clipRect;
+    this.clipRadius = clipRadius;
+    this.depth = depth;
   }
 
   copy() {
@@ -80,6 +92,10 @@ class State {
       this.texture,
       this.blend,
       this.blending,
+      this.clipEnabled,
+      [...this.clipRect],
+      this.clipRadius,
+      this.depth,
     );
   }
 }
@@ -484,6 +500,43 @@ export class Factory {
 
   enableBlend(ctxId: int) {
     this.doOnContext(ctxId, (ctx) => ctx.enableBlend());
+  }
+
+  setClip(
+    left: float,
+    top: float,
+    right: float,
+    bottom: float,
+    radius: float,
+    enabled: boolean,
+    ctxId: int,
+  ) {
+    this.doOnContext(ctxId, (ctx) =>
+      ctx.setClip(left, top, right, bottom, radius, enabled),
+    );
+  }
+
+  setDepth(z: float, ctxId: int) {
+    this.doOnContext(ctxId, (ctx) => ctx.setDepth(z));
+  }
+
+  applyDrawState(
+    clipRectLoc: int,
+    clipRadiusLoc: int,
+    clipEnabledLoc: int,
+    clipHeightLoc: int,
+    depthLoc: int,
+    ctxId: int,
+  ) {
+    this.doOnContext(ctxId, (ctx) =>
+      ctx.applyDrawState(
+        clipRectLoc,
+        clipRadiusLoc,
+        clipEnabledLoc,
+        clipHeightLoc,
+        depthLoc,
+      ),
+    );
   }
 
   save(ctxId: int) {
@@ -1120,7 +1173,10 @@ export class Context {
 
   getUniformLocation(utils: Utils, program: int, name: ptr<Internal.String>) {
     return this.create((gl) =>
-      gl.getAttribLocation(this.getGlObject(program), utils.importString(name)),
+      gl.getUniformLocation(
+        this.getGlObject(program),
+        utils.importString(name),
+      ),
     );
   }
 
@@ -1200,6 +1256,66 @@ export class Context {
   enableBlend() {
     this.gState.blend = true;
     this.gl.enable(this.gl.BLEND);
+  }
+
+  setClip(
+    left: float,
+    top: float,
+    right: float,
+    bottom: float,
+    radius: float,
+    enabled: boolean,
+  ) {
+    this.gState.clipEnabled = enabled;
+    this.gState.clipRect = [left, top, right, bottom];
+    this.gState.clipRadius = radius;
+  }
+
+  setDepth(z: float) {
+    this.gState.depth = z;
+  }
+
+  applyDrawState(
+    clipRectLoc: int,
+    clipRadiusLoc: int,
+    clipEnabledLoc: int,
+    clipHeightLoc: int,
+    depthLoc: int,
+  ) {
+    const enabledObj = this.getGlObject<WebGLUniformLocation | null>(
+      clipEnabledLoc,
+    );
+    if (enabledObj != null) {
+      this.gl.uniform1f(enabledObj, this.gState.clipEnabled ? 1.0 : 0.0);
+    }
+    if (this.gState.clipEnabled) {
+      const rectObj = this.getGlObject<WebGLUniformLocation | null>(
+        clipRectLoc,
+      );
+      if (rectObj != null) {
+        this.gl.uniform4f(
+          rectObj,
+          this.gState.clipRect[0]!,
+          this.gState.clipRect[1]!,
+          this.gState.clipRect[2]!,
+          this.gState.clipRect[3]!,
+        );
+      }
+      const radObj = this.getGlObject<WebGLUniformLocation | null>(
+        clipRadiusLoc,
+      );
+      if (radObj != null) {
+        this.gl.uniform1f(radObj, this.gState.clipRadius);
+      }
+      const hObj = this.getGlObject<WebGLUniformLocation | null>(clipHeightLoc);
+      if (hObj != null) {
+        this.gl.uniform1f(hObj, this.gState.viewport[3]!);
+      }
+    }
+    const depthObj = this.getGlObject<WebGLUniformLocation | null>(depthLoc);
+    if (depthObj != null) {
+      this.gl.uniform1f(depthObj, this.gState.depth);
+    }
   }
 
   save() {

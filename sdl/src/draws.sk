@@ -75,7 +75,7 @@ fun program(
   wood = SKIP_SKUISDLRes.woodImage();
   steel = SKIP_SKUISDLRes.steelImage();
   woodTex = GLTexture.Image(Some(wood.data), true, wood.width, wood.height);
-  steelTex = GLTexture.Image(Some(steel.data), true, wood.width, wood.height);
+  steelTex = GLTexture.Image(Some(steel.data), true, steel.width, steel.height);
   constValue: GLSL.Value -> GL.Ctx ~> ?(
     Geometry.Rect,
     Geometry.Size,
@@ -206,7 +206,179 @@ fun tex_button1(ctx: GL.Ctx, width: Int, height: Int): Context {
     width,
     height,
     GLSL.Button1(Some(GLSL.TexturedButton1Material())),
+    GLSL.Config{lights => 3, colors => 1, shininesses => 2, textures => 2},
   );
+}
+
+// Multi-light + texture showcase: compares 1 white light vs 3 colored lights
+// (white point + green directional + pink point) on ellipsoid, metallic/wood
+// textured button, and clipped rounded panel using GLRender.DrawList.
+fun lights(ctx: GL.Ctx, width: Int, height: Int): Context {
+  wood = SKIP_SKUISDLRes.woodImage();
+  steel = SKIP_SKUISDLRes.steelImage();
+  woodTex = GLTexture.Image(Some(wood.data), true, wood.width, wood.height);
+  steelTex = GLTexture.Image(Some(steel.data), true, steel.width, steel.height);
+  cval: GLSL.Value -> GL.Ctx ~> ?(
+    Geometry.Rect,
+    Geometry.Size,
+  ) ~> GLSL.Value = v -> (_ctx) ~> Some((_bs, _w) ~> v);
+  scaled: GLSL.VVec -> GL.Ctx ~> ?(
+    Geometry.Rect,
+    Geometry.Size,
+  ) ~> GLSL.Value = v ->
+    (_ctx) ~>
+      Some((bs, _w) ~>
+        GLSL.VVec[v.x() / bs.width(), v.y() / bs.height(), v.z()]
+      );
+  ellipsoide = (_ctx: GL.Ctx) ~>
+    Some((bs: Geometry.Rect, _w: Geometry.Size) ~> {
+      side = Math.max(bs.width(), bs.height());
+      GLSL.VStruct(
+        SortedMap[
+          "center" => GLSL.VVec::v3(0.5, 0.5, 0.0),
+          "radius" => GLSL.VVec::v3(
+            0.5 * bs.width() / side,
+            0.5 * bs.height() / side,
+            0.5,
+          ),
+        ],
+      )
+    });
+  textures = (c: GL.Ctx) ~> {
+    t1 = woodTex.asTexture(c);
+    t2 = steelTex.asTexture(c);
+    Some((_bs: Geometry.Rect, _w: Geometry.Size) ~> GLSL.VTextures[t2, t1])
+  };
+  textureSizes = (_ctx: GL.Ctx) ~>
+    Some((bs: Geometry.Rect, _w: Geometry.Size) ~> {
+      side = Math.max(bs.width(), bs.height());
+      GLSL.VArray[
+        GLSL.VVec::v2(
+          steelTex.width.toFloat() / side,
+          steelTex.height.toFloat() / side,
+        ),
+        GLSL.VVec::v2(
+          woodTex.width.toFloat() / side,
+          woodTex.height.toFloat() / side,
+        ),
+      ]
+    });
+  makeValues = (lightCount: Float, baseColor: .Color) ->
+    Map[
+      "u_filter" => cval(GLSL.VVec::v1(0.0)),
+      "u_shininesses" => cval(GLSL.VVec[12.0, 20.0]),
+      "u_textures" => textures,
+      "u_texture_sizes" => textureSizes,
+      "u_smoothing" => (_ctx) ~>
+        Some((bds, _) ~>
+          GLSL.VVec::v1(4.0 / Math.min(bds.width(), bds.height()))
+        ),
+      "u_camera" => cval(GLSL.VVec::v3(0.5, 0.5, 2.0)),
+      "u_ambient" => cval(GLSL.rgb(.Color::rgbaInt(25, 25, 30))),
+      "u_colors" => cval(
+        GLSL.VArray[
+          GLSL.rgba(baseColor),
+          GLSL.rgba(.Colors.gold()),
+          GLSL.rgba(.Colors.firebrick()),
+        ],
+      ),
+      "u_ellipsoide" => ellipsoide,
+      "u_ligthcount" => cval(GLSL.VVec[lightCount]),
+      "u_radius" => scaled(GLSL.VVec[14.0, 14.0, 0.8]),
+      "u_lights" => cval(
+        GLSL.VArray[
+          GLSL.VStruct[
+            "color" => GLSL.rgb(.Colors.white()),
+            "point" => GLSL.VVec::v1(1.0),
+            "value" => GLSL.VVec::v3(0.2, -0.3, 1.4),
+          ],
+          GLSL.VStruct[
+            "color" => GLSL.rgb(.Color::rgbaInt(80, 240, 120)),
+            "point" => GLSL.VVec::v1(0.0),
+            "value" => GLSL.VVec::v3(-0.6, 0.2, 0.6),
+          ],
+          GLSL.VStruct[
+            "color" => GLSL.rgb(.Color::rgbaInt(255, 90, 170)),
+            "point" => GLSL.VVec::v1(1.0),
+            "value" => GLSL.VVec::v3(0.9, 1.2, 0.4),
+          ],
+        ],
+      ),
+    ];
+
+  ellScene = GLSL.Scene(
+    GLSL.Ellipsoide(),
+    GLSL.Config{lights => 3, colors => 1, shininesses => 1, textures => 0},
+  );
+  texScene = GLSL.Scene(
+    GLSL.Button1(Some(GLSL.TexturedButton1Material())),
+    GLSL.Config{lights => 3, colors => 1, shininesses => 2, textures => 2},
+  );
+  bg = GLDrawable.rectangle(
+    Geometry.Offset(0.0, 0.0),
+    Geometry.Size(width.toFloat(), height.toFloat()),
+    .Color::rgbaInt(24, 26, 32),
+  );
+  // Top-left: single white light on ellipsoid.
+  ell1 = GLSL.Drawable(
+    ellScene,
+    makeValues(1.0, .Color::rgbaInt(70, 150, 230)),
+    None(),
+    GLSL.High(),
+    Geometry.Rect::fromLTWH(40.0, 40.0, 320.0, 220.0),
+  );
+  // Top-right: 3 colored lights on ellipsoid.
+  ell3 = GLSL.Drawable(
+    ellScene,
+    makeValues(3.0, .Color::rgbaInt(210, 215, 225)),
+    None(),
+    GLSL.High(),
+    Geometry.Rect::fromLTWH(420.0, 40.0, 320.0, 220.0),
+  );
+  // Bottom-left: textured steel/wood button with 1 white light.
+  tex1 = GLSL.Drawable(
+    texScene,
+    makeValues(1.0, .Colors.white()),
+    None(),
+    GLSL.High(),
+    Geometry.Rect::fromLTWH(40.0, 310.0, 320.0, 220.0),
+  );
+  // Bottom-right: textured steel/wood button with 3 colored lights + rounded shader clip.
+  tex3 = GLSL.Drawable(
+    texScene,
+    makeValues(3.0, .Colors.white()),
+    None(),
+    GLSL.High(),
+    Geometry.Rect::fromLTWH(420.0, 310.0, 320.0, 220.0),
+  );
+  list = GLRender.DrawList::prepare(
+    ctx,
+    Array[
+      GLRender.Item(ell1, 10, 0.1, None()),
+      GLRender.Item(ell3, 10, 0.1, None()),
+      GLRender.Item(tex1, 10, 0.1, None()),
+      GLRender.Item(
+        tex3,
+        10,
+        0.1,
+        Some(
+          GLRender.Clip(
+            Geometry.Rect::fromLTWH(440.0, 330.0, 280.0, 180.0),
+            40.0,
+          ),
+        ),
+      ),
+      // Background submitted last on purpose to verify depth sorting (order 0).
+      GLRender.Item(bg, 0, 0.9, None()),
+    ],
+  );
+  Context(
+    Vector[
+      Ui.LambdaHandle((_shift, window, height, ratio, frame) ~>
+        list.draw(ctx, window.width(), height, ratio, frame)
+      ),
+    ],
+  )
 }
 
 module end;

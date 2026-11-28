@@ -308,70 +308,72 @@ class Drawable(
     supplier: GLProgram.Supplier,
   ): ?Ui.Handle {
     multiple = data as GLProgram.Multiple _;
-    supplier.glslDrawer(this.program, this.version).flatMap(drawer -> {
-      mValues = mutable Map[];
-      for ((n, fn) in this.values.items()) {
-        fn(gl).each(v -> mValues.set(n, v))
-      };
-      fValues = mValues.chill();
-      Some(
-        Ui.LambdaHandle((shift, window, _height, ratio, frames) ~> {
-          cValues = fValues.map((_, fn) -> fn(this.bounds, window.size()));
-          bounds = this.bounds.shift(shift.toOffset()).scale(ratio);
-          offset = bounds.topLeft();
-          bsize = bounds.size();
-          side = Math.max(bsize.width, bsize.height);
-          dx = (side - bsize.width) / 2.0;
-          dy = (side - bsize.height) / 2.0;
-          x = offset.dx - dx;
-          y = offset.dy - dy;
-          dbounds = Geometry.Rect::fromOffsetSize(
-            Geometry.Offset(x, y),
-            Geometry.Size::square(side),
-          );
-          // this matrix will convert from pixels to clip space
-          // this matrix will translate our quad to dstX, dstY
-          // this matrix will scale our 1 unit quad
-          // from 1 unit to width, height units
-          wsize = window.size() * ratio;
-          matrix = GL.Matrix4::orthographic(
-            0.0,
-            wsize.width,
-            wsize.height,
-            0.0,
-            -1.0,
-            1.0,
-          )
-            .translate(dbounds.left, dbounds.top, 0.0)
-            .scale(dbounds.width(), dbounds.height(), 1.0);
-          values = Maps.set(
-            Maps.set(
+    supplier
+      .glslDrawer(this.program, this.version, this.fLevel)
+      .flatMap(drawer -> {
+        mValues = mutable Map[];
+        for ((n, fn) in this.values.items()) {
+          fn(gl).each(v -> mValues.set(n, v))
+        };
+        fValues = mValues.chill();
+        Some(
+          Ui.LambdaHandle((shift, window, _height, ratio, frames) ~> {
+            cValues = fValues.map((_, fn) -> fn(this.bounds, window.size()));
+            bounds = this.bounds.shift(shift.toOffset()).scale(ratio);
+            offset = bounds.topLeft();
+            bsize = bounds.size();
+            side = Math.max(bsize.width, bsize.height);
+            dx = (side - bsize.width) / 2.0;
+            dy = (side - bsize.height) / 2.0;
+            x = offset.dx - dx;
+            y = offset.dy - dy;
+            dbounds = Geometry.Rect::fromOffsetSize(
+              Geometry.Offset(x, y),
+              Geometry.Size::square(side),
+            );
+            // this matrix will convert from pixels to clip space
+            // this matrix will translate our quad to dstX, dstY
+            // this matrix will scale our 1 unit quad
+            // from 1 unit to width, height units
+            wsize = window.size() * ratio;
+            matrix = GL.Matrix4::orthographic(
+              0.0,
+              wsize.width,
+              wsize.height,
+              0.0,
+              -1.0,
+              1.0,
+            )
+              .translate(dbounds.left, dbounds.top, 0.0)
+              .scale(dbounds.width(), dbounds.height(), 1.0);
+            values = Maps.set(
               Maps.set(
-                cValues,
-                "u_bounds",
-                VVec(
-                  Array[
-                    (dx / side),
-                    (dy / side),
-                    (bsize.width / side),
-                    (bsize.height / side),
-                  ],
+                Maps.set(
+                  cValues,
+                  "u_bounds",
+                  VVec(
+                    Array[
+                      (dx / side),
+                      (dy / side),
+                      (bsize.width / side),
+                      (bsize.height / side),
+                    ],
+                  ),
                 ),
+                "u_frames",
+                VVec(Array[frames.toFloat()]),
               ),
-              "u_frames",
-              VVec(Array[frames.toFloat()]),
-            ),
-            "u_matrix",
-            VVec(matrix.matrix),
-          );
-          drawer.run(
-            Parameters(values),
-            VertexParameters(values, multiple.value),
-            wsize,
-          )
-        }),
-      )
-    })
+              "u_matrix",
+              VVec(matrix.matrix),
+            );
+            drawer.run(
+              Parameters(values),
+              VertexParameters(values, multiple.value),
+              wsize,
+            )
+          }),
+        )
+      })
   }
 }
 

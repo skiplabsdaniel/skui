@@ -168,6 +168,7 @@ class TriangleProgram(
   program: GL.Prepared,
   fragmentShader: FragmentShader,
   vertexShader: VertexShader,
+  drawState: DrawStateLocations,
 ) extends SKStore.File {
   //
   static fun type(obj: SKStore.File): this {
@@ -192,6 +193,7 @@ class TriangleProgram(
     applied = mutable Set<String>[];
     this.fragmentShader.apply(fragment, applied);
     size = this.vertexShader.apply(vertex, window, applied);
+    this.drawState.apply(ctx);
     ctx.drawTriangles(UInt32::truncate(0), UInt32::truncate(size));
     this.fragmentShader.clean();
     this.vertexShader.clean(vertex);
@@ -213,8 +215,8 @@ fun triangleProgram(
   fragmentBuilder: FragmentShaderBuilder,
   vertexBuilder: VertexShaderBuilder,
 ): TriangleProgram {
-  vertexShaderSource = vertexBuilder.source();
-  fragmentShaderSource = fragmentBuilder.source();
+  vertexShaderSource = instrumentVertexDepth(vertexBuilder.source());
+  fragmentShaderSource = instrumentFragmentClip(fragmentBuilder.source());
   program = GLProgram.create(
     gl,
     Array[("vertexShaderSource", vertexShaderSource)],
@@ -222,7 +224,8 @@ fun triangleProgram(
   );
   vertexShader = vertexBuilder.build(program);
   fragmentShader = fragmentBuilder.build(program);
-  TriangleProgram(program, fragmentShader, vertexShader)
+  drawState = DrawStateLocations::lookup(program);
+  TriangleProgram(program, fragmentShader, vertexShader, drawState)
 }
 
 fun bilenearPositionBuffer(gl: GL.Ctx): GL.Buffer {

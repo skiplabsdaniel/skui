@@ -1,0 +1,100 @@
+module GLRender;
+
+// Rounded-rectangle clip in logical window coordinates, applied in fragment
+// shaders via the shared clip prelude (no GL viewports).
+class Clip(rect: Geometry.Rect, radius: Float = 0.0)
+
+// One entry of a sorted draw list: a GLDrawable plus its stacking order
+// (painter's order, ascending = back to front), NDC depth z in (-1, 1), and
+// optional rounded clip.
+class Item(
+  drawable: GLDrawable,
+  order: Int = 0,
+  z: Float = 0.0,
+  optClip: ?Clip = None(),
+)
+
+// Prepared draw item ready to submit every frame.
+private class PreparedItem(
+  order: Int,
+  seq: Int,
+  z: Float,
+  optClip: ?Clip,
+  handles: Array<Ui.Handle>,
+) uses Orderable {
+  fun compare(other: PreparedItem): Order {
+    this.order.compare(other.order) match {
+    | EQ() -> this.seq.compare(other.seq)
+    | ord -> ord
+    }
+  }
+}
+
+// Prepares and sorts a list of draw items by (order, submission index) so
+// translucent antialiased primitives blend correctly back-to-front while
+// writing z to `gl_Position.z` and applying per-item rounded shader clips.
+class DrawList private (items: Array<PreparedItem>) {
+  static fun prepare(ctx: GL.Ctx, rawItems: Array<Item>): DrawList {
+    initializer = mutable GLProgram.Initializer();
+    usages = rawItems.map(item -> (item.drawable.prepare(initializer), item));
+    programs = initializer.programs.map((_, v) -> v(ctx));
+    buffers = initializer.buffers.map((_, v) -> v(ctx));
+    arrays = initializer.arrays.map((_, v) -> v(ctx));
+    supplier = GLProgram.Supplier(programs.maybeGet);
+
+    prepared = mutable Vector<PreparedItem>[];
+    usages.eachWithIndex((idx, pair) -> {
+      (used, item) = pair;
+      handles = mutable Vector<Ui.Handle>[];
+      SKUIGL.DrawableSupport::toHandles(
+        ctx,
+        (used, item.drawable),
+        buffers.maybeGet,
+        arrId ->
+          arrays.maybeGet(arrId).flatMap(array ->
+            buffers.maybeGet(array.buffer.value).map(buffer ->
+              GLProgram.ArrayInfo(array, buffer)
+            )
+          ),
+        supplier,
+        handles,
+      );
+      prepared.push(
+        PreparedItem(item.order, idx, item.z, item.optClip, handles.toArray()),
+      )
+    });
+    DrawList(prepared.toArray().sorted())
+  }
+
+  // Draws every item in sorted order (back to front) into the current
+  // framebuffer without changing GL viewports.
+  fun draw(
+    ctx: GL.Ctx,
+    width: Int,
+    height: Int,
+    ratio: Float = 1.0,
+    frame: Int = 0,
+  ): void {
+    shift = Ui.Shift(0, 0);
+    window = Geometry.Rectangle(
+      Geometry.Point(0, 0),
+      Geometry.Point(width, height),
+    );
+    for (item in this.items) {
+      item.optClip match {
+      | Some(clip) ->
+        scaledRect = clip.rect.scale(ratio);
+        ctx.setClip(scaledRect, clip.radius * ratio)
+      | None() -> ctx.clearClip()
+      };
+      ctx.setDepth(item.z);
+      for (h in item.handles) {
+        h.draw(shift, window, height, ratio, frame)
+      }
+    };
+    ctx.clearClip();
+    ctx.setDepth(0.0)
+  }
+}
+
+module end;

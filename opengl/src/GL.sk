@@ -329,6 +329,30 @@ native fun viewport(
 ): void;
 
 @cpp_extern
+native fun setClip(
+  left: Float,
+  top: Float,
+  right: Float,
+  bottom: Float,
+  radius: Float,
+  enabled: Bool,
+  ctx: UInt32,
+): void;
+
+@cpp_extern
+native fun setDepth(z: Float, ctx: UInt32): void;
+
+@cpp_extern
+native fun applyDrawState(
+  clipRectLoc: UniformLocation,
+  clipRadiusLoc: UniformLocation,
+  clipEnabledLoc: UniformLocation,
+  clipHeightLoc: UniformLocation,
+  depthLoc: UniformLocation,
+  ctx: UInt32,
+): void;
+
+@cpp_extern
 native fun save(ctx: UInt32): void;
 @cpp_extern
 native fun restore(ctx: UInt32): void;

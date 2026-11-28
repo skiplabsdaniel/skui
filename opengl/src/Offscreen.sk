@@ -40,6 +40,8 @@ fun render(
   );
   ctx.clearColor(1.0, 1.0, 1.0, 1.0);
   ctx.clear();
+  ctx.clearClip();
+  ctx.setDepth(0.0);
   handles = toHandles(ctx, drawables);
   shift = Ui.Shift(0, 0);
   window = Geometry.Rectangle(
@@ -47,6 +49,47 @@ fun render(
     Geometry.Point(width, height),
   );
   handles.each(handle -> handle.draw(shift, window, height, ratio, 0));
+  ctx.flush();
+  data = Array::mfill(dWidth * dHeight * 4, UInt8::truncate(0));
+  read(data);
+  Some(
+    Ui.Image::make(dWidth, dHeight, (x, y) -> {
+      i = (y * dWidth + x) * 4;
+      Ui.Pix(data[i], data[i + 1], data[i + 2], data[i + 3])
+    }),
+  )
+}
+
+/**
+ * Renders a list of `GLRender.Item` (each carrying its own stacking order,
+ * depth z, and optional rounded clip) sorted back-to-front in a single global
+ * viewport pass.
+ */
+fun renderItems(
+  items: Array<GLRender.Item>,
+  width: Int,
+  height: Int,
+  ratio: Float = 1.0,
+): ?Ui.Image {
+  dWidth = (width.toFloat() * ratio).toInt();
+  dHeight = (height.toFloat() * ratio).toInt();
+  if (!begin(UInt32::truncate(dWidth), UInt32::truncate(dHeight))) {
+    return None()
+  };
+  ctx = GL.Ctx(UInt32::truncate(0));
+  ctx.bindMainFrameBuffer();
+  ctx.enableBlend();
+  ctx.straitAlphaBlending();
+  ctx.viewport(
+    Int32::truncate(0),
+    Int32::truncate(0),
+    UInt32::truncate(dWidth),
+    UInt32::truncate(dHeight),
+  );
+  ctx.clearColor(1.0, 1.0, 1.0, 1.0);
+  ctx.clear();
+  list = GLRender.DrawList::prepare(ctx, items);
+  list.draw(ctx, width, height, ratio, 0);
   ctx.flush();
   data = Array::mfill(dWidth * dHeight * 4, UInt8::truncate(0));
   read(data);

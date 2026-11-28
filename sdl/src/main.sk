@@ -16,6 +16,7 @@ fun main(): void {
     ("animation", SkuiSdl.animation),
     ("text", SkuiSdl.text),
     ("shadows", SkuiSdl.shadows),
+    ("lights", SkuiSdl.lights),
   ];
   perform(available);
 }

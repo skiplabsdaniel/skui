@@ -1013,4 +1013,209 @@ fun colorGlyph(): void {
   }
 }
 
+fun renderList(
+  name: String,
+  items: Array<GLRender.Item>,
+  width: Int,
+  height: Int,
+  ratio: Float = 1.0,
+): Ui.Image {
+  GLOffscreen.renderItems(items, width, height, ratio) match {
+  | Some(image) ->
+    Environ.varOpt("SKUI_GL_IMAGES").each(dir ->
+      GLOffscreen.writePPM(image, `${dir}/${name}.ppm`)
+    );
+    image
+  | None() -> throw T.ExpectationError("OpenGL", "available", "unavailable")
+  }
+}
+
+@test
+fun shaderClipRoundedPrimitives(): void {
+  // Full-screen red rectangle clipped by a rounded rectangle (10, 10)-(70, 50)
+  // with corner radius 15: inside center is red, corners of the clip rect are
+  // cut to white, outside the clip rect is white. Also tested at ratio 2.
+  rect = GLDrawable.rectangle(
+    Geometry.Offset(0.0, 0.0),
+    Geometry.Size(80.0, 60.0),
+    Colors.red(),
+  );
+  clip = GLRender.Clip(Geometry.Rect::fromLTWH(10.0, 10.0, 60.0, 40.0), 15.0);
+  for (ratio in Array[1.0, 2.0]) {
+    img = renderList(
+      `clip_rect_x${ratio.toInt()}`,
+      Array[GLRender.Item(rect, 0, 0.0, Some(clip))],
+      80,
+      60,
+      ratio,
+    );
+    s = ratio.toInt();
+    expectPixel(img, 40 * s, 30 * s, red, `center x${s}`);
+    expectPixel(img, 12 * s, 30 * s, red, `left edge mid x${s}`);
+    expectPixel(img, 67 * s, 30 * s, red, `right edge mid x${s}`);
+    expectPixel(img, 40 * s, 12 * s, red, `top edge mid x${s}`);
+    expectPixel(img, 40 * s, 47 * s, red, `bottom edge mid x${s}`);
+    // Rounded corners of the clip rect are cut away.
+    expectPixel(img, 11 * s, 11 * s, white, `cut top-left corner x${s}`);
+    expectPixel(img, 68 * s, 48 * s, white, `cut bottom-right corner x${s}`);
+    // Outside clip rect is completely clipped away.
+    expectPixel(img, 5 * s, 30 * s, white, `outside left x${s}`);
+    expectPixel(img, 75 * s, 30 * s, white, `outside right x${s}`);
+  }
+}
+
+@test
+fun shaderClipMsdfTextAndShadow(): void {
+  // MSDF text ("AAAA") clipped to the left half [0, 24) x [0, 32): ink must
+  // appear in the left half and be completely absent in the right half,
+  // confirming MSDF fwidth works cleanly before clip coverage is applied.
+  font = liberation();
+  textDraws = textDrawables(font, "AAAA", 20.0, 2.0, 22.0);
+  clip = GLRender.Clip(Geometry.Rect::fromLTWH(0.0, 0.0, 24.0, 32.0), 0.0);
+  items = textDraws.map(d -> GLRender.Item(d, 0, 0.0, Some(clip)));
+  img = renderList("clip_msdf", items, 64, 32);
+  (topL, botL) = inkRows(img, 2, 22);
+  (_, botR) = inkRows(img, 26, 62);
+  T.expectEq(botL >= topL, true, "text visible inside clip");
+  T.expectEq(botR, -1, "text clipped outside clip");
+
+  // BoxShadow clipped to [0, 30) x [0, 60): shadow extends right of x=30,
+  // must be visible at x=25 and white at x=35 (confirming u_skui_clip* does
+  // not clash with BoxShadow's own u_clip exclusion uniforms).
+  shadow = GLDrawable.BoxShadow::create{
+    offset => Geometry.Offset(15.0, 20.0),
+    size => Geometry.Size(20.0, 20.0),
+    sigma => 5.0,
+    color => Colors.black(),
+    radius => 4.0,
+    clip => true,
+  };
+  sClip = GLRender.Clip(Geometry.Rect::fromLTWH(0.0, 0.0, 30.0, 60.0), 0.0);
+  sImg = renderList(
+    "clip_shadow",
+    Array[GLRender.Item(shadow, 0, 0.0, Some(sClip))],
+    60,
+    60,
+  );
+  // Just above the box inside the clip (x=25, y=16): darkened by blur.
+  (sr, _, _) = pixel(sImg, 25, 16);
+  T.expectEq(sr < 220, true, `shadow visible inside clip, got r=${sr}`);
+  // Inside the excluded box itself (x=22, y=30): still white thanks to BoxShadow clip.
+  expectPixel(sImg, 22, 30, white, "box shadow inner exclusion still works");
+  // Right of shader clip (x=36, y=30): clipped away to white.
+  expectPixel(sImg, 36, 30, white, "shadow clipped outside shader clip");
+}
+
+@test
+fun depthOrderSortsTranslucentDrawables(): void {
+  // Submit a front translucent blue square BEFORE a back opaque red square,
+  // with orders 20 (front) and 10 (back). Painter's sort must draw red first
+  // then blend translucent blue (50% alpha) over red -> purple ~(128, 0, 128).
+  // (If order were ignored, red would overwrite blue -> pure red.)
+  frontBlue = GLDrawable.rectangle(
+    Geometry.Offset(10.0, 10.0),
+    Geometry.Size(20.0, 20.0),
+    .Color::rgbaInt(0, 0, 255, 128),
+  );
+  backRed = GLDrawable.rectangle(
+    Geometry.Offset(0.0, 0.0),
+    Geometry.Size(40.0, 40.0),
+    Colors.red(),
+  );
+  img = renderList(
+    "depth_sort",
+    Array[
+      GLRender.Item(frontBlue, 20, -0.5, None()),
+      GLRender.Item(backRed, 10, 0.5, None()),
+    ],
+    40,
+    40,
+  );
+  // Outside overlap: pure red.
+  expectPixel(img, 5, 5, red, "back red outside overlap");
+  // Inside overlap: 50% blue over red -> (127, 0, 128).
+  expectPixel(img, 20, 20, (127, 0, 128), "translucent blue blended over red");
+}
+
+@test
+fun glslLightingRespectsLightColorAndDirection(): void {
+  // Render a GLSL.Ellipsoide lit by a single colored point light (green) from
+  // above-left: the lit highlight must be greenish (g >> r, g >> b) and much
+  // brighter on the upper half (facing the light) than on the bottom edge.
+  scene = GLSL.Scene(
+    GLSL.Ellipsoide(),
+    GLSL.Config{lights => 1, colors => 1, shininesses => 1, textures => 0},
+  );
+  cval = (v: GLSL.Value) ->
+    (_ctx: GL.Ctx) ~> Some((_b: Geometry.Rect, _w: Geometry.Size) ~> v);
+  ellipsoide = (_ctx: GL.Ctx) ~>
+    Some((bs: Geometry.Rect, _w: Geometry.Size) ~> {
+      side = Math.max(bs.width(), bs.height());
+      GLSL.VStruct(
+        SortedMap[
+          "center" => GLSL.VVec::v3(0.5, 0.5, 0.0),
+          "radius" => GLSL.VVec::v3(
+            0.5 * bs.width() / side,
+            0.5 * bs.height() / side,
+            0.5,
+          ),
+        ],
+      )
+    });
+  drawable = GLSL.Drawable(
+    scene,
+    Map[
+      "u_filter" => cval(GLSL.VVec::v1(0.0)),
+      "u_shininesses" => cval(GLSL.VVec[12.0]),
+      "u_smoothing" => (_ctx) ~>
+        Some((bds, _) ~>
+          GLSL.VVec::v1(4.0 / Math.min(bds.width(), bds.height()))
+        ),
+      "u_camera" => cval(GLSL.VVec::v3(0.5, 0.5, 2.0)),
+      "u_ambient" => cval(GLSL.rgb(.Color::rgbaInt(20, 20, 20))),
+      "u_colors" => cval(GLSL.VArray[GLSL.rgba(Colors.white())]),
+      "u_ellipsoide" => ellipsoide,
+      "u_ligthcount" => cval(GLSL.VVec[1.0]),
+      "u_lights" => cval(
+        GLSL.VArray[
+          GLSL.VStruct[
+            "color" => GLSL.rgb(Colors.green()),
+            "point" => GLSL.VVec::v1(1.0),
+            "value" => GLSL.VVec::v3(0.5, 0.0, 1.5),
+          ],
+        ],
+      ),
+    ],
+    None(),
+    GLSL.High(),
+    Geometry.Rect::fromLTWH(0.0, 0.0, 80.0, 80.0),
+  );
+  // Clip the right half of the lit ellipsoid to verify GLSL-generated shaders
+  // also receive the shared shader clip prelude.
+  clip = GLRender.Clip(Geometry.Rect::fromLTWH(0.0, 0.0, 50.0, 80.0), 0.0);
+  img = renderList(
+    "glsl_light_clip",
+    Array[GLRender.Item(drawable, 0, 0.0, Some(clip))],
+    80,
+    80,
+  );
+  // Upper-center (40, 22) faces the green light: strong green, low red/blue.
+  (rTop, gTop, bTop) = pixel(img, 40, 22);
+  T.expectEq(
+    gTop > 80,
+    true,
+    `green light bright on top: (${rTop},${gTop},${bTop})`,
+  );
+  T.expectEq(
+    gTop > rTop + 40 && gTop > bTop + 40,
+    true,
+    `light tint is green: (${rTop},${gTop},${bTop})`,
+  );
+  // Lower-center (40, 72) tilts away from the light -> darker than upper-center.
+  (_, gBot, _) = pixel(img, 40, 72);
+  T.expectEq(gTop > gBot, true, `top (${gTop}) brighter than bottom (${gBot})`);
+  // Right of clip x=60 -> clipped away to white background.
+  expectPixel(img, 60, 40, white, "GLSL shader clipped at x=50");
+}
+
 module end;

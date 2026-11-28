@@ -38,6 +38,10 @@ struct State {
   Viewport viewport;
   GLboolean blend;
   GLenum srcAlpha;
+  bool clipEnabled;
+  GLfloat clipRect[4];
+  GLfloat clipRadius;
+  GLfloat depth;
 };
 
 const GLchar *uniforms[] = {
@@ -527,6 +531,47 @@ void SKIP_GL_disableBlend(uint32_t) {
 void SKIP_GL_enableBlend(uint32_t) {
   gState.blend = true;
   glEnable(GL_BLEND);
+}
+
+void SKIP_GL_setClip(double left, double top, double right, double bottom,
+                     double radius, bool enabled, uint32_t) {
+  gState.clipEnabled = enabled;
+  gState.clipRect[0] = (GLfloat)left;
+  gState.clipRect[1] = (GLfloat)top;
+  gState.clipRect[2] = (GLfloat)right;
+  gState.clipRect[3] = (GLfloat)bottom;
+  gState.clipRadius = (GLfloat)radius;
+}
+
+void SKIP_GL_setDepth(double z, uint32_t) { gState.depth = (GLfloat)z; }
+
+void SKIP_GL_applyDrawState(uint32_t clipRectLoc, uint32_t clipRadiusLoc,
+                            uint32_t clipEnabledLoc, uint32_t clipHeightLoc,
+                            uint32_t depthLoc, uint32_t) {
+  GLint loc;
+  loc = (GLint)clipEnabledLoc;
+  if (loc >= 0) {
+    glUniform1f(loc, gState.clipEnabled ? 1.0f : 0.0f);
+  }
+  if (gState.clipEnabled) {
+    loc = (GLint)clipRectLoc;
+    if (loc >= 0) {
+      glUniform4f(loc, gState.clipRect[0], gState.clipRect[1],
+                  gState.clipRect[2], gState.clipRect[3]);
+    }
+    loc = (GLint)clipRadiusLoc;
+    if (loc >= 0) {
+      glUniform1f(loc, gState.clipRadius);
+    }
+    loc = (GLint)clipHeightLoc;
+    if (loc >= 0) {
+      glUniform1f(loc, (GLfloat)gState.viewport.height);
+    }
+  }
+  loc = (GLint)depthLoc;
+  if (loc >= 0) {
+    glUniform1f(loc, gState.depth);
+  }
 }
 
 void SKIP_GL_save(uint32_t) { gStates.push(gState); }

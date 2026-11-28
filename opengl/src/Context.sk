@@ -457,6 +457,35 @@ class Ctx(
     viewport(x, y, width, height, this.id)
   }
 
+  fun setClip(rect: Geometry.Rect, radius: Float = 0.0): void {
+    setClip(rect.left, rect.top, rect.right, rect.bottom, radius, true, this.id)
+  }
+
+  fun clearClip(): void {
+    setClip(0.0, 0.0, 0.0, 0.0, 0.0, false, this.id)
+  }
+
+  fun setDepth(z: Float): void {
+    setDepth(z, this.id)
+  }
+
+  fun applyDrawState(
+    clipRectLoc: UniformLocation,
+    clipRadiusLoc: UniformLocation,
+    clipEnabledLoc: UniformLocation,
+    clipHeightLoc: UniformLocation,
+    depthLoc: UniformLocation,
+  ): void {
+    applyDrawState(
+      clipRectLoc,
+      clipRadiusLoc,
+      clipEnabledLoc,
+      clipHeightLoc,
+      depthLoc,
+      this.id,
+    )
+  }
+
   fun save(): void {
     save(this.id)
   }

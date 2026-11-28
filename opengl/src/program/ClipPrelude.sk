@@ -1,0 +1,147 @@
+module GLProgram;
+
+// Shared shader prelude injecting rounded-rectangle clipping (fragment) and
+// explicit depth z (vertex) into every GLProgram, including built-in hand-
+// written shaders and GLSL-generated shaders.
+//
+// Uniform names use the `_skui_` prefix so they never collide with existing
+// shader uniforms (e.g. BoxShadow's exclusion clip `u_clip`).
+
+const clipRectUniformName: String = "u_skui_clipRect";
+const clipRadiusUniformName: String = "u_skui_clipRadius";
+const clipEnabledUniformName: String = "u_skui_clipEnabled";
+const clipHeightUniformName: String = "u_skui_clipHeight";
+const depthUniformName: String = "u_skui_depth";
+
+const fragmentClipPrelude: String = source(
+  Array[
+    "uniform vec4 u_skui_clipRect;",
+    "uniform float u_skui_clipRadius;",
+    "uniform float u_skui_clipEnabled;",
+    "uniform float u_skui_clipHeight;",
+    "float skui_clipCoverage() {",
+    "  if (u_skui_clipEnabled < 0.5) return 1.0;",
+    "  vec2 p = vec2(gl_FragCoord.x, u_skui_clipHeight - gl_FragCoord.y);",
+    "  vec2 lower = u_skui_clipRect.xy;",
+    "  vec2 upper = u_skui_clipRect.zw;",
+    "  vec2 halfSize = (upper - lower) * 0.5;",
+    "  vec2 center = (lower + upper) * 0.5;",
+    "  float r = min(u_skui_clipRadius, min(halfSize.x, halfSize.y));",
+    "  vec2 q = abs(p - center) - halfSize + r;",
+    "  float dist = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;",
+    "  return clamp(0.5 - dist, 0.0, 1.0);",
+    "}",
+    "",
+  ],
+);
+
+const vertexDepthPrelude: String = "uniform float u_skui_depth;\n";
+
+// Inserts `block` right after `#version ...` (if present) and the first
+// `precision ...;` directive (if present), or at the start of the shader.
+private fun insertAfterHeader(src: String, block: String): String {
+  lines = src.split("\n");
+  insertAt = 0;
+  for (i in Range(0, lines.size())) {
+    trimmed = lines[i].trim();
+    if (
+      trimmed.startsWith("#version ") ||
+      trimmed.startsWith("precision ") ||
+      trimmed.startsWith("#define ")
+    ) {
+      !insertAt = i + 1
+    } else if (trimmed != "" && !trimmed.startsWith("//")) {
+      break void
+    }
+  };
+  out = mutable Vector<String>[];
+  for (i in Range(0, lines.size())) {
+    if (i == insertAt) {
+      out.push(block)
+    };
+    out.push(lines[i])
+  };
+  if (insertAt >= lines.size()) {
+    out.push(block)
+  };
+  out.join("\n")
+}
+
+// Finds the declared fragment output variable name (`glColor`, `glFragColor`,
+// or legacy `gl_FragColor`).
+private fun detectFragmentOutput(src: String): String {
+  for (line in src.split("\n")) {
+    trimmed = line.trim();
+    if (trimmed.startsWith("out vec4 ")) {
+      rest = trimmed.stripPrefix("out vec4 ").trim();
+      semi = rest.split(";");
+      if (!semi.isEmpty() && semi[0].trim() != "") {
+        return semi[0].trim()
+      }
+    }
+  };
+  "gl_FragColor"
+}
+
+// Renames `void main()` to `void skui_main()` and appends a new `void main()`
+// calling `skui_main()` followed by `epilogue`.
+private fun wrapMain(src: String, epilogue: String): String {
+  renamed = src
+    .replace("void main()", "void skui_main()")
+    .replace("void main ()", "void skui_main()");
+  if (renamed == src) {
+    // Fallback: shader did not match standard main signature, leave untouched.
+    src
+  } else {
+    `${renamed}\nvoid main() {\n  skui_main();\n  ${epilogue}\n}\n`
+  }
+}
+
+// Instruments a fragment shader with the shared rounded-clip prelude.
+// Runs `skui_main()` first (so `fwidth` in MSDF runs in uniform control flow
+// before clipping), then multiplies the output alpha by `skui_clipCoverage()`.
+fun instrumentFragmentClip(src: String): String {
+  if (src.contains(clipEnabledUniformName)) return src;
+  outVar = detectFragmentOutput(src);
+  withPrelude = insertAfterHeader(src, fragmentClipPrelude);
+  wrapMain(withPrelude, `${outVar}.a *= skui_clipCoverage();`)
+}
+
+// Instruments a vertex shader so `gl_Position.z` carries `u_skui_depth * w`
+// (NDC z = u_skui_depth).
+fun instrumentVertexDepth(src: String): String {
+  if (src.contains(depthUniformName)) return src;
+  withPrelude = insertAfterHeader(src, vertexDepthPrelude);
+  wrapMain(withPrelude, "gl_Position.z = u_skui_depth * gl_Position.w;")
+}
+
+// Cached locations of the shared clip and depth uniforms on a linked program.
+class DrawStateLocations(
+  clipRect: GL.UniformLocation,
+  clipRadius: GL.UniformLocation,
+  clipEnabled: GL.UniformLocation,
+  clipHeight: GL.UniformLocation,
+  depth: GL.UniformLocation,
+) {
+  static fun lookup(program: GL.Prepared): DrawStateLocations {
+    DrawStateLocations(
+      program.getUniformLocation(clipRectUniformName),
+      program.getUniformLocation(clipRadiusUniformName),
+      program.getUniformLocation(clipEnabledUniformName),
+      program.getUniformLocation(clipHeightUniformName),
+      program.getUniformLocation(depthUniformName),
+    )
+  }
+
+  fun apply(ctx: GL.Ctx): void {
+    ctx.applyDrawState(
+      this.clipRect,
+      this.clipRadius,
+      this.clipEnabled,
+      this.clipHeight,
+      this.depth,
+    )
+  }
+}
+
+module end;
